@@ -1,0 +1,13 @@
+[project]
+name = "secondhand-platform"
+version = "0.1.0"
+description = "一个基于django的二手交易平台"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "django>=6.0,<6.1",
+    "django-environ>=0.13.0",
+    "pillow>=12.2.0",
+    "psycopg[binary]>=3.3.3",
+    "whitenoise>=6.12.0",
+]

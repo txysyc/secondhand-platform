@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}首页 - 二手交易平台{% endblock %}
+
+{% block content %}
+<section class="home-hero" aria-labelledby="home-title">
+    <div class="home-panel">
+        <p class="eyebrow">模拟交易闭环 MVP</p>
+        <h1 id="home-title">发布、发现并完成一次清晰的二手交易</h1>
+        <p class="lede">
+            平台正在逐步搭建账号、商品、订单与留言能力。当前版本先提供稳定的注册、登录和退出登录流程。
+        </p>
+        <div class="home-actions">
+            {% if user.is_authenticated %}
+                <span class="status-pill" role="status">账号已登录</span>
+            {% else %}
+                <a class="button" href="{% url 'users:register' %}">创建账号</a>
+                <a class="button-secondary" href="{% url 'users:login' %}">已有账号登录</a>
+            {% endif %}
+        </div>
+        <ul class="benefit-list" aria-label="平台能力">
+            <li>账号体系使用 Django 会话认证与 CSRF 保护。</li>
+            <li>后续商品列表、发布和订单页面会沿用当前模板结构。</li>
+            <li>实体商品与虚拟商品会在后续故事中保持独立类型表达。</li>
+        </ul>
+    </div>
+</section>
+{% endblock %}

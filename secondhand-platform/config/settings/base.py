@@ -131,6 +131,16 @@ MEDIA_ROOT = BASE_DIR / str(env("DJANGO_MEDIA_ROOT"))
 # 使用 users.User 作为全项目唯一用户模型，必须在首次迁移前确定。
 AUTH_USER_MODEL = "users.User"
 
+# 默认后端保留用户名认证与权限能力，邮箱后端只补充“邮箱 + 密码”登录入口。
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "users.auth_backends.EmailBackend",
+]
+
+# 认证成功和退出后的公开落点先指向最小首页，后续商品列表 story 可接管该路径。
+LOGIN_URL = "users:login"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

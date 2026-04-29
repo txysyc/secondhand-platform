@@ -10,5 +10,7 @@ dist/
 build/
 .env
 
+.playwright-mcp/
+
 BMAD-启动清单.md
 BMAD-METHOD-中文说明.md

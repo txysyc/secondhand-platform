@@ -6,6 +6,7 @@ from django.contrib.auth import SESSION_KEY
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.test import RequestFactory, TestCase
@@ -402,3 +403,178 @@ class AuthenticationFlowTest(TestCase):
         response = self.client.post(reverse("users:logout"))
         self.assertRedirects(response, settings.LOGOUT_REDIRECT_URL)
         self.assertNotIn(SESSION_KEY, self.client.session)
+
+
+class ProfileEditFlowTest(TestCase):
+    """公开资料编辑和受限区域访问流程测试。
+
+    覆盖 story 1.4 的资料编辑、头像上传、当前用户隔离、缺失资料补齐、
+    登录拦截和 `next` 返回路径。
+    """
+
+    def setUp(self):
+        """准备资料编辑测试所需的两个普通用户。"""
+
+        self.user = User.objects.create_user(
+            username="profileu",
+            email="profileu@example.com",
+            password="StrongPass123",
+        )
+        self.other_user = User.objects.create_user(
+            username="otheru",
+            email="otheru@example.com",
+            password="StrongPass123",
+        )
+        self.profile_url = reverse("users:profile")
+
+    def test_profile_page_requires_login_and_preserves_next(self):
+        response = self.client.get(self.profile_url)
+
+        self.assertRedirects(
+            response,
+            f"{reverse('users:login')}?next={self.profile_url}",
+        )
+
+    def test_login_page_with_next_shows_login_required_message(self):
+        response = self.client.get(reverse("users:login"), {"next": self.profile_url})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "请先登录后继续访问该页面")
+        self.assertContains(response, f'name="next" value="{self.profile_url}"')
+
+    def test_login_with_next_returns_to_profile_page(self):
+        response = self.client.post(
+            reverse("users:login"),
+            data={
+                "username": self.user.username,
+                "password": "StrongPass123",
+                "next": self.profile_url,
+            },
+        )
+
+        self.assertRedirects(response, self.profile_url)
+
+    def test_authenticated_user_can_open_profile_form_with_current_values(self):
+        self.user.profile.nickname = "旧昵称"
+        self.user.profile.bio = "旧简介"
+        self.user.profile.save()
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.profile_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "我的资料")
+        self.assertContains(response, "旧昵称")
+        self.assertContains(response, "旧简介")
+        self.assertContains(response, 'enctype="multipart/form-data"')
+        self.assertContains(response, "保存资料")
+
+    def test_valid_profile_post_updates_current_user_and_redirects(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.profile_url,
+            data={"nickname": "新昵称", "bio": "新的公开简介"},
+            follow=True,
+        )
+
+        self.assertRedirects(response, self.profile_url)
+        self.assertContains(response, "更新成功")
+        self.user.profile.refresh_from_db()
+        self.assertEqual(self.user.profile.nickname, "新昵称")
+        self.assertEqual(self.user.profile.bio, "新的公开简介")
+
+    def test_invalid_profile_post_keeps_existing_saved_values(self):
+        self.user.profile.nickname = "原昵称"
+        self.user.profile.bio = "原简介"
+        self.user.profile.save()
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.profile_url,
+            data={"nickname": "超过十个字符的用户昵称", "bio": "不会保存"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "不超过 10 字符")
+        self.user.profile.refresh_from_db()
+        self.assertEqual(self.user.profile.nickname, "原昵称")
+        self.assertEqual(self.user.profile.bio, "原简介")
+
+    def test_empty_nickname_returns_error_and_keeps_existing_saved_values(self):
+        self.user.profile.nickname = "原昵称"
+        self.user.profile.bio = "原简介"
+        self.user.profile.save()
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.profile_url,
+            data={"nickname": "", "bio": "不会保存"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "这个字段是必填项。")
+        self.user.profile.refresh_from_db()
+        self.assertEqual(self.user.profile.nickname, "原昵称")
+        self.assertEqual(self.user.profile.bio, "原简介")
+
+    def test_avatar_upload_updates_profile_avatar_path(self):
+        self.client.force_login(self.user)
+        image = SimpleUploadedFile(
+            "Avatar.GIF",
+            b"GIF87a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00"
+            b"\xff\xff\xff,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;",
+            content_type="image/gif",
+        )
+
+        with self.settings(
+            STORAGES={
+                "default": {
+                    "BACKEND": "django.core.files.storage.InMemoryStorage",
+                },
+                "staticfiles": {
+                    "BACKEND": (
+                        "django.contrib.staticfiles.storage.StaticFilesStorage"
+                    ),
+                },
+            }
+        ):
+            response = self.client.post(
+                self.profile_url,
+                data={"nickname": "头像用户", "bio": "上传头像", "avatar": image},
+            )
+
+        self.assertRedirects(response, self.profile_url)
+        self.user.profile.refresh_from_db()
+        self.assertTrue(
+            self.user.profile.avatar.name.startswith(
+                f"avatars/users/{self.user.id}/"
+            )
+        )
+        self.assertTrue(self.user.profile.avatar.name.endswith(".gif"))
+
+    def test_profile_post_only_updates_current_user_profile(self):
+        self.other_user.profile.nickname = "他人昵称"
+        self.other_user.profile.bio = "他人简介"
+        self.other_user.profile.save()
+        self.client.force_login(self.user)
+
+        self.client.post(
+            self.profile_url,
+            data={"nickname": "本人昵称", "bio": "本人简介"},
+        )
+
+        self.user.profile.refresh_from_db()
+        self.other_user.profile.refresh_from_db()
+        self.assertEqual(self.user.profile.nickname, "本人昵称")
+        self.assertEqual(self.other_user.profile.nickname, "他人昵称")
+        self.assertEqual(self.other_user.profile.bio, "他人简介")
+
+    def test_missing_profile_is_recreated_for_authenticated_user(self):
+        self.user.profile.delete()
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.profile_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Profile.objects.filter(user=self.user).exists())

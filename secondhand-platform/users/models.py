@@ -16,7 +16,7 @@ class User(AbstractUser):
 
     username = models.CharField(
         verbose_name="用户名",
-        max_length=6,
+        max_length=10,
         validators=[MinLengthValidator(2, message="用户名长度不得少于2位")],
         unique=True,
     )
@@ -73,7 +73,6 @@ class Profile(models.Model):
         max_length=10,
         validators=[MinLengthValidator(1, message="用户昵称长度不能为空")],
         null=True,
-        blank=True,
     )
     avatar = models.ImageField(
         verbose_name="用户头像",

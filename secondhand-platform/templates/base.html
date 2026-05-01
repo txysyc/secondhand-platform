@@ -230,7 +230,8 @@
             font-weight: 700;
         }
 
-        .field input {
+        .field input,
+        .field textarea {
             width: 100%;
             min-height: 46px;
             border: 1px solid var(--color-border);
@@ -240,7 +241,17 @@
             color: var(--color-primary);
         }
 
-        .field input:focus {
+        .field textarea {
+            min-height: 132px;
+            resize: vertical;
+        }
+
+        .field input[type="file"] {
+            padding: 10px;
+        }
+
+        .field input:focus,
+        .field textarea:focus {
             outline: 3px solid rgba(161, 98, 7, 0.24);
             border-color: var(--color-accent);
         }
@@ -286,6 +297,50 @@
 
         .home-panel {
             max-width: 760px;
+        }
+
+        .profile-layout {
+            min-height: calc(100vh - 220px);
+            display: grid;
+            align-items: start;
+            grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
+            gap: 32px;
+        }
+
+        .profile-copy {
+            padding-top: 28px;
+        }
+
+        .profile-panel {
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            background: var(--color-background);
+            box-shadow: var(--shadow-soft);
+            padding: 32px;
+        }
+
+        .profile-summary {
+            margin-top: 28px;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            background: var(--color-surface);
+            padding: 18px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .profile-summary p {
+            margin: 0;
+            color: var(--color-secondary);
+        }
+
+        .avatar-preview {
+            width: 96px;
+            height: 96px;
+            border-radius: 8px;
+            object-fit: cover;
+            border: 1px solid var(--color-border);
+            background: var(--color-surface);
         }
 
         .home-actions {
@@ -373,6 +428,14 @@
             .home-actions {
                 display: grid;
             }
+
+            .profile-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .profile-copy {
+                padding-top: 0;
+            }
         }
     </style>
 </head>
@@ -387,6 +450,7 @@
             <div class="nav-actions">
                 {% if user.is_authenticated %}
                     <span class="nav-user">已登录：{{ user.username }}</span>
+                    <a class="button-secondary" href="{% url 'users:profile' %}">我的资料</a>
                     <form method="post" action="{% url 'users:logout' %}">
                         {% csrf_token %}
                         <button class="button-ghost" type="submit">退出登录</button>

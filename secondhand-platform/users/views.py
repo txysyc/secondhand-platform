@@ -6,11 +6,13 @@ from django.contrib.auth import login, logout
 from django.shortcuts import render, redirect
 from django.utils.decorators import method_decorator
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views import View
 from django.views.decorators.csrf import csrf_protect
 
-from users.forms import UserLoginForm, UserRegisterForm
+from users.forms import UserLoginForm, UserRegisterForm, ProfileForm
 from users.services import register_add_group
+from users.models import Profile
 
 
 class LoginView(View):
@@ -33,6 +35,9 @@ class LoginView(View):
         next_url = request.GET.get("next")
 
         context = {"form": form, "next": next_url}
+
+        if next_url:
+            messages.warning(request, "请先登录后继续访问该页面")
 
         return render(request, self.template_name, context=context)
 
@@ -128,5 +133,43 @@ class RegisterView(View):
             register_add_group(form)
             messages.success(request, "注册成功，请登录。")
             return redirect(settings.LOGIN_URL)
+
+        return render(request, self.template_name, context=context)
+
+
+class ProfileView(LoginRequiredMixin, View):
+    """处理当前登录用户的公开资料编辑。"""
+
+    model = Profile
+    template_name = "users/profile_form.html"
+    form_class = ProfileForm
+
+    def get(self, request, *args, **kwargs):
+        """渲染当前用户资料编辑页。"""
+
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+
+        form = self.form_class(instance=profile)
+
+        context = {"form": form}
+
+        return render(request, self.template_name, context=context)
+
+    def post(self, request, *args, **kwargs):
+        """保存当前用户提交的公开资料。"""
+
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+
+        form = self.form_class(
+            data=request.POST,
+            files=request.FILES,
+            instance=profile,
+        )
+        context = {"form": form}
+
+        if form.is_valid():
+            form.save()
+            messages.success(request, "更新成功")
+            return redirect("users:profile")
 
         return render(request, self.template_name, context=context)

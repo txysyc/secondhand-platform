@@ -7,7 +7,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.forms import UserCreationForm
 from django import forms
 
-from users.models import User
+from users.models import User, Profile
 
 
 class UserLoginForm(forms.Form):
@@ -132,3 +132,14 @@ class UserRegisterForm(UserCreationForm):
             raise forms.ValidationError("该用户名已存在")
 
         return username
+
+
+class ProfileForm(forms.ModelForm):
+    class Meta:
+        model = Profile
+        fields = ["nickname", "avatar", "bio"]
+        labels = {
+            "nickname": "用户昵称",
+            "avatar": "用户头像",
+            "bio": "用户简介",
+        }

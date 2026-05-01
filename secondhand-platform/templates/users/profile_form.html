@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}我的资料 - 二手交易平台{% endblock %}
+
+{% block content %}
+<section class="profile-layout" aria-labelledby="profile-title">
+    <div class="profile-copy">
+        <p class="eyebrow">公开资料</p>
+        <h1 id="profile-title">维护别人看到的你</h1>
+        <p class="lede">
+            这里保存昵称、头像和简介。后续商品详情和卖家主页只会展示这些公开资料字段。
+        </p>
+        <div class="profile-summary" aria-label="公开资料说明">
+            <p>账号、邮箱和密码不在此处修改。</p>
+            <p>头像用于公开展示；简介建议保持简短、真实、便于交易判断。</p>
+        </div>
+    </div>
+
+    <div class="profile-panel">
+        <form class="form-stack" method="post" enctype="multipart/form-data" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="form-errors" role="alert">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            {% for field in form %}
+                <div class="field">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+
+                    {% if field.name == "avatar" and field.value %}
+                        <img class="avatar-preview" src="{{ field.value.url }}" alt="当前头像">
+                    {% endif %}
+
+                    {{ field }}
+
+                    {% if field.help_text %}
+                        <p class="help-text">{{ field.help_text }}</p>
+                    {% endif %}
+                    {% if field.errors %}
+                        <ul class="error-list" role="alert">
+                            {% for error in field.errors %}
+                                <li>{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </div>
+            {% endfor %}
+
+            <div class="form-actions">
+                <button class="button" type="submit">保存资料</button>
+                <a class="button-secondary" href="{% url 'home' %}">返回首页</a>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}

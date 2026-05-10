@@ -72,7 +72,8 @@ class Profile(models.Model):
         verbose_name="用户昵称",
         max_length=10,
         validators=[MinLengthValidator(1, message="用户昵称长度不能为空")],
-        null=True,
+        null=False,
+        default="初始昵称",
     )
     avatar = models.ImageField(
         verbose_name="用户头像",

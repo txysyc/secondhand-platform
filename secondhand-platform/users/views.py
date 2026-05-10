@@ -151,7 +151,7 @@ class ProfileView(LoginRequiredMixin, View):
 
         form = self.form_class(instance=profile)
 
-        context = {"form": form}
+        context = {"form": form, "profile": profile}
 
         return render(request, self.template_name, context=context)
 
@@ -165,7 +165,7 @@ class ProfileView(LoginRequiredMixin, View):
             files=request.FILES,
             instance=profile,
         )
-        context = {"form": form}
+        context = {"form": form, "profile": profile}
 
         if form.is_valid():
             form.save()

@@ -90,6 +90,15 @@ class ProfileModelTest(TestCase):
 
         self.assertEqual(str(user.profile), "owner的用户资料")
 
+    def test_created_profile_uses_default_nickname(self):
+        user = User.objects.create_user(
+            username="nick",
+            email="nick@example.com",
+            password="test-pass",
+        )
+
+        self.assertEqual(user.profile.nickname, "初始昵称")
+
     def test_avatar_upload_to_uses_user_id_uuid_and_lowercase_extension(self):
         user = User.objects.create_user(
             username="avatar",
@@ -464,6 +473,9 @@ class ProfileEditFlowTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "我的资料")
+        self.assertContains(response, "别人看到的你")
+        self.assertContains(response, "@profileu")
+        self.assertContains(response, "更新资料")
         self.assertContains(response, "旧昵称")
         self.assertContains(response, "旧简介")
         self.assertContains(response, 'enctype="multipart/form-data"')

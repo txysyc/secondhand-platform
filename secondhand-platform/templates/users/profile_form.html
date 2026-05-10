@@ -4,19 +4,42 @@
 
 {% block content %}
 <section class="profile-layout" aria-labelledby="profile-title">
-    <div class="profile-copy">
-        <p class="eyebrow">公开资料</p>
-        <h1 id="profile-title">维护别人看到的你</h1>
-        <p class="lede">
-            这里保存昵称、头像和简介。后续商品详情和卖家主页只会展示这些公开资料字段。
-        </p>
+    <div class="profile-showcase">
+        <p class="eyebrow">我的资料</p>
+        <h1 id="profile-title">别人看到的你</h1>
+
+        <div class="profile-card" aria-label="公开资料预览">
+            <div class="profile-cover"></div>
+            <div class="profile-avatar-frame">
+                {% if profile.avatar %}
+                    <img class="profile-avatar" src="{{ profile.avatar.url }}" alt="{{ profile.nickname }}的头像">
+                {% else %}
+                    <span class="profile-avatar-placeholder" aria-hidden="true">{{ profile.nickname|first }}</span>
+                {% endif %}
+            </div>
+            <div class="profile-card-body">
+                <p class="profile-name">{{ profile.nickname }}</p>
+                <p class="profile-username">@{{ user.username }}</p>
+                {% if profile.bio %}
+                    <p class="profile-bio">{{ profile.bio }}</p>
+                {% else %}
+                    <p class="profile-bio profile-bio-empty">还没有填写简介。</p>
+                {% endif %}
+            </div>
+        </div>
+
         <div class="profile-summary" aria-label="公开资料说明">
+            <p>后续商品详情和卖家主页只展示头像、昵称和简介。</p>
             <p>账号、邮箱和密码不在此处修改。</p>
-            <p>头像用于公开展示；简介建议保持简短、真实、便于交易判断。</p>
         </div>
     </div>
 
     <div class="profile-panel">
+        <div class="profile-panel-header">
+            <p class="eyebrow">编辑公开信息</p>
+            <h2>更新资料</h2>
+        </div>
+
         <form class="form-stack" method="post" enctype="multipart/form-data" novalidate>
             {% csrf_token %}
 

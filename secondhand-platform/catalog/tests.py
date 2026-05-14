@@ -1,13 +1,38 @@
 from decimal import Decimal
+import shutil
+import tempfile
+from io import BytesIO
 
 from django.contrib import admin
+from django.contrib.messages import get_messages
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.urls import reverse
+from django.utils import timezone
+from PIL import Image
 
 from catalog.admin import CategoryAdmin, ListingAdmin
-from catalog.models import Category, Listing
+from catalog.forms import ListingDraftForm, ListingImageFormSet
+from catalog.models import Category, Listing, ListingImage
 from catalog.selectors import get_active_categories
+from catalog.services import create_listing_draft
+
+
+TEMP_MEDIA_ROOT = tempfile.mkdtemp()
+
+
+def create_test_image(name="test.png", size=(16, 16), image_format="PNG"):
+    image_file = BytesIO()
+    image = Image.new("RGB", size, color="white")
+    image.save(image_file, image_format)
+    content_type = f"image/{image_format.lower()}"
+    return SimpleUploadedFile(name, image_file.getvalue(), content_type=content_type)
+
+
+def create_invalid_upload(name="bad.txt"):
+    return SimpleUploadedFile(name, b"not-an-image", content_type="text/plain")
 
 
 class CategoryModelTest(TestCase):
@@ -157,3 +182,312 @@ class CatalogAdminTest(TestCase):
 
         for field in ["title", "description", "owner__username"]:
             self.assertIn(field, listing_admin.search_fields)
+
+    def test_listing_admin_exposes_image_count(self):
+        listing_admin = admin.site._registry[Listing]
+
+        self.assertIn("image_count_value", listing_admin.list_display)
+
+
+class ListingDraftFormTest(TestCase):
+    """商品草稿表单校验测试。"""
+
+    def setUp(self):
+        self.active_category = Category.objects.create(name="数码产品")
+        self.inactive_category = Category.objects.create(name="停用分类", is_active=False)
+
+    def valid_form_data(self, **overrides):
+        data = {
+            "title": "二手显示器",
+            "category": str(self.active_category.pk),
+            "item_type": Listing.ItemType.PHYSICAL,
+            "price": "300.00",
+            "condition": Listing.Condition.GOOD,
+            "description": "正常使用。",
+            "delivery_notes": "工作日晚上面交。",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "virtual_valid_until": "",
+        }
+        data.update(overrides)
+        return data
+
+    def test_category_queryset_only_contains_active_categories(self):
+        form = ListingDraftForm()
+
+        self.assertIn(self.active_category, form.fields["category"].queryset)
+        self.assertNotIn(self.inactive_category, form.fields["category"].queryset)
+
+    def test_inactive_category_submission_is_rejected(self):
+        form = ListingDraftForm(
+            data=self.valid_form_data(category=str(self.inactive_category.pk))
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("category", form.errors)
+
+    def test_physical_listing_requires_condition_and_delivery_method(self):
+        form = ListingDraftForm(
+            data=self.valid_form_data(condition="", physical_delivery_method="")
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("实体商品必须填写成色", form.errors["condition"])
+        self.assertIn("实体商品必须选择交付方式", form.errors["physical_delivery_method"])
+
+    def test_virtual_listing_requires_valid_until_and_clears_physical_fields(self):
+        future_date = timezone.localdate() + timezone.timedelta(days=7)
+        form = ListingDraftForm(
+            data=self.valid_form_data(
+                item_type=Listing.ItemType.VIRTUAL,
+                virtual_valid_until=future_date.isoformat(),
+                condition=Listing.Condition.GOOD,
+                physical_delivery_method=Listing.PhysicalDeliveryMethod.MEETUP,
+            )
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.cleaned_data["condition"])
+        self.assertIsNone(form.cleaned_data["physical_delivery_method"])
+
+    def test_virtual_listing_rejects_missing_or_past_valid_until(self):
+        missing_form = ListingDraftForm(
+            data=self.valid_form_data(item_type=Listing.ItemType.VIRTUAL)
+        )
+        past_form = ListingDraftForm(
+            data=self.valid_form_data(
+                item_type=Listing.ItemType.VIRTUAL,
+                virtual_valid_until=(timezone.localdate() - timezone.timedelta(days=1)).isoformat(),
+            )
+        )
+
+        self.assertFalse(missing_form.is_valid())
+        self.assertIn("虚拟商品需要填写有效期", missing_form.errors["virtual_valid_until"])
+        self.assertFalse(past_form.is_valid())
+        self.assertIn("有效期不能早于当前日期", past_form.errors["virtual_valid_until"])
+
+    def test_price_must_be_positive(self):
+        form = ListingDraftForm(data=self.valid_form_data(price="-1.00"))
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("价格必须大于0", form.errors["price"])
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
+class ListingDraftServiceTest(TestCase):
+    """商品草稿创建服务测试。"""
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="seller2",
+            email="seller2@example.com",
+            password="StrongPass123",
+        )
+        self.other_user = get_user_model().objects.create_user(
+            username="other",
+            email="other@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="图书")
+
+    def valid_form_data(self, **overrides):
+        data = {
+            "title": "二手教材",
+            "category": str(self.category.pk),
+            "item_type": Listing.ItemType.PHYSICAL,
+            "price": "45.00",
+            "condition": Listing.Condition.LIKE_NEW,
+            "description": "课程教材。",
+            "delivery_notes": "校门口自取。",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "virtual_valid_until": "",
+            "owner": str(self.other_user.pk),
+            "status": Listing.Status.ACTIVE,
+        }
+        data.update(overrides)
+        return data
+
+    def formset_post_data(self, total_forms):
+        return {
+            "images-TOTAL_FORMS": str(total_forms),
+            "images-INITIAL_FORMS": "0",
+            "images-MIN_NUM_FORMS": "0",
+            "images-MAX_NUM_FORMS": "6",
+        }
+
+    def test_create_physical_draft_sets_owner_status_and_sort_order(self):
+        form = ListingDraftForm(data=self.valid_form_data())
+        formset = ListingImageFormSet(
+            self.formset_post_data(2),
+            {
+                "images-0-image": create_test_image("first.png"),
+                "images-1-image": create_test_image("second.png"),
+            },
+            prefix="images",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        listing = create_listing_draft(self.user, form, formset)
+
+        self.assertEqual(listing.owner, self.user)
+        self.assertEqual(listing.status, Listing.Status.DRAFT)
+        self.assertEqual(listing.item_type, Listing.ItemType.PHYSICAL)
+        self.assertIsNone(listing.virtual_valid_until)
+        self.assertEqual(list(listing.images.values_list("sort_order", flat=True)), [0, 1])
+
+    def test_create_virtual_draft_clears_physical_fields_and_keeps_category(self):
+        future_date = timezone.localdate() + timezone.timedelta(days=3)
+        form = ListingDraftForm(
+            data=self.valid_form_data(
+                item_type=Listing.ItemType.VIRTUAL,
+                virtual_valid_until=future_date.isoformat(),
+            )
+        )
+        formset = ListingImageFormSet(self.formset_post_data(0), prefix="images")
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        listing = create_listing_draft(self.user, form, formset)
+
+        self.assertEqual(listing.item_type, Listing.ItemType.VIRTUAL)
+        self.assertIsNone(listing.condition)
+        self.assertIsNone(listing.physical_delivery_method)
+        self.assertEqual(listing.category, self.category)
+        self.assertFalse(Category.objects.filter(name="虚拟商品").exists())
+
+    def test_invalid_image_count_or_file_does_not_create_listing(self):
+        too_many_files = {
+            f"images-{index}-image": create_test_image(f"{index}.png")
+            for index in range(7)
+        }
+        form = ListingDraftForm(data=self.valid_form_data())
+        formset = ListingImageFormSet(
+            self.formset_post_data(7), too_many_files, prefix="images"
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertFalse(formset.is_valid())
+        self.assertEqual(Listing.objects.count(), 0)
+
+    def test_invalid_image_file_is_rejected_before_listing_is_created(self):
+        form = ListingDraftForm(data=self.valid_form_data())
+        formset = ListingImageFormSet(
+            self.formset_post_data(1),
+            {"images-0-image": create_invalid_upload()},
+            prefix="images",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertFalse(formset.is_valid())
+        self.assertEqual(Listing.objects.count(), 0)
+
+    def test_oversized_image_file_is_rejected_before_listing_is_created(self):
+        oversized = SimpleUploadedFile(
+            "oversized.png", b"x" * (5 * 1024 * 1024 + 1), content_type="image/png"
+        )
+        form = ListingDraftForm(data=self.valid_form_data())
+        formset = ListingImageFormSet(
+            self.formset_post_data(1),
+            {"images-0-image": oversized},
+            prefix="images",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertFalse(formset.is_valid())
+        self.assertEqual(Listing.objects.count(), 0)
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
+class ListingCreateViewTest(TestCase):
+    """商品草稿创建视图测试。"""
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="seller3",
+            email="seller3@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="生活用品")
+        self.url = reverse("catalog:listing_create")
+
+    def valid_post_data(self, **overrides):
+        data = {
+            "title": "闲置台灯",
+            "category": str(self.category.pk),
+            "item_type": Listing.ItemType.PHYSICAL,
+            "price": "25.00",
+            "condition": Listing.Condition.FAIR,
+            "description": "可以正常使用。",
+            "delivery_notes": "宿舍楼下交易。",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.BOTH,
+            "virtual_valid_until": "",
+            "images-TOTAL_FORMS": "0",
+            "images-INITIAL_FORMS": "0",
+            "images-MIN_NUM_FORMS": "0",
+            "images-MAX_NUM_FORMS": "6",
+        }
+        data.update(overrides)
+        return data
+
+    def test_guest_is_redirected_to_login_with_next(self):
+        response = self.client.get(self.url)
+
+        self.assertRedirects(response, f"{reverse('users:login')}?next={self.url}")
+
+    def test_authenticated_user_can_open_create_page(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "catalog/listing_form.html")
+        self.assertContains(response, 'enctype="multipart/form-data"')
+        self.assertContains(response, "保存草稿")
+
+    def test_valid_post_creates_draft_redirects_and_adds_message(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url, self.valid_post_data())
+
+        self.assertRedirects(response, reverse("users:profile"))
+        listing = Listing.objects.get()
+        self.assertEqual(listing.owner, self.user)
+        self.assertEqual(listing.status, Listing.Status.DRAFT)
+        messages = [message.message for message in get_messages(response.wsgi_request)]
+        self.assertIn("草稿保存成功", messages)
+
+    def test_valid_post_with_images_creates_ordered_listing_images(self):
+        self.client.force_login(self.user)
+        data = self.valid_post_data(**{"images-TOTAL_FORMS": "2"})
+        data["images-0-image"] = create_test_image("first.png")
+        data["images-1-image"] = create_test_image("second.png")
+
+        response = self.client.post(self.url, data=data)
+
+        self.assertRedirects(response, reverse("users:profile"))
+        listing = Listing.objects.get()
+        self.assertEqual(list(listing.images.values_list("sort_order", flat=True)), [0, 1])
+
+    def test_invalid_post_shows_error_and_does_not_create_listing(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.url, self.valid_post_data(condition="", physical_delivery_method="")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "实体商品必须填写成色")
+        self.assertContains(response, "实体商品必须选择交付方式")
+        self.assertEqual(Listing.objects.count(), 0)

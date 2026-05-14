@@ -10,6 +10,7 @@ urlpatterns = [
     path("", TemplateView.as_view(template_name="home.html"), name="home"),
     path("admin/", admin.site.urls),
     path("accounts/", include("users.urls", namespace="users")),
+    path("listings/", include("catalog.urls", namespace="catalog")),
 ]
 
 if settings.DEBUG:

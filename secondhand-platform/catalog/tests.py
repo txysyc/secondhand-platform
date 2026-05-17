@@ -17,8 +17,11 @@ from PIL import Image
 from catalog.admin import CategoryAdmin, ListingAdmin
 from catalog.forms import ListingForm, ListingImageFormSet
 from catalog.models import Category, Listing, ListingImage
-from catalog.selectors import get_active_categories
+from catalog.selectors import get_active_categories, get_owner_listing_groups
 from catalog.services import (
+    ACTION_RESTORE_ACTIVE,
+    ACTION_WITHDRAW,
+    change_listing_status,
     create_listing,
     delete_listing,
     publish_listing,
@@ -1095,3 +1098,490 @@ class ListingDeleteViewTest(TestCase):
 
         self.assertRedirects(response, reverse("users:profile"))
         self.assertFalse(Listing.objects.filter(pk=self.listing.pk).exists())
+
+
+class OwnerListingGroupsSelectorTest(TestCase):
+    """“我的商品”分组 selector 测试。"""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="grpseller",
+            email="grouped@example.com",
+            password="StrongPass123",
+        )
+        self.other_user = get_user_model().objects.create_user(
+            username="grpother",
+            email="grouped_other@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="电子产品")
+
+    def make_listing(self, *, owner, status, title):
+        return Listing.objects.create(
+            owner=owner,
+            category=self.category,
+            title=title,
+            item_type=Listing.ItemType.PHYSICAL,
+            status=status,
+            price=Decimal("10.00"),
+            condition=Listing.Condition.GOOD,
+            description="测试商品",
+            delivery_notes="面交",
+            physical_delivery_method=Listing.PhysicalDeliveryMethod.MEETUP,
+        )
+
+    def test_groups_returned_in_fixed_lifecycle_order(self):
+        groups = get_owner_listing_groups(self.user)
+
+        self.assertEqual(
+            [group["status"] for group in groups],
+            [
+                Listing.Status.DRAFT,
+                Listing.Status.ACTIVE,
+                Listing.Status.RESERVED,
+                Listing.Status.SOLD,
+                Listing.Status.WITHDRAWN,
+            ],
+        )
+
+    def test_empty_groups_are_still_present_with_zero_count(self):
+        groups = get_owner_listing_groups(self.user)
+
+        for group in groups:
+            self.assertEqual(group["count"], 0)
+            self.assertEqual(list(group["listings"]), [])
+            self.assertTrue(group["empty_text"])
+            self.assertTrue(group["title"])
+
+    def test_listings_are_split_into_their_status_buckets(self):
+        draft = self.make_listing(owner=self.user, status=Listing.Status.DRAFT, title="草稿一号")
+        active = self.make_listing(owner=self.user, status=Listing.Status.ACTIVE, title="在售一号")
+        reserved = self.make_listing(
+            owner=self.user, status=Listing.Status.RESERVED, title="占用一号"
+        )
+        sold = self.make_listing(owner=self.user, status=Listing.Status.SOLD, title="已售一号")
+        withdrawn = self.make_listing(
+            owner=self.user, status=Listing.Status.WITHDRAWN, title="下架一号"
+        )
+
+        groups = {group["status"]: group for group in get_owner_listing_groups(self.user)}
+
+        self.assertEqual(list(groups[Listing.Status.DRAFT]["listings"]), [draft])
+        self.assertEqual(list(groups[Listing.Status.ACTIVE]["listings"]), [active])
+        self.assertEqual(list(groups[Listing.Status.RESERVED]["listings"]), [reserved])
+        self.assertEqual(list(groups[Listing.Status.SOLD]["listings"]), [sold])
+        self.assertEqual(list(groups[Listing.Status.WITHDRAWN]["listings"]), [withdrawn])
+
+    def test_only_current_user_listings_are_returned(self):
+        own = self.make_listing(owner=self.user, status=Listing.Status.ACTIVE, title="自己")
+        self.make_listing(owner=self.other_user, status=Listing.Status.ACTIVE, title="他人")
+
+        groups = {group["status"]: group for group in get_owner_listing_groups(self.user)}
+
+        self.assertEqual(list(groups[Listing.Status.ACTIVE]["listings"]), [own])
+
+    def test_listings_inside_group_are_sorted_by_updated_at_desc(self):
+        first = self.make_listing(
+            owner=self.user, status=Listing.Status.ACTIVE, title="先发布"
+        )
+        second = self.make_listing(
+            owner=self.user, status=Listing.Status.ACTIVE, title="后发布"
+        )
+        Listing.objects.filter(pk=second.pk).update(
+            updated_at=timezone.now() + timezone.timedelta(seconds=1)
+        )
+
+        groups = {group["status"]: group for group in get_owner_listing_groups(self.user)}
+
+        active_listings = list(groups[Listing.Status.ACTIVE]["listings"])
+        self.assertEqual(active_listings[0].pk, second.pk)
+        self.assertEqual(active_listings[1].pk, first.pk)
+
+
+class ChangeListingStatusServiceTest(TestCase):
+    """商品状态变更服务测试。"""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="stseller",
+            email="status_seller@example.com",
+            password="StrongPass123",
+        )
+        self.other_user = get_user_model().objects.create_user(
+            username="stother",
+            email="status_other@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="服饰")
+
+    def make_listing(self, **overrides):
+        data = {
+            "owner": self.user,
+            "category": self.category,
+            "title": "二手外套",
+            "item_type": Listing.ItemType.PHYSICAL,
+            "status": Listing.Status.ACTIVE,
+            "price": Decimal("99.00"),
+            "condition": Listing.Condition.GOOD,
+            "description": "九成新",
+            "delivery_notes": "面交",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "published_at": timezone.now() - timezone.timedelta(days=2),
+        }
+        data.update(overrides)
+        return Listing.objects.create(**data)
+
+    def test_withdraw_active_sets_status_and_advances_updated_at(self):
+        listing = self.make_listing(status=Listing.Status.ACTIVE)
+        Listing.objects.filter(pk=listing.pk).update(
+            updated_at=timezone.now() - timezone.timedelta(seconds=1)
+        )
+        listing.refresh_from_db()
+        baseline_updated_at = listing.updated_at
+
+        result = change_listing_status(self.user, listing, ACTION_WITHDRAW)
+        result.refresh_from_db()
+
+        self.assertEqual(result.status, Listing.Status.WITHDRAWN)
+        self.assertGreater(result.updated_at, baseline_updated_at)
+        self.assertEqual(result.owner_id, self.user.id)
+        self.assertIsNotNone(result.published_at)
+
+    def test_withdraw_rejects_non_active_statuses(self):
+        for status in [
+            Listing.Status.DRAFT,
+            Listing.Status.RESERVED,
+            Listing.Status.SOLD,
+            Listing.Status.WITHDRAWN,
+        ]:
+            listing = self.make_listing(status=status)
+
+            with self.assertRaises(ValidationError):
+                change_listing_status(self.user, listing, ACTION_WITHDRAW)
+
+            listing.refresh_from_db()
+            self.assertEqual(listing.status, status)
+
+    def test_restore_active_keeps_published_at_and_returns_to_active(self):
+        published_at = timezone.now() - timezone.timedelta(days=5)
+        listing = self.make_listing(
+            status=Listing.Status.WITHDRAWN, published_at=published_at
+        )
+
+        result = change_listing_status(self.user, listing, ACTION_RESTORE_ACTIVE)
+        result.refresh_from_db()
+
+        self.assertEqual(result.status, Listing.Status.ACTIVE)
+        self.assertEqual(result.published_at, published_at)
+
+    def test_restore_active_back_fills_missing_published_at(self):
+        listing = self.make_listing(
+            status=Listing.Status.WITHDRAWN, published_at=None
+        )
+
+        before = timezone.now()
+        result = change_listing_status(self.user, listing, ACTION_RESTORE_ACTIVE)
+        result.refresh_from_db()
+
+        self.assertEqual(result.status, Listing.Status.ACTIVE)
+        self.assertIsNotNone(result.published_at)
+        self.assertGreaterEqual(
+            result.published_at, before - timezone.timedelta(seconds=1)
+        )
+
+    def test_restore_active_blocked_when_category_disabled(self):
+        listing = self.make_listing(status=Listing.Status.WITHDRAWN)
+        self.category.is_active = False
+        self.category.save(update_fields=["is_active", "updated_at"])
+
+        with self.assertRaises(ValidationError):
+            change_listing_status(self.user, listing, ACTION_RESTORE_ACTIVE)
+
+        listing.refresh_from_db()
+        self.assertEqual(listing.status, Listing.Status.WITHDRAWN)
+
+    def test_restore_active_rejects_non_withdrawn_statuses(self):
+        for status in [
+            Listing.Status.DRAFT,
+            Listing.Status.ACTIVE,
+            Listing.Status.RESERVED,
+            Listing.Status.SOLD,
+        ]:
+            listing = self.make_listing(status=status)
+
+            with self.assertRaises(ValidationError):
+                change_listing_status(self.user, listing, ACTION_RESTORE_ACTIVE)
+
+            listing.refresh_from_db()
+            self.assertEqual(listing.status, status)
+
+    def test_unknown_action_raises_validation_error(self):
+        listing = self.make_listing(status=Listing.Status.ACTIVE)
+
+        with self.assertRaises(ValidationError):
+            change_listing_status(self.user, listing, "mark_sold")
+        with self.assertRaises(ValidationError):
+            change_listing_status(self.user, listing, "")
+
+        listing.refresh_from_db()
+        self.assertEqual(listing.status, Listing.Status.ACTIVE)
+
+    def test_non_owner_cannot_change_status(self):
+        listing = self.make_listing(status=Listing.Status.ACTIVE)
+
+        with self.assertRaises(PermissionDenied):
+            change_listing_status(self.other_user, listing, ACTION_WITHDRAW)
+
+        listing.refresh_from_db()
+        self.assertEqual(listing.status, Listing.Status.ACTIVE)
+
+
+class MyListingListViewTest(TestCase):
+    """“我的商品”分组面板视图测试。"""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="pnseller",
+            email="panel@example.com",
+            password="StrongPass123",
+        )
+        self.other_user = get_user_model().objects.create_user(
+            username="pnother",
+            email="panel_other@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="收藏品")
+        self.url = reverse("catalog:my_listing_list")
+
+    def make_listing(self, *, owner, status, title):
+        return Listing.objects.create(
+            owner=owner,
+            category=self.category,
+            title=title,
+            item_type=Listing.ItemType.PHYSICAL,
+            status=status,
+            price=Decimal("88.00"),
+            condition=Listing.Condition.GOOD,
+            description="九成新",
+            delivery_notes="面交",
+            physical_delivery_method=Listing.PhysicalDeliveryMethod.MEETUP,
+        )
+
+    def test_guest_is_redirected_to_login_with_next(self):
+        response = self.client.get(self.url)
+
+        self.assertRedirects(response, f"{reverse('users:login')}?next={self.url}")
+
+    def test_authenticated_user_sees_all_five_group_titles_even_when_empty(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "catalog/my_listing_list.html")
+        for title in ["草稿", "在售", "交易占用", "已售出", "已下架"]:
+            self.assertContains(response, title)
+
+    def test_page_only_shows_current_user_listings(self):
+        own = self.make_listing(
+            owner=self.user, status=Listing.Status.ACTIVE, title="自己的相机"
+        )
+        self.make_listing(
+            owner=self.other_user, status=Listing.Status.ACTIVE, title="他人的相机"
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, own.title)
+        self.assertNotContains(response, "他人的相机")
+
+    def test_active_listing_renders_withdraw_action_form(self):
+        listing = self.make_listing(
+            owner=self.user, status=Listing.Status.ACTIVE, title="可下架"
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url)
+
+        status_url = reverse(
+            "catalog:listing_status_update", kwargs={"pk": listing.pk}
+        )
+        self.assertContains(response, f'action="{status_url}"')
+        self.assertContains(response, f'value="{ACTION_WITHDRAW}"')
+
+    def test_withdrawn_listing_renders_restore_action_form(self):
+        self.make_listing(
+            owner=self.user, status=Listing.Status.WITHDRAWN, title="可重新上架"
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, f'value="{ACTION_RESTORE_ACTIVE}"')
+        self.assertContains(response, "重新上架")
+
+    def test_reserved_and_sold_render_readonly_explanation_only(self):
+        self.make_listing(
+            owner=self.user, status=Listing.Status.RESERVED, title="占用商品"
+        )
+        self.make_listing(
+            owner=self.user, status=Listing.Status.SOLD, title="已售商品"
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, "交易占用由订单流程控制")
+        self.assertContains(response, "已售出商品不可重新上架")
+
+
+class ListingStatusUpdateViewTest(TestCase):
+    """商品状态变更视图测试。"""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="updseller",
+            email="updater@example.com",
+            password="StrongPass123",
+        )
+        self.other_user = get_user_model().objects.create_user(
+            username="updother",
+            email="updater_other@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="家电")
+        self.listing = Listing.objects.create(
+            owner=self.user,
+            category=self.category,
+            title="二手吹风机",
+            item_type=Listing.ItemType.PHYSICAL,
+            status=Listing.Status.ACTIVE,
+            price=Decimal("60.00"),
+            condition=Listing.Condition.GOOD,
+            description="九成新",
+            delivery_notes="面交",
+            physical_delivery_method=Listing.PhysicalDeliveryMethod.MEETUP,
+            published_at=timezone.now() - timezone.timedelta(days=1),
+        )
+
+    def url(self, listing=None):
+        listing = listing or self.listing
+        return reverse("catalog:listing_status_update", kwargs={"pk": listing.pk})
+
+    def test_guest_post_is_redirected_to_login_with_next(self):
+        response = self.client.post(self.url(), {"action": ACTION_WITHDRAW})
+
+        self.assertRedirects(response, f"{reverse('users:login')}?next={self.url()}")
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+
+    def test_get_does_not_change_status(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url())
+
+        self.assertEqual(response.status_code, 405)
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+
+    def test_post_withdraw_succeeds_and_redirects_with_message(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url(), {"action": ACTION_WITHDRAW})
+
+        self.assertRedirects(response, reverse("catalog:my_listing_list"))
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.WITHDRAWN)
+        flash = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertIn("商品已下架", flash)
+
+    def test_post_restore_active_succeeds_and_redirects_with_message(self):
+        self.listing.status = Listing.Status.WITHDRAWN
+        self.listing.save(update_fields=["status"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url(), {"action": ACTION_RESTORE_ACTIVE})
+
+        self.assertRedirects(response, reverse("catalog:my_listing_list"))
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+        flash = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertIn("商品已重新上架", flash)
+
+    def test_post_invalid_action_keeps_status_and_shows_chinese_error(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url(), {"action": "mark_sold"})
+
+        self.assertRedirects(response, reverse("catalog:my_listing_list"))
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+        flash = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertIn("无效的状态动作", flash)
+
+    def test_post_withdraw_on_draft_keeps_status_and_shows_error(self):
+        self.listing.status = Listing.Status.DRAFT
+        self.listing.published_at = None
+        self.listing.save(update_fields=["status", "published_at"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url(), {"action": ACTION_WITHDRAW})
+
+        self.assertRedirects(response, reverse("catalog:my_listing_list"))
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.DRAFT)
+
+    def test_post_seller_cannot_inject_status_owner_or_published_at(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.url(),
+            {
+                "action": ACTION_WITHDRAW,
+                "status": Listing.Status.SOLD,
+                "owner": str(self.other_user.pk),
+                "published_at": "1999-01-01T00:00:00Z",
+            },
+        )
+
+        self.assertRedirects(response, reverse("catalog:my_listing_list"))
+        self.listing.refresh_from_db()
+        # 即使 POST 带上伪造字段，也只走白名单动作 withdraw -> withdrawn。
+        self.assertEqual(self.listing.status, Listing.Status.WITHDRAWN)
+        self.assertEqual(self.listing.owner_id, self.user.id)
+        self.assertNotEqual(self.listing.published_at.year, 1999)
+
+    def test_non_owner_post_returns_403_and_does_not_change_status(self):
+        self.client.force_login(self.other_user)
+
+        response = self.client.post(self.url(), {"action": ACTION_WITHDRAW})
+
+        self.assertEqual(response.status_code, 403)
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+
+    def test_unknown_listing_returns_404(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("catalog:listing_status_update", kwargs={"pk": 99999}),
+            {"action": ACTION_WITHDRAW},
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_restore_active_with_disabled_category_keeps_withdrawn(self):
+        self.listing.status = Listing.Status.WITHDRAWN
+        self.listing.save(update_fields=["status"])
+        self.category.is_active = False
+        self.category.save(update_fields=["is_active", "updated_at"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url(), {"action": ACTION_RESTORE_ACTIVE})
+
+        self.assertRedirects(response, reverse("catalog:my_listing_list"))
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.WITHDRAWN)
+        flash = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertTrue(any("分类" in message for message in flash))

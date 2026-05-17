@@ -16,6 +16,11 @@ DRAFT_UPDATE_ALLOWED_INTENTS = {INTENT_SAVE_DRAFT, INTENT_PUBLISH}
 ACTIVE_UPDATE_ALLOWED_INTENTS = {INTENT_SAVE_CHANGES}
 EDITABLE_STATUSES = {Listing.Status.DRAFT, Listing.Status.ACTIVE}
 
+# 卖家手动状态动作的白名单。reserved / sold 由订单流程控制，本故事拒绝任何指向这两个状态的卖家动作。
+ACTION_WITHDRAW = "withdraw"
+ACTION_RESTORE_ACTIVE = "restore_active"
+STATUS_ACTION_ALLOWED = {ACTION_WITHDRAW, ACTION_RESTORE_ACTIVE}
+
 
 def ensure_listing_owner(user: User, listing: Listing):
     """校验当前用户是否为商品所有者。"""
@@ -207,7 +212,10 @@ def delete_listing(user: User, listing: Listing):
 
     ensure_listing_owner(user, listing)
 
-    if listing.status != Listing.Status.DRAFT and listing.status != Listing.Status.ACTIVE:
+    if (
+        listing.status != Listing.Status.DRAFT
+        and listing.status != Listing.Status.ACTIVE
+    ):
         raise ValidationError("只有草稿和发布状态的商品可以删除")
 
     files_to_delete = [image.image for image in listing.images.all()]
@@ -215,3 +223,35 @@ def delete_listing(user: User, listing: Listing):
     with transaction.atomic():
         listing.delete()
         _delete_image_files_on_commit(files_to_delete)
+
+
+def change_listing_status(user: User, listing: Listing, action: str):
+    """按白名单动作推进当前用户自己的商品状态，集中维护卖家手动可执行的流转规则:主要为商品重新上架和商品下架两种动作"""
+
+    ensure_listing_owner(user, listing)
+
+    if action not in STATUS_ACTION_ALLOWED:
+        raise ValidationError("无效的状态动作")
+
+    if action == ACTION_WITHDRAW:
+        if listing.status != Listing.Status.ACTIVE:
+            raise ValidationError("只有在售商品可以下架")
+        listing.status = Listing.Status.WITHDRAWN
+        listing.save(update_fields=["status", "updated_at"])
+        return listing
+
+    # ACTION_RESTORE_ACTIVE
+    if listing.status != Listing.Status.WITHDRAWN:
+        raise ValidationError("只有已下架商品可以重新上架")
+    # 变更时需要检测分类是否已停用
+    if not listing.category.is_active:
+        raise ValidationError("分类已停用，请先编辑商品并选择启用分类")
+
+    update_fields = ["status", "updated_at"]
+    if listing.published_at is None:
+        # 历史脏数据兜底：重新上架时保证有发布时间，避免后续公开列表筛选失效。
+        listing.published_at = timezone.now()
+        update_fields.append("published_at")
+    listing.status = Listing.Status.ACTIVE
+    listing.save(update_fields=update_fields)
+    return listing

@@ -1,14 +1,19 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
+from django.http import HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
 from catalog.forms import ListingForm, ListingImageFormSet
 from catalog.models import Listing
+from catalog.selectors import get_owner_listing_groups
 from catalog.services import (
     INTENT_PUBLISH,
     INTENT_SAVE_CHANGES,
+    ACTION_RESTORE_ACTIVE,
+    ACTION_WITHDRAW,
+    change_listing_status,
     create_listing,
     delete_listing,
     ensure_listing_owner,
@@ -154,3 +159,50 @@ class ListingDeleteView(LoginRequiredMixin, View):
 
         messages.success(request, "成功删除商品")
         return redirect("users:profile")
+
+
+class MyListingListView(LoginRequiredMixin, View):
+    """卖家“我的商品”分组面板。"""
+
+    template_name = "catalog/my_listing_list.html"
+
+    def get(self, request):
+        listing_groups = get_owner_listing_groups(request.user)
+        context = {
+            "listing_groups": listing_groups,
+            "action_withdraw": ACTION_WITHDRAW,
+            "action_restore_active": ACTION_RESTORE_ACTIVE,
+        }
+        return render(request, self.template_name, context)
+
+
+class ListingStatusUpdateView(LoginRequiredMixin, View):
+    """处理“下架”“重新上架”等卖家手动状态动作的 POST 入口。"""
+
+    model = Listing
+    http_method_names = ["post"]
+
+    SUCCESS_MESSAGES = {
+        ACTION_WITHDRAW: "商品已下架",
+        ACTION_RESTORE_ACTIVE: "商品已重新上架",
+    }
+
+    def http_method_not_allowed(self, request, *args, **kwargs):
+        # 显式 405 响应，确保 GET / PUT 等无法触发状态变更。
+        return HttpResponseNotAllowed(["POST"])
+
+    def post(self, request, pk):
+        listing = get_object_or_404(
+            self.model.objects.select_related("category"), pk=pk
+        )
+        ensure_listing_owner(request.user, listing)
+
+        action = request.POST.get("action", "")
+        try:
+            change_listing_status(request.user, listing, action)
+        except ValidationError as error:
+            messages.error(request, error.messages[0])
+            return redirect("catalog:my_listing_list")
+
+        messages.success(request, self.SUCCESS_MESSAGES.get(action, "操作成功"))
+        return redirect("catalog:my_listing_list")

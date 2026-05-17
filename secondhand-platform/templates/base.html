@@ -550,6 +550,7 @@
             <div class="nav-actions">
                 {% if user.is_authenticated %}
                     <span class="nav-user">已登录：{{ user.username }}</span>
+                    <a class="button-secondary" href="{% url 'catalog:my_listing_list' %}">我的商品</a>
                     <a class="button-secondary" href="{% url 'users:profile' %}">我的资料</a>
                     <form method="post" action="{% url 'users:logout' %}">
                         {% csrf_token %}

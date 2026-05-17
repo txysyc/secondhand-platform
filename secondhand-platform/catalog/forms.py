@@ -9,8 +9,8 @@ MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
 MAX_IMAGE_COUNT = 6
 
 
-class ListingDraftForm(forms.ModelForm):
-    """商品草稿表单，集中处理类型差异字段和用户输入校验。"""
+class ListingForm(forms.ModelForm):
+    """商品字段表单，集中处理类型差异字段和用户输入校验。"""
 
     class Meta:
         model = Listing
@@ -102,7 +102,7 @@ class BaseListingImageFormSet(BaseInlineFormSet):
             if form.cleaned_data.get("DELETE"):
                 continue
 
-            if form.cleaned_data.get("image"):
+            if form.instance.pk or form.cleaned_data.get("image"):
                 image_count += 1
 
         if image_count > MAX_IMAGE_COUNT:

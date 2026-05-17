@@ -1,23 +1,28 @@
 {% extends "base.html" %}
 
-{% block title %}发布商品草稿 - 二手交易平台{% endblock %}
+{% block title %}{{ panel_title }} - 二手交易平台{% endblock %}
 
 {% block content %}
 <section class="profile-layout" aria-labelledby="listing-form-title">
     <div class="profile-showcase">
-        <p class="eyebrow">商品草稿</p>
-        <h1 id="listing-form-title">准备发布内容</h1>
+        <p class="eyebrow">{{ page_eyebrow }}</p>
+        <h1 id="listing-form-title">{{ page_title }}</h1>
 
         <div class="profile-summary" aria-label="草稿说明">
-            <p>商品会先保存为草稿，不会出现在公开列表。</p>
-            <p>实体商品和虚拟商品需要填写不同的交付信息。</p>
+            {% if is_active_listing %}
+                <p>已发布商品的修改会直接作用于当前商品。</p>
+                <p>发布时间不会因为编辑内容而重置。</p>
+            {% else %}
+                <p>商品可以先保存为草稿，也可以在字段完整后直接发布。</p>
+                <p>实体商品和虚拟商品需要填写不同的交付信息。</p>
+            {% endif %}
         </div>
     </div>
 
     <div class="profile-panel">
         <div class="profile-panel-header">
             <p class="eyebrow">发布信息</p>
-            <h2>创建草稿</h2>
+            <h2>{{ panel_title }}</h2>
         </div>
 
         <form class="form-stack" method="post" enctype="multipart/form-data" novalidate>
@@ -76,6 +81,12 @@
                         {% endfor %}
                         <div class="field image-form">
                             {{ image_form.image }}
+                            {% if image_form.DELETE %}
+                                <label for="{{ image_form.DELETE.id_for_label }}">
+                                    {{ image_form.DELETE }}
+                                    删除这张图片
+                                </label>
+                            {% endif %}
                             {% if image_form.image.errors %}
                                 <ul class="error-list" role="alert">
                                     {% for error in image_form.image.errors %}
@@ -95,7 +106,15 @@
             </div>
 
             <div class="form-actions">
-                <button class="button" type="submit">保存草稿</button>
+                {% if is_active_listing %}
+                    <button class="button" type="submit" name="intent" value="save_changes">保存修改</button>
+                {% else %}
+                    <button class="button" type="submit" name="intent" value="save_draft">保存草稿</button>
+                    <button class="button-secondary" type="submit" name="intent" value="publish">发布商品</button>
+                {% endif %}
+                {% if not is_create %}
+                    <a class="button-secondary" href="{% url 'catalog:listing_delete' listing.pk %}">删除商品</a>
+                {% endif %}
                 <a class="button-secondary" href="{% url 'home' %}">返回首页</a>
             </div>
         </form>
@@ -111,7 +130,6 @@
         const imageForms = document.getElementById("image-forms");
         const emptyImageForm = document.getElementById("empty-image-form");
         const totalForms = document.getElementById("id_{{ formset.prefix }}-TOTAL_FORMS");
-        const maxForms = document.getElementById("id_{{ formset.prefix }}-MAX_NUM_FORMS");
 
         function updateTypeFields() {
             const isPhysical = typeField.value === "physical";
@@ -134,22 +152,12 @@
         if (addImageButton && imageForms && emptyImageForm && totalForms) {
             addImageButton.addEventListener("click", function () {
                 const formIndex = Number.parseInt(totalForms.value, 10);
-                const maxCount = Number.parseInt(maxForms.value || "6", 10);
-
-                if (formIndex >= maxCount) {
-                    addImageButton.disabled = true;
-                    return;
-                }
 
                 const wrapper = document.createElement("div");
                 // Django formset 依赖连续索引字段名，新增表单时必须替换 __prefix__ 并递增 TOTAL_FORMS。
                 wrapper.innerHTML = emptyImageForm.innerHTML.replace(/__prefix__/g, formIndex);
                 imageForms.appendChild(wrapper.firstElementChild);
                 totalForms.value = formIndex + 1;
-
-                if (formIndex + 1 >= maxCount) {
-                    addImageButton.disabled = true;
-                }
             });
         }
     })();

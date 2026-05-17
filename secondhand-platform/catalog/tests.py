@@ -6,6 +6,7 @@ from io import BytesIO
 from django.contrib import admin
 from django.contrib.messages import get_messages
 from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
@@ -14,10 +15,15 @@ from django.utils import timezone
 from PIL import Image
 
 from catalog.admin import CategoryAdmin, ListingAdmin
-from catalog.forms import ListingDraftForm, ListingImageFormSet
+from catalog.forms import ListingForm, ListingImageFormSet
 from catalog.models import Category, Listing, ListingImage
 from catalog.selectors import get_active_categories
-from catalog.services import create_listing_draft
+from catalog.services import (
+    create_listing,
+    delete_listing,
+    publish_listing,
+    update_listing,
+)
 
 
 TEMP_MEDIA_ROOT = tempfile.mkdtemp()
@@ -144,6 +150,11 @@ class ListingModelTest(TestCase):
         self.assertEqual(listing.price, Decimal("12.30"))
         self.assertEqual(abs(listing.price.as_tuple().exponent), 2)
 
+    def test_listing_published_at_defaults_to_none(self):
+        listing = self.create_listing()
+
+        self.assertIsNone(listing.published_at)
+
 
 class CatalogAdminTest(TestCase):
     """catalog 后台注册与配置测试。"""
@@ -172,6 +183,7 @@ class CatalogAdminTest(TestCase):
             "item_type",
             "status",
             "price",
+            "published_at",
             "created_at",
             "updated_at",
         ]:
@@ -189,8 +201,8 @@ class CatalogAdminTest(TestCase):
         self.assertIn("image_count_value", listing_admin.list_display)
 
 
-class ListingDraftFormTest(TestCase):
-    """商品草稿表单校验测试。"""
+class ListingFormTest(TestCase):
+    """商品字段表单校验测试。"""
 
     def setUp(self):
         self.active_category = Category.objects.create(name="数码产品")
@@ -212,13 +224,13 @@ class ListingDraftFormTest(TestCase):
         return data
 
     def test_category_queryset_only_contains_active_categories(self):
-        form = ListingDraftForm()
+        form = ListingForm()
 
         self.assertIn(self.active_category, form.fields["category"].queryset)
         self.assertNotIn(self.inactive_category, form.fields["category"].queryset)
 
     def test_inactive_category_submission_is_rejected(self):
-        form = ListingDraftForm(
+        form = ListingForm(
             data=self.valid_form_data(category=str(self.inactive_category.pk))
         )
 
@@ -226,7 +238,7 @@ class ListingDraftFormTest(TestCase):
         self.assertIn("category", form.errors)
 
     def test_physical_listing_requires_condition_and_delivery_method(self):
-        form = ListingDraftForm(
+        form = ListingForm(
             data=self.valid_form_data(condition="", physical_delivery_method="")
         )
 
@@ -236,7 +248,7 @@ class ListingDraftFormTest(TestCase):
 
     def test_virtual_listing_requires_valid_until_and_clears_physical_fields(self):
         future_date = timezone.localdate() + timezone.timedelta(days=7)
-        form = ListingDraftForm(
+        form = ListingForm(
             data=self.valid_form_data(
                 item_type=Listing.ItemType.VIRTUAL,
                 virtual_valid_until=future_date.isoformat(),
@@ -250,10 +262,10 @@ class ListingDraftFormTest(TestCase):
         self.assertIsNone(form.cleaned_data["physical_delivery_method"])
 
     def test_virtual_listing_rejects_missing_or_past_valid_until(self):
-        missing_form = ListingDraftForm(
+        missing_form = ListingForm(
             data=self.valid_form_data(item_type=Listing.ItemType.VIRTUAL)
         )
-        past_form = ListingDraftForm(
+        past_form = ListingForm(
             data=self.valid_form_data(
                 item_type=Listing.ItemType.VIRTUAL,
                 virtual_valid_until=(timezone.localdate() - timezone.timedelta(days=1)).isoformat(),
@@ -266,7 +278,7 @@ class ListingDraftFormTest(TestCase):
         self.assertIn("有效期不能早于当前日期", past_form.errors["virtual_valid_until"])
 
     def test_price_must_be_positive(self):
-        form = ListingDraftForm(data=self.valid_form_data(price="-1.00"))
+        form = ListingForm(data=self.valid_form_data(price="-1.00"))
 
         self.assertFalse(form.is_valid())
         self.assertIn("价格必须大于0", form.errors["price"])
@@ -320,7 +332,7 @@ class ListingDraftServiceTest(TestCase):
         }
 
     def test_create_physical_draft_sets_owner_status_and_sort_order(self):
-        form = ListingDraftForm(data=self.valid_form_data())
+        form = ListingForm(data=self.valid_form_data())
         formset = ListingImageFormSet(
             self.formset_post_data(2),
             {
@@ -333,7 +345,7 @@ class ListingDraftServiceTest(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
         self.assertTrue(formset.is_valid(), formset.errors)
 
-        listing = create_listing_draft(self.user, form, formset)
+        listing = create_listing(self.user, form, formset, "save_draft")
 
         self.assertEqual(listing.owner, self.user)
         self.assertEqual(listing.status, Listing.Status.DRAFT)
@@ -341,9 +353,22 @@ class ListingDraftServiceTest(TestCase):
         self.assertIsNone(listing.virtual_valid_until)
         self.assertEqual(list(listing.images.values_list("sort_order", flat=True)), [0, 1])
 
+    def test_create_publish_sets_active_status_published_at_and_owner(self):
+        form = ListingForm(data=self.valid_form_data())
+        formset = ListingImageFormSet(self.formset_post_data(0), prefix="images")
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        listing = create_listing(self.user, form, formset, "publish")
+
+        self.assertEqual(listing.owner, self.user)
+        self.assertEqual(listing.status, Listing.Status.ACTIVE)
+        self.assertIsNotNone(listing.published_at)
+
     def test_create_virtual_draft_clears_physical_fields_and_keeps_category(self):
         future_date = timezone.localdate() + timezone.timedelta(days=3)
-        form = ListingDraftForm(
+        form = ListingForm(
             data=self.valid_form_data(
                 item_type=Listing.ItemType.VIRTUAL,
                 virtual_valid_until=future_date.isoformat(),
@@ -354,7 +379,7 @@ class ListingDraftServiceTest(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
         self.assertTrue(formset.is_valid(), formset.errors)
 
-        listing = create_listing_draft(self.user, form, formset)
+        listing = create_listing(self.user, form, formset, "save_draft")
 
         self.assertEqual(listing.item_type, Listing.ItemType.VIRTUAL)
         self.assertIsNone(listing.condition)
@@ -367,7 +392,7 @@ class ListingDraftServiceTest(TestCase):
             f"images-{index}-image": create_test_image(f"{index}.png")
             for index in range(7)
         }
-        form = ListingDraftForm(data=self.valid_form_data())
+        form = ListingForm(data=self.valid_form_data())
         formset = ListingImageFormSet(
             self.formset_post_data(7), too_many_files, prefix="images"
         )
@@ -377,7 +402,7 @@ class ListingDraftServiceTest(TestCase):
         self.assertEqual(Listing.objects.count(), 0)
 
     def test_invalid_image_file_is_rejected_before_listing_is_created(self):
-        form = ListingDraftForm(data=self.valid_form_data())
+        form = ListingForm(data=self.valid_form_data())
         formset = ListingImageFormSet(
             self.formset_post_data(1),
             {"images-0-image": create_invalid_upload()},
@@ -388,11 +413,21 @@ class ListingDraftServiceTest(TestCase):
         self.assertFalse(formset.is_valid())
         self.assertEqual(Listing.objects.count(), 0)
 
+    def test_invalid_create_intent_is_rejected(self):
+        form = ListingForm(data=self.valid_form_data())
+        formset = ListingImageFormSet(self.formset_post_data(0), prefix="images")
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        with self.assertRaises(ValidationError):
+            create_listing(self.user, form, formset, "bad_intent")
+
     def test_oversized_image_file_is_rejected_before_listing_is_created(self):
         oversized = SimpleUploadedFile(
             "oversized.png", b"x" * (5 * 1024 * 1024 + 1), content_type="image/png"
         )
-        form = ListingDraftForm(data=self.valid_form_data())
+        form = ListingForm(data=self.valid_form_data())
         formset = ListingImageFormSet(
             self.formset_post_data(1),
             {"images-0-image": oversized},
@@ -402,6 +437,255 @@ class ListingDraftServiceTest(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
         self.assertFalse(formset.is_valid())
         self.assertEqual(Listing.objects.count(), 0)
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
+class ListingUpdateServiceTest(TestCase):
+    """商品更新服务测试。"""
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="seller4",
+            email="seller4@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="文具")
+        self.listing = Listing.objects.create(
+            owner=self.user,
+            category=self.category,
+            title="旧书",
+            item_type=Listing.ItemType.PHYSICAL,
+            status=Listing.Status.DRAFT,
+            price=Decimal("20.00"),
+            condition=Listing.Condition.GOOD,
+            description="旧描述",
+            delivery_notes="面交",
+            physical_delivery_method=Listing.PhysicalDeliveryMethod.MEETUP,
+        )
+
+    def valid_form_data(self, **overrides):
+        data = {
+            "title": "更新后的旧书",
+            "category": str(self.category.pk),
+            "item_type": Listing.ItemType.PHYSICAL,
+            "price": "21.00",
+            "condition": Listing.Condition.GOOD,
+            "description": "更新后的描述",
+            "delivery_notes": "校门口面交",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "virtual_valid_until": "",
+        }
+        data.update(overrides)
+        return data
+
+    def create_images(self, count):
+        return [
+            ListingImage.objects.create(
+                listing=self.listing,
+                image=create_test_image(f"existing-{index}.png"),
+                sort_order=index,
+            )
+            for index in range(count)
+        ]
+
+    def formset_post_data(self, images, total_forms, deleted_indexes=None):
+        deleted_indexes = deleted_indexes or set()
+        data = {
+            "images-TOTAL_FORMS": str(total_forms),
+            "images-INITIAL_FORMS": str(len(images)),
+            "images-MIN_NUM_FORMS": "0",
+            "images-MAX_NUM_FORMS": "6",
+        }
+        for index, image in enumerate(images):
+            data[f"images-{index}-id"] = str(image.pk)
+            if index in deleted_indexes:
+                data[f"images-{index}-DELETE"] = "on"
+        return data
+
+    def test_formset_counts_final_images_after_deleting_existing_and_adding_new(self):
+        images = self.create_images(4)
+        data = self.formset_post_data(images, total_forms=7, deleted_indexes={1})
+        files = {
+            "images-4-image": create_test_image("new-4.png"),
+            "images-5-image": create_test_image("new-5.png"),
+            "images-6-image": create_test_image("new-6.png"),
+        }
+        formset = ListingImageFormSet(data, files, instance=self.listing, prefix="images")
+
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+    def test_formset_rejects_more_than_six_final_images(self):
+        images = self.create_images(4)
+        data = self.formset_post_data(images, total_forms=7)
+        files = {
+            "images-4-image": create_test_image("new-4.png"),
+            "images-5-image": create_test_image("new-5.png"),
+            "images-6-image": create_test_image("new-6.png"),
+        }
+        formset = ListingImageFormSet(data, files, instance=self.listing, prefix="images")
+
+        self.assertFalse(formset.is_valid())
+
+    def test_publish_draft_sets_active_status_published_at_and_keeps_owner(self):
+        form = ListingForm(data=self.valid_form_data(), instance=self.listing)
+        formset = ListingImageFormSet(
+            self.formset_post_data([], total_forms=0),
+            instance=self.listing,
+            prefix="images",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        listing = update_listing(self.user, self.listing, form, formset, "publish")
+
+        self.assertEqual(listing.owner, self.user)
+        self.assertEqual(listing.status, Listing.Status.ACTIVE)
+        self.assertIsNotNone(listing.published_at)
+
+    def test_publish_listing_rejects_non_draft_listing(self):
+        self.listing.status = Listing.Status.ACTIVE
+        self.listing.published_at = timezone.now()
+
+        with self.assertRaises(ValidationError):
+            publish_listing(self.user, self.listing)
+
+    def test_non_owner_cannot_update_listing(self):
+        other_user = get_user_model().objects.create_user(
+            username="other4",
+            email="other4@example.com",
+            password="StrongPass123",
+        )
+        form = ListingForm(data=self.valid_form_data(), instance=self.listing)
+        formset = ListingImageFormSet(
+            self.formset_post_data([], total_forms=0),
+            instance=self.listing,
+            prefix="images",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        with self.assertRaises(PermissionDenied):
+            update_listing(other_user, self.listing, form, formset, "save_draft")
+
+    def test_active_listing_save_changes_keeps_status_owner_and_published_at(self):
+        published_at = timezone.now() - timezone.timedelta(days=2)
+        self.listing.status = Listing.Status.ACTIVE
+        self.listing.published_at = published_at
+        self.listing.save(update_fields=["status", "published_at"])
+        form = ListingForm(
+            data=self.valid_form_data(
+                title="已发布商品新标题",
+                owner="999",
+                status=Listing.Status.DRAFT,
+                published_at="1999-01-01T00:00:00Z",
+            ),
+            instance=self.listing,
+        )
+        formset = ListingImageFormSet(
+            self.formset_post_data([], total_forms=0),
+            instance=self.listing,
+            prefix="images",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        listing = update_listing(self.user, self.listing, form, formset, "save_changes")
+        listing.refresh_from_db()
+
+        self.assertEqual(listing.title, "已发布商品新标题")
+        self.assertEqual(listing.owner, self.user)
+        self.assertEqual(listing.status, Listing.Status.ACTIVE)
+        self.assertEqual(listing.published_at, published_at)
+
+    def test_active_listing_rejects_save_draft_and_publish_intents(self):
+        self.listing.status = Listing.Status.ACTIVE
+        self.listing.published_at = timezone.now()
+        self.listing.save(update_fields=["status", "published_at"])
+
+        for intent in ["save_draft", "publish"]:
+            form = ListingForm(data=self.valid_form_data(), instance=self.listing)
+            formset = ListingImageFormSet(
+                self.formset_post_data([], total_forms=0),
+                instance=self.listing,
+                prefix="images",
+            )
+
+            self.assertTrue(form.is_valid(), form.errors)
+            self.assertTrue(formset.is_valid(), formset.errors)
+
+            with self.assertRaises(ValidationError):
+                update_listing(self.user, self.listing, form, formset, intent)
+
+    def test_update_deletes_existing_image_adds_new_images_and_reorders(self):
+        images = self.create_images(4)
+        deleted_file = images[1].image
+        deleted_file_name = deleted_file.name
+        form = ListingForm(data=self.valid_form_data(), instance=self.listing)
+        data = self.formset_post_data(images, total_forms=7, deleted_indexes={1})
+        files = {
+            "images-4-image": create_test_image("new-4.png"),
+            "images-5-image": create_test_image("new-5.png"),
+            "images-6-image": create_test_image("new-6.png"),
+        }
+        formset = ListingImageFormSet(data, files, instance=self.listing, prefix="images")
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            update_listing(self.user, self.listing, form, formset, "save_draft")
+
+        self.assertEqual(self.listing.images.count(), 6)
+        self.assertEqual(
+            list(self.listing.images.values_list("sort_order", flat=True)),
+            [0, 1, 2, 3, 4, 5],
+        )
+        self.assertFalse(deleted_file.storage.exists(deleted_file_name))
+
+    def test_update_rejects_invalid_intent(self):
+        images = self.create_images(1)
+        form = ListingForm(data=self.valid_form_data(), instance=self.listing)
+        formset = ListingImageFormSet(
+            self.formset_post_data(images, total_forms=1),
+            instance=self.listing,
+            prefix="images",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        with self.assertRaises(ValidationError):
+            update_listing(self.user, self.listing, form, formset, "bad_intent")
+
+    def test_delete_listing_removes_image_files_after_commit(self):
+        images = self.create_images(2)
+        file_fields = [image.image for image in images]
+        file_names = [file_field.name for file_field in file_fields]
+
+        with self.captureOnCommitCallbacks(execute=True):
+            delete_listing(self.user, self.listing)
+
+        self.assertFalse(Listing.objects.filter(pk=self.listing.pk).exists())
+        for file_field, file_name in zip(file_fields, file_names):
+            self.assertFalse(file_field.storage.exists(file_name))
+
+    def test_delete_listing_rejects_reserved_and_sold_statuses(self):
+        for status in [Listing.Status.RESERVED, Listing.Status.SOLD]:
+            self.listing.status = status
+            self.listing.save(update_fields=["status"])
+
+            with self.assertRaises(ValidationError):
+                delete_listing(self.user, self.listing)
+
+            self.assertTrue(Listing.objects.filter(pk=self.listing.pk).exists())
 
 
 @override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
@@ -437,6 +721,7 @@ class ListingCreateViewTest(TestCase):
             "images-INITIAL_FORMS": "0",
             "images-MIN_NUM_FORMS": "0",
             "images-MAX_NUM_FORMS": "6",
+            "intent": "save_draft",
         }
         data.update(overrides)
         return data
@@ -461,12 +746,38 @@ class ListingCreateViewTest(TestCase):
 
         response = self.client.post(self.url, self.valid_post_data())
 
-        self.assertRedirects(response, reverse("users:profile"))
         listing = Listing.objects.get()
+        self.assertRedirects(
+            response, reverse("catalog:listing_edit", kwargs={"pk": listing.pk})
+        )
         self.assertEqual(listing.owner, self.user)
         self.assertEqual(listing.status, Listing.Status.DRAFT)
         messages = [message.message for message in get_messages(response.wsgi_request)]
         self.assertIn("草稿保存成功", messages)
+
+    def test_valid_publish_post_creates_active_listing(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url, self.valid_post_data(intent="publish"))
+
+        listing = Listing.objects.get()
+        self.assertRedirects(
+            response, reverse("catalog:listing_edit", kwargs={"pk": listing.pk})
+        )
+        self.assertEqual(listing.owner, self.user)
+        self.assertEqual(listing.status, Listing.Status.ACTIVE)
+        self.assertIsNotNone(listing.published_at)
+        messages = [message.message for message in get_messages(response.wsgi_request)]
+        self.assertIn("商品已发布", messages)
+
+    def test_invalid_intent_post_shows_error_and_does_not_create_listing(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url, self.valid_post_data(intent="bad_intent"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "无效的提交操作")
+        self.assertEqual(Listing.objects.count(), 0)
 
     def test_valid_post_with_images_creates_ordered_listing_images(self):
         self.client.force_login(self.user)
@@ -476,8 +787,10 @@ class ListingCreateViewTest(TestCase):
 
         response = self.client.post(self.url, data=data)
 
-        self.assertRedirects(response, reverse("users:profile"))
         listing = Listing.objects.get()
+        self.assertRedirects(
+            response, reverse("catalog:listing_edit", kwargs={"pk": listing.pk})
+        )
         self.assertEqual(list(listing.images.values_list("sort_order", flat=True)), [0, 1])
 
     def test_invalid_post_shows_error_and_does_not_create_listing(self):
@@ -491,3 +804,294 @@ class ListingCreateViewTest(TestCase):
         self.assertContains(response, "实体商品必须填写成色")
         self.assertContains(response, "实体商品必须选择交付方式")
         self.assertEqual(Listing.objects.count(), 0)
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
+class ListingUpdateViewTest(TestCase):
+    """商品编辑视图测试。"""
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="seller5",
+            email="seller5@example.com",
+            password="StrongPass123",
+        )
+        self.other_user = get_user_model().objects.create_user(
+            username="other5",
+            email="other5@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="家具")
+        self.listing = Listing.objects.create(
+            owner=self.user,
+            category=self.category,
+            title="旧椅子",
+            item_type=Listing.ItemType.PHYSICAL,
+            status=Listing.Status.DRAFT,
+            price=Decimal("35.00"),
+            condition=Listing.Condition.FAIR,
+            description="可正常使用。",
+            delivery_notes="自提",
+            physical_delivery_method=Listing.PhysicalDeliveryMethod.MEETUP,
+        )
+
+    def url(self, listing=None):
+        listing = listing or self.listing
+        return reverse("catalog:listing_edit", kwargs={"pk": listing.pk})
+
+    def valid_post_data(self, **overrides):
+        data = {
+            "title": "更新后的旧椅子",
+            "category": str(self.category.pk),
+            "item_type": Listing.ItemType.PHYSICAL,
+            "price": "40.00",
+            "condition": Listing.Condition.GOOD,
+            "description": "更新后的描述。",
+            "delivery_notes": "校门口自提",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "virtual_valid_until": "",
+            "images-TOTAL_FORMS": "0",
+            "images-INITIAL_FORMS": "0",
+            "images-MIN_NUM_FORMS": "0",
+            "images-MAX_NUM_FORMS": "6",
+            "intent": "save_draft",
+        }
+        data.update(overrides)
+        return data
+
+    def test_guest_is_redirected_to_login_with_next(self):
+        response = self.client.get(self.url())
+
+        self.assertRedirects(response, f"{reverse('users:login')}?next={self.url()}")
+
+    def test_owner_can_open_edit_page_with_bound_formset(self):
+        ListingImage.objects.create(
+            listing=self.listing,
+            image=create_test_image("existing.png"),
+            sort_order=0,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "catalog/listing_form.html")
+        self.assertContains(response, "更新后的旧椅子", count=0)
+        self.assertContains(response, self.listing.title)
+        self.assertContains(response, "删除这张图片")
+        self.assertContains(response, "发布商品")
+
+    def test_non_owner_get_returns_403(self):
+        self.client.force_login(self.other_user)
+
+        response = self.client.get(self.url())
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_non_owner_post_returns_403_and_does_not_change_listing(self):
+        self.client.force_login(self.other_user)
+
+        response = self.client.post(self.url(), self.valid_post_data())
+
+        self.assertEqual(response.status_code, 403)
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.title, "旧椅子")
+
+    def test_update_draft_with_save_draft_changes_editable_fields(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url(), self.valid_post_data())
+
+        self.assertRedirects(response, self.url())
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.title, "更新后的旧椅子")
+        self.assertEqual(self.listing.status, Listing.Status.DRAFT)
+        self.assertIsNone(self.listing.published_at)
+
+    def test_update_draft_with_publish_sets_active_and_published_at(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url(), self.valid_post_data(intent="publish"))
+
+        self.assertRedirects(response, self.url())
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+        self.assertIsNotNone(self.listing.published_at)
+        self.assertEqual(self.listing.owner, self.user)
+
+    def test_get_does_not_publish_listing(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url())
+
+        self.assertEqual(response.status_code, 200)
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.DRAFT)
+        self.assertIsNone(self.listing.published_at)
+
+    def test_active_edit_page_only_shows_save_changes_button(self):
+        self.listing.status = Listing.Status.ACTIVE
+        self.listing.published_at = timezone.now()
+        self.listing.save(update_fields=["status", "published_at"])
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url())
+
+        self.assertContains(response, "保存修改")
+        self.assertNotContains(response, 'value="save_draft"')
+        self.assertNotContains(response, 'value="publish"')
+
+    def test_active_listing_save_changes_keeps_status_and_published_at(self):
+        published_at = timezone.now() - timezone.timedelta(days=1)
+        self.listing.status = Listing.Status.ACTIVE
+        self.listing.published_at = published_at
+        self.listing.save(update_fields=["status", "published_at"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.url(),
+            self.valid_post_data(
+                intent="save_changes",
+                owner=str(self.other_user.pk),
+                status=Listing.Status.DRAFT,
+                published_at="1999-01-01T00:00:00Z",
+            ),
+        )
+
+        self.assertRedirects(response, self.url())
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.title, "更新后的旧椅子")
+        self.assertEqual(self.listing.owner, self.user)
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+        self.assertEqual(self.listing.published_at, published_at)
+
+    def test_active_listing_rejects_publish_intent(self):
+        published_at = timezone.now()
+        self.listing.status = Listing.Status.ACTIVE
+        self.listing.published_at = published_at
+        self.listing.save(update_fields=["status", "published_at"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url(), self.valid_post_data(intent="publish"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "无效的提交操作")
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+        self.assertEqual(self.listing.published_at, published_at)
+
+    def test_inactive_category_submission_is_rejected_on_edit(self):
+        inactive_category = Category.objects.create(name="停用家具", is_active=False)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.url(),
+            self.valid_post_data(category=str(inactive_category.pk)),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "选择一个有效的选项")
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.category, self.category)
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
+class ListingDeleteViewTest(TestCase):
+    """商品删除视图测试。"""
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="seller6",
+            email="seller6@example.com",
+            password="StrongPass123",
+        )
+        self.other_user = get_user_model().objects.create_user(
+            username="other6",
+            email="other6@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="运动用品")
+        self.listing = Listing.objects.create(
+            owner=self.user,
+            category=self.category,
+            title="篮球",
+            item_type=Listing.ItemType.PHYSICAL,
+            status=Listing.Status.DRAFT,
+            price=Decimal("50.00"),
+            condition=Listing.Condition.GOOD,
+            description="九成新。",
+            delivery_notes="面交",
+            physical_delivery_method=Listing.PhysicalDeliveryMethod.MEETUP,
+        )
+
+    def url(self, listing=None):
+        listing = listing or self.listing
+        return reverse("catalog:listing_delete", kwargs={"pk": listing.pk})
+
+    def test_guest_is_redirected_to_login_with_next(self):
+        response = self.client.get(self.url())
+
+        self.assertRedirects(response, f"{reverse('users:login')}?next={self.url()}")
+
+    def test_get_renders_confirmation_and_does_not_delete(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "catalog/listing_confirm_delete.html")
+        self.assertContains(response, "确认删除商品")
+        self.assertTrue(Listing.objects.filter(pk=self.listing.pk).exists())
+
+    def test_non_owner_get_returns_403(self):
+        self.client.force_login(self.other_user)
+
+        response = self.client.get(self.url())
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_non_owner_post_returns_403_and_does_not_delete(self):
+        self.client.force_login(self.other_user)
+
+        response = self.client.post(self.url())
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Listing.objects.filter(pk=self.listing.pk).exists())
+
+    def test_post_deletes_own_draft_listing_and_images(self):
+        image = ListingImage.objects.create(
+            listing=self.listing,
+            image=create_test_image("delete-me.png"),
+            sort_order=0,
+        )
+        image_name = image.image.name
+        self.client.force_login(self.user)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(self.url())
+
+        self.assertRedirects(response, reverse("users:profile"))
+        self.assertFalse(Listing.objects.filter(pk=self.listing.pk).exists())
+        self.assertFalse(ListingImage.objects.filter(pk=image.pk).exists())
+        self.assertFalse(image.image.storage.exists(image_name))
+
+    def test_post_deletes_own_active_listing(self):
+        self.listing.status = Listing.Status.ACTIVE
+        self.listing.published_at = timezone.now()
+        self.listing.save(update_fields=["status", "published_at"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url())
+
+        self.assertRedirects(response, reverse("users:profile"))
+        self.assertFalse(Listing.objects.filter(pk=self.listing.pk).exists())

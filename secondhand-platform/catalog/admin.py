@@ -32,6 +32,7 @@ class ListingAdmin(admin.ModelAdmin):
         "status",
         "price",
         "image_count_value",
+        "published_at",
         "created_at",
         "updated_at",
         "condition",
@@ -46,7 +47,7 @@ class ListingAdmin(admin.ModelAdmin):
         "created_at",
     ]
     list_select_related = ["owner", "category"]
-    readonly_fields = ["created_at", "updated_at"]
+    readonly_fields = ["created_at", "updated_at", "published_at"]
     search_fields = ["id", "title", "description", "owner__username", "category__name"]
     list_per_page = 20
     inlines = [ListingInline]

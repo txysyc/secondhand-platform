@@ -94,6 +94,7 @@ class Listing(models.Model):
     description = models.TextField(verbose_name="描述")
     created_at = models.DateTimeField(verbose_name="创建时间", auto_now_add=True)
     updated_at = models.DateTimeField(verbose_name="更新时间", auto_now=True)
+    published_at = models.DateTimeField(verbose_name="发布时间", null=True, blank=True)
     condition = models.CharField(
         verbose_name="成色",
         choices=Condition.choices,

@@ -473,9 +473,9 @@ class ProfileEditFlowTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "我的资料")
-        self.assertContains(response, "别人看到的你")
+        self.assertContains(response, "个人中心")
         self.assertContains(response, "@profileu")
-        self.assertContains(response, "更新资料")
+        self.assertContains(response, "编辑资料")
         self.assertContains(response, "旧昵称")
         self.assertContains(response, "旧简介")
         self.assertContains(response, 'enctype="multipart/form-data"')

@@ -1,5 +1,7 @@
+from typing import Any
 from collections import OrderedDict
 
+from django.db.models import Q
 from catalog.models import Category, Listing
 
 
@@ -83,3 +85,49 @@ def get_owner_listing_groups(user):
         bucket["count"] += 1
 
     return list(groups.values())
+
+
+def get_publish_listing_queryset(cleaned_data: dict[str, Any] | None = None):
+
+    listing_queryset = (
+        Listing.objects.filter(status=Listing.Status.ACTIVE, category__is_active=True)
+        .select_related("category", "owner", "owner__profile")
+        .prefetch_related("images")
+        .order_by("-published_at", "-id")
+    )
+    if not cleaned_data:
+        return listing_queryset
+    q = cleaned_data.get("q")
+    if q and q != "":
+        listing_queryset = listing_queryset.filter(
+            Q(title__icontains=q) | Q(description__icontains=q)
+        )
+
+    category = cleaned_data.get("category")
+    if category is not None:
+        listing_queryset = listing_queryset.filter(category=category)
+
+    item_type = cleaned_data.get("item_type")
+    if item_type is not None and item_type != "":
+        listing_queryset = listing_queryset.filter(item_type=item_type)
+
+    max_price = cleaned_data.get("max_price")
+    min_price = cleaned_data.get("min_price")
+    if max_price is not None and min_price is not None:
+        listing_queryset = listing_queryset.filter(
+            price__lte=max_price, price__gte=min_price
+        )
+
+    sort = cleaned_data.get("sort")
+    if sort:
+        match sort:
+            case "newest":
+                listing_queryset = listing_queryset.order_by("-published_at")
+            case "oldest":
+                listing_queryset = listing_queryset.order_by("published_at")
+            case "price_asc":
+                listing_queryset = listing_queryset.order_by("price", "id")
+            case "price_desc":
+                listing_queryset = listing_queryset.order_by("-price", "-id")
+
+    return listing_queryset

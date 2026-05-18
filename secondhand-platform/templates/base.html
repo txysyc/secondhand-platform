@@ -397,6 +397,7 @@
                 <span>二手交易平台</span>
             </a>
             <div class="nav-actions">
+                <a class="button-secondary" href="{% url 'catalog:listing_list' %}">浏览商品</a>
                 {% if user.is_authenticated %}
                     <span class="nav-user">已登录：{{ user.username }}</span>
                     <a class="button-secondary" href="{% url 'catalog:my_listing_list' %}">我的商品</a>

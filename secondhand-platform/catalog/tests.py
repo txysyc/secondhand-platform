@@ -15,9 +15,13 @@ from django.utils import timezone
 from PIL import Image
 
 from catalog.admin import CategoryAdmin, ListingAdmin
-from catalog.forms import ListingForm, ListingImageFormSet
+from catalog.forms import ListingFilterForm, ListingForm, ListingImageFormSet
 from catalog.models import Category, Listing, ListingImage
-from catalog.selectors import get_active_categories, get_owner_listing_groups
+from catalog.selectors import (
+    get_active_categories,
+    get_owner_listing_groups,
+    get_publish_listing_queryset,
+)
 from catalog.services import (
     ACTION_RESTORE_ACTIVE,
     ACTION_WITHDRAW,
@@ -1198,6 +1202,262 @@ class OwnerListingGroupsSelectorTest(TestCase):
         self.assertEqual(active_listings[1].pk, first.pk)
 
 
+class PublicListingSelectorTest(TestCase):
+    """公开商品列表 selector 测试。"""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="pubseller",
+            email="public_seller@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="公开分类")
+        self.inactive_category = Category.objects.create(name="停用公开分类", is_active=False)
+
+    def make_listing(self, **overrides):
+        data = {
+            "owner": self.user,
+            "category": self.category,
+            "title": "公开商品",
+            "item_type": Listing.ItemType.PHYSICAL,
+            "status": Listing.Status.ACTIVE,
+            "price": Decimal("30.00"),
+            "condition": Listing.Condition.GOOD,
+            "description": "公开展示商品",
+            "delivery_notes": "面交",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "published_at": timezone.now(),
+        }
+        data.update(overrides)
+        return Listing.objects.create(**data)
+
+    def test_queryset_only_returns_active_listings_in_active_categories(self):
+        active = self.make_listing(title="可公开商品")
+        self.make_listing(
+            title="停用分类商品",
+            category=self.inactive_category,
+        )
+
+        listings = list(get_publish_listing_queryset())
+
+        self.assertEqual(listings, [active])
+
+    def test_queryset_excludes_non_purchasable_statuses(self):
+        active = self.make_listing(title="在售商品", status=Listing.Status.ACTIVE)
+        for status in [
+            Listing.Status.DRAFT,
+            Listing.Status.WITHDRAWN,
+            Listing.Status.RESERVED,
+            Listing.Status.SOLD,
+        ]:
+            self.make_listing(title=f"{status}商品", status=status)
+
+        listings = list(get_publish_listing_queryset())
+
+        self.assertEqual(listings, [active])
+
+    def test_queryset_uses_stable_published_at_and_id_desc_order(self):
+        published_at = timezone.now() - timezone.timedelta(days=1)
+        older = self.make_listing(
+            title="较早商品",
+            published_at=published_at - timezone.timedelta(hours=1),
+        )
+        first_same_time = self.make_listing(title="同时间一号", published_at=published_at)
+        second_same_time = self.make_listing(title="同时间二号", published_at=published_at)
+
+        listings = list(get_publish_listing_queryset())
+
+        self.assertEqual(listings, [second_same_time, first_same_time, older])
+
+    def test_keyword_matches_title_or_description(self):
+        match_title = self.make_listing(title="蓝牙耳机", description="无关描述")
+        match_desc = self.make_listing(title="无关标题", description="蓝牙音箱描述")
+        no_match = self.make_listing(title="无关标题", description="无关描述")
+
+        results = list(get_publish_listing_queryset({"q": "蓝牙"}))
+
+        self.assertIn(match_title, results)
+        self.assertIn(match_desc, results)
+        self.assertNotIn(no_match, results)
+
+    def test_category_filter(self):
+        other_category = Category.objects.create(name="另一分类")
+        target = self.make_listing(title="目标分类商品", category=self.category)
+        other = self.make_listing(title="其他分类商品", category=other_category)
+
+        results = list(get_publish_listing_queryset({"category": self.category}))
+
+        self.assertIn(target, results)
+        self.assertNotIn(other, results)
+
+    def test_item_type_filter(self):
+        physical = self.make_listing(title="实体", item_type=Listing.ItemType.PHYSICAL)
+        virtual = self.make_listing(title="虚拟", item_type=Listing.ItemType.VIRTUAL)
+
+        results = list(get_publish_listing_queryset({"item_type": "virtual"}))
+
+        self.assertNotIn(physical, results)
+        self.assertIn(virtual, results)
+
+    def test_price_range_filter(self):
+        cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
+        mid = self.make_listing(title="中等", price=Decimal("50.00"))
+        expensive = self.make_listing(title="贵", price=Decimal("200.00"))
+
+        results = list(
+            get_publish_listing_queryset({"min_price": Decimal("20"), "max_price": Decimal("100")})
+        )
+
+        self.assertNotIn(cheap, results)
+        self.assertIn(mid, results)
+        self.assertNotIn(expensive, results)
+
+    def test_sort_price_asc(self):
+        expensive = self.make_listing(title="贵", price=Decimal("200.00"))
+        cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
+
+        results = list(get_publish_listing_queryset({"sort": "price_asc"}))
+
+        self.assertEqual(results, [cheap, expensive])
+
+    def test_sort_price_desc(self):
+        cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
+        expensive = self.make_listing(title="贵", price=Decimal("200.00"))
+
+        results = list(get_publish_listing_queryset({"sort": "price_desc"}))
+
+        self.assertEqual(results, [expensive, cheap])
+
+    def test_sort_oldest(self):
+        older = self.make_listing(
+            title="旧", published_at=timezone.now() - timezone.timedelta(days=2)
+        )
+        newer = self.make_listing(
+            title="新", published_at=timezone.now() - timezone.timedelta(days=1)
+        )
+
+        results = list(get_publish_listing_queryset({"sort": "oldest"}))
+
+        self.assertEqual(results, [older, newer])
+
+    def test_unknown_sort_falls_back_to_default(self):
+        older = self.make_listing(
+            title="旧",
+            published_at=timezone.now() - timezone.timedelta(days=2),
+        )
+        newer = self.make_listing(
+            title="新",
+            published_at=timezone.now() - timezone.timedelta(days=1),
+        )
+
+        results = list(get_publish_listing_queryset({"sort": "invalid_sort"}))
+
+        self.assertEqual(results, [newer, older])
+
+    def test_combined_filters(self):
+        target = self.make_listing(
+            title="蓝牙耳机",
+            item_type=Listing.ItemType.PHYSICAL,
+            price=Decimal("50.00"),
+        )
+        wrong_type = self.make_listing(
+            title="蓝牙会员",
+            item_type=Listing.ItemType.VIRTUAL,
+            price=Decimal("50.00"),
+        )
+        wrong_price = self.make_listing(
+            title="蓝牙音箱",
+            item_type=Listing.ItemType.PHYSICAL,
+            price=Decimal("500.00"),
+        )
+
+        results = list(
+            get_publish_listing_queryset({
+                "q": "蓝牙",
+                "item_type": "physical",
+                "min_price": Decimal("10"),
+                "max_price": Decimal("100"),
+            })
+        )
+
+        self.assertEqual(results, [target])
+
+
+class ListingFilterFormTest(TestCase):
+    """筛选表单校验测试。"""
+
+    def setUp(self):
+        self.category = Category.objects.create(name="有效分类")
+        self.inactive_category = Category.objects.create(name="停用分类", is_active=False)
+
+    def test_valid_empty_form(self):
+        form = ListingFilterForm(data={})
+        self.assertTrue(form.is_valid())
+
+    def test_valid_full_form(self):
+        form = ListingFilterForm(data={
+            "q": "蓝牙",
+            "category": self.category.pk,
+            "item_type": "physical",
+            "min_price": "10",
+            "max_price": "200",
+            "sort": "price_asc",
+        })
+        self.assertTrue(form.is_valid())
+
+    def test_q_strips_whitespace(self):
+        form = ListingFilterForm(data={"q": "  蓝牙耳机  "})
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["q"], "蓝牙耳机")
+
+    def test_q_exceeds_max_length(self):
+        form = ListingFilterForm(data={"q": "x" * 101})
+        self.assertFalse(form.is_valid())
+        self.assertIn("q", form.errors)
+
+    def test_inactive_category_rejected(self):
+        form = ListingFilterForm(data={"category": self.inactive_category.pk})
+        self.assertFalse(form.is_valid())
+        self.assertIn("category", form.errors)
+
+    def test_nonexistent_category_rejected(self):
+        form = ListingFilterForm(data={"category": "99999"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("category", form.errors)
+
+    def test_invalid_item_type_rejected(self):
+        form = ListingFilterForm(data={"item_type": "hacked"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("item_type", form.errors)
+
+    def test_negative_min_price_rejected(self):
+        form = ListingFilterForm(data={"min_price": "-5"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("min_price", form.errors)
+
+    def test_non_numeric_price_rejected(self):
+        form = ListingFilterForm(data={"min_price": "abc"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("min_price", form.errors)
+
+    def test_min_price_greater_than_max_price_error(self):
+        form = ListingFilterForm(data={"min_price": "100", "max_price": "10"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("最高价格不得低于最低价格", form.non_field_errors())
+
+    def test_unknown_sort_rejected(self):
+        form = ListingFilterForm(data={"sort": "hacked_field"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("sort", form.errors)
+
+    def test_defaults_when_fields_empty(self):
+        form = ListingFilterForm(data={})
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data["min_price"], 0)
+        self.assertEqual(form.cleaned_data["max_price"], 99999999)
+        self.assertEqual(form.cleaned_data["page"], 1)
+
+
 class ChangeListingStatusServiceTest(TestCase):
     """商品状态变更服务测试。"""
 
@@ -1434,6 +1694,322 @@ class MyListingListViewTest(TestCase):
 
         self.assertContains(response, "交易占用由订单流程控制")
         self.assertContains(response, "已售出商品不可重新上架")
+
+
+class PublicListingListViewTest(TestCase):
+    """公开商品列表视图测试。"""
+
+    def setUp(self):
+        self.seller = get_user_model().objects.create_user(
+            username="pubview",
+            email="public_view@example.com",
+            password="StrongPass123",
+        )
+        self.other_seller = get_user_model().objects.create_user(
+            username="pubother",
+            email="public_other@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="公开数码")
+        self.inactive_category = Category.objects.create(name="停用数码", is_active=False)
+        self.url = reverse("catalog:listing_list")
+
+        self.seller.profile.nickname = "公开卖家"
+        self.seller.profile.bio = "只展示公开简介"
+        self.seller.profile.save(update_fields=["nickname", "bio", "updated_at"])
+
+    def make_listing(self, **overrides):
+        data = {
+            "owner": self.seller,
+            "category": self.category,
+            "title": "公开相机",
+            "item_type": Listing.ItemType.PHYSICAL,
+            "status": Listing.Status.ACTIVE,
+            "price": Decimal("188.00"),
+            "condition": Listing.Condition.GOOD,
+            "description": "公开列表测试商品",
+            "delivery_notes": "面交",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "published_at": timezone.datetime(
+                2026, 5, 1, 10, 30, tzinfo=timezone.get_current_timezone()
+            ),
+        }
+        data.update(overrides)
+        return Listing.objects.create(**data)
+
+    def test_guest_can_visit_public_listing_page_without_login(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "catalog/listing_list.html")
+        self.assertEqual(response.context["querystring_without_page"], "")
+
+    def test_page_renders_public_listing_fields_and_placeholder(self):
+        listing = self.make_listing(title="公开无图相机")
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, listing.title)
+        self.assertContains(response, "¥188.00")
+        self.assertContains(response, "公开数码")
+        self.assertContains(response, "实体商品")
+        self.assertContains(response, "2026-05-01 10:30")
+        self.assertContains(response, "公开卖家")
+        self.assertContains(response, "只展示公开简介")
+        self.assertContains(response, "暂无图片")
+
+    def test_page_excludes_non_public_statuses_and_inactive_category(self):
+        visible = self.make_listing(title="可浏览商品")
+        hidden_cases = [
+            ("草稿商品", Listing.Status.DRAFT, self.category),
+            ("下架商品", Listing.Status.WITHDRAWN, self.category),
+            ("占用商品", Listing.Status.RESERVED, self.category),
+            ("已售商品", Listing.Status.SOLD, self.category),
+            ("停用分类在售商品", Listing.Status.ACTIVE, self.inactive_category),
+        ]
+        for title, status, category in hidden_cases:
+            self.make_listing(title=title, status=status, category=category)
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, visible.title)
+        for title, _status, _category in hidden_cases:
+            self.assertNotContains(response, title)
+
+    def test_page_shows_other_seller_active_listing_without_private_fields(self):
+        other_listing = self.make_listing(
+            owner=self.other_seller,
+            title="其他卖家的公开商品",
+        )
+        self.other_seller.profile.nickname = "其他公开卖家"
+        self.other_seller.profile.save(update_fields=["nickname", "updated_at"])
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, other_listing.title)
+        self.assertContains(response, "其他公开卖家")
+        self.assertNotContains(response, self.other_seller.email)
+        self.assertNotContains(response, f"用户 ID")
+
+    def test_page_does_not_render_seller_management_actions(self):
+        self.make_listing(title="只读公开商品")
+
+        response = self.client.get(self.url)
+
+        for text in ["继续编辑/发布", "删除草稿", "编辑", "删除", "下架", "重新上架"]:
+            self.assertNotContains(response, text)
+        self.assertNotContains(response, 'name="action"')
+
+    def test_empty_page_has_stable_empty_state(self):
+        response = self.client.get(self.url)
+
+        self.assertContains(response, "暂时没有可浏览的在售商品。")
+
+    def test_invalid_page_parameter_returns_first_page(self):
+        first = self.make_listing(title="第一页商品")
+        self.make_listing(title="第二页商品", published_at=timezone.now() - timezone.timedelta(days=2))
+
+        response = self.client.get(self.url, {"page": "abc"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["page_obj"].number, 1)
+        self.assertIn(first, list(response.context["listings"]))
+
+    def test_out_of_range_page_parameter_returns_last_page(self):
+        for index in range(13):
+            self.make_listing(
+                title=f"分页商品{index:02d}",
+                published_at=timezone.now() - timezone.timedelta(minutes=index),
+            )
+
+        response = self.client.get(self.url, {"page": "999"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["page_obj"].number, 2)
+        self.assertEqual(response.context["paginator"].num_pages, 2)
+
+    def test_pagination_links_preserve_existing_query_params_without_page(self):
+        for index in range(13):
+            self.make_listing(
+                title=f"保留参数商品{index:02d}",
+                published_at=timezone.now() - timezone.timedelta(minutes=index),
+            )
+
+        response = self.client.get(self.url, {"q": "保留参数", "sort": "newest", "page": "1"})
+
+        self.assertIn("q=", response.context["querystring_without_page"])
+        self.assertNotIn("page=", response.context["querystring_without_page"])
+        self.assertContains(response, "page=2")
+        self.assertNotContains(response, "page=1&amp;page=2")
+        self.assertContains(response, "下一页")
+        self.assertContains(response, "末页")
+
+    def test_second_page_renders_previous_and_first_page_links(self):
+        for index in range(13):
+            self.make_listing(
+                title=f"反向分页商品{index:02d}",
+                published_at=timezone.now() - timezone.timedelta(minutes=index),
+            )
+
+        response = self.client.get(self.url, {"q": "反向分页", "page": "2"})
+
+        self.assertContains(response, "page=1")
+        self.assertContains(response, "首页")
+        self.assertContains(response, "上一页")
+
+    def test_keyword_search_filters_by_title(self):
+        match = self.make_listing(title="蓝牙耳机公开")
+        no_match = self.make_listing(title="无关商品公开")
+
+        response = self.client.get(self.url, {"q": "蓝牙"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, match.title)
+        self.assertNotContains(response, no_match.title)
+
+    def test_keyword_search_filters_by_description(self):
+        match = self.make_listing(title="普通标题A", description="包含蓝牙功能的描述")
+        no_match = self.make_listing(title="普通标题B", description="完全无关的描述")
+
+        response = self.client.get(self.url, {"q": "蓝牙"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, match.title)
+        self.assertNotContains(response, no_match.title)
+
+    def test_category_filter_returns_only_target_category(self):
+        other_category = Category.objects.create(name="其他分类")
+        target = self.make_listing(title="目标分类商品", category=self.category)
+        other = self.make_listing(title="其他分类商品", category=other_category)
+
+        response = self.client.get(self.url, {"category": self.category.pk})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, target.title)
+        self.assertNotContains(response, other.title)
+
+    def test_disabled_category_not_in_filter_options(self):
+        self.make_listing(title="任意商品")
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, "公开数码")
+        self.assertNotContains(response, "停用数码")
+
+    def test_submitting_disabled_category_does_not_500(self):
+        response = self.client.get(self.url, {"category": self.inactive_category.pk})
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_item_type_filter_physical(self):
+        physical = self.make_listing(title="实体公开", item_type=Listing.ItemType.PHYSICAL)
+        virtual = self.make_listing(title="虚拟公开", item_type=Listing.ItemType.VIRTUAL)
+
+        response = self.client.get(self.url, {"item_type": "physical"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, physical.title)
+        self.assertNotContains(response, virtual.title)
+
+    def test_price_range_filter(self):
+        cheap = self.make_listing(title="便宜公开", price=Decimal("10.00"))
+        mid = self.make_listing(title="中等公开", price=Decimal("50.00"))
+        expensive = self.make_listing(title="贵公开", price=Decimal("200.00"))
+
+        response = self.client.get(self.url, {"min_price": "20", "max_price": "100"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, cheap.title)
+        self.assertContains(response, mid.title)
+        self.assertNotContains(response, expensive.title)
+
+    def test_min_price_greater_than_max_price_shows_chinese_error(self):
+        self.make_listing(title="任意商品")
+
+        response = self.client.get(self.url, {"min_price": "100", "max_price": "10"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "最高价格不得低于最低价格")
+
+    def test_sort_price_asc(self):
+        expensive = self.make_listing(title="贵排序", price=Decimal("200.00"))
+        cheap = self.make_listing(title="便宜排序", price=Decimal("10.00"))
+
+        response = self.client.get(self.url, {"sort": "price_asc"})
+
+        listings = list(response.context["listings"])
+        self.assertEqual(listings, [cheap, expensive])
+
+    def test_sort_price_desc(self):
+        cheap = self.make_listing(title="便宜排序", price=Decimal("10.00"))
+        expensive = self.make_listing(title="贵排序", price=Decimal("200.00"))
+
+        response = self.client.get(self.url, {"sort": "price_desc"})
+
+        listings = list(response.context["listings"])
+        self.assertEqual(listings, [expensive, cheap])
+
+    def test_default_sort_is_newest_first(self):
+        older = self.make_listing(
+            title="旧商品",
+            published_at=timezone.now() - timezone.timedelta(days=2),
+        )
+        newer = self.make_listing(
+            title="新商品",
+            published_at=timezone.now() - timezone.timedelta(days=1),
+        )
+
+        response = self.client.get(self.url)
+
+        listings = list(response.context["listings"])
+        self.assertEqual(listings, [newer, older])
+
+    def test_unknown_sort_value_does_not_500(self):
+        self.make_listing(title="任意商品")
+
+        response = self.client.get(self.url, {"sort": "hacked_field"})
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_filter_results_exclude_non_purchasable_statuses(self):
+        active = self.make_listing(title="搜索目标在售", description="可搜索描述")
+        for status in [
+            Listing.Status.DRAFT,
+            Listing.Status.WITHDRAWN,
+            Listing.Status.RESERVED,
+            Listing.Status.SOLD,
+        ]:
+            self.make_listing(title="搜索目标非售", description="可搜索描述", status=status)
+
+        response = self.client.get(self.url, {"q": "搜索目标"})
+
+        listings = list(response.context["listings"])
+        self.assertEqual(listings, [active])
+
+    def test_filter_form_preserves_current_values(self):
+        self.make_listing(title="蓝牙耳机")
+
+        response = self.client.get(self.url, {"q": "蓝牙", "sort": "price_asc"})
+
+        form = response.context["filter_form"]
+        self.assertEqual(form.data.get("q"), "蓝牙")
+        self.assertEqual(form.data.get("sort"), "price_asc")
+
+    def test_active_filters_summary_displayed(self):
+        self.make_listing(title="蓝牙耳机")
+
+        response = self.client.get(self.url, {"q": "蓝牙"})
+
+        self.assertContains(response, "当前筛选")
+        self.assertContains(response, "蓝牙")
+
+    def test_clear_filters_link_present(self):
+        self.make_listing(title="蓝牙耳机")
+
+        response = self.client.get(self.url, {"q": "蓝牙"})
+
+        self.assertContains(response, "清除筛选")
+        self.assertContains(response, "清除全部")
 
 
 class ListingStatusUpdateViewTest(TestCase):

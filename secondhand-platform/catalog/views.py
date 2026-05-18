@@ -1,13 +1,18 @@
+from typing import Any
+
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
+from django.db.models.query import QuerySet
 from django.http import HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
+from django.views.generic import ListView
 
-from catalog.forms import ListingForm, ListingImageFormSet
+from catalog.forms import ListingForm, ListingImageFormSet, ListingFilterForm
 from catalog.models import Listing
-from catalog.selectors import get_owner_listing_groups
+from catalog.selectors import get_owner_listing_groups, get_publish_listing_queryset
 from catalog.services import (
     INTENT_PUBLISH,
     INTENT_SAVE_CHANGES,
@@ -206,3 +211,66 @@ class ListingStatusUpdateView(LoginRequiredMixin, View):
 
         messages.success(request, self.SUCCESS_MESSAGES.get(action, "操作成功"))
         return redirect("catalog:my_listing_list")
+
+
+class ListingListView(ListView):
+    model = Listing
+    template_name = "catalog/listing_list.html"
+    context_object_name = "listings"
+    paginate_by = 12
+    form = ListingFilterForm
+
+    def get_queryset(self) -> QuerySet[Any]:
+        self._filter_form = self.form(self.request.GET)
+        if self._filter_form.is_valid():
+            cleaned_data = self._filter_form.cleaned_data
+            return get_publish_listing_queryset(cleaned_data)
+        return get_publish_listing_queryset()
+
+    def paginate_queryset(
+        self,
+        queryset: QuerySet[Any],
+        page_size: int,
+    ) -> tuple[Paginator, Any, QuerySet[Any], bool]:
+        paginator = self.get_paginator(
+            queryset,
+            page_size,
+            orphans=self.get_paginate_orphans(),
+            allow_empty_first_page=self.get_allow_empty(),
+        )
+        page = paginator.get_page(self.request.GET.get(self.page_kwarg))
+        return paginator, page, page.object_list, page.has_other_pages()
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+        query_params = self.request.GET.copy()
+        query_params.pop(self.page_kwarg, None)
+
+        context["querystring_without_page"] = query_params.urlencode()
+        context["filter_form"] = self._filter_form
+        context["active_filters"] = self._build_active_filters_summary()
+        return context
+
+    def _build_active_filters_summary(self) -> str:
+        if not self._filter_form.is_valid():
+            return ""
+        parts = []
+        data = self._filter_form.cleaned_data
+        if data.get("q"):
+            parts.append(f"关键词「{data['q']}」")
+        if data.get("category"):
+            parts.append(f"分类「{data['category'].name}」")
+        if data.get("item_type"):
+            item_type_labels = dict(self._filter_form.fields["item_type"].choices)
+            parts.append(f"类型「{item_type_labels.get(data['item_type'], data['item_type'])}」")
+        raw_min = self.request.GET.get("min_price")
+        raw_max = self.request.GET.get("max_price")
+        if raw_min:
+            parts.append(f"最低价 ¥{data['min_price']}")
+        if raw_max:
+            parts.append(f"最高价 ¥{data['max_price']}")
+        sort_val = data.get("sort")
+        sort_labels = dict(self._filter_form.fields["sort"].choices)
+        if sort_val and sort_val != "newest":
+            parts.append(f"排序「{sort_labels.get(sort_val, sort_val)}」")
+        return "、".join(parts)

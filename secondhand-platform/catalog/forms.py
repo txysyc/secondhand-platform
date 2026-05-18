@@ -1,6 +1,9 @@
+from typing import Any
+
 from django import forms
 from django.forms import BaseInlineFormSet, inlineformset_factory
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 
 from catalog.models import Listing, ListingImage
 from catalog.selectors import get_active_categories
@@ -120,3 +123,68 @@ ListingImageFormSet = inlineformset_factory(
     validate_max=True,  # 开启服务端数量强校验，防止伪造 management form 绕过上限。
     can_delete=True,
 )
+
+
+class ListingFilterForm(forms.Form):
+    q = forms.CharField(max_length=100, required=False, label="关键字")
+    category = forms.ModelChoiceField(
+        get_active_categories(), required=False, label="分类"
+    )
+    item_type = forms.ChoiceField(
+        choices=[("", "全部类型")] + list(Listing.ItemType.choices),
+        required=False,
+        label="商品类型",
+        initial="",
+    )
+    max_price = forms.DecimalField(
+        max_value=99999999, min_value=0, required=False, label="最高价格"
+    )
+    min_price = forms.DecimalField(
+        min_value=0, max_value=99999999, required=False, label="最低价格"
+    )
+    sort = forms.ChoiceField(
+        choices=[
+            ("newest", "按时间倒序"),
+            ("oldest", "按时间正序"),
+            ("price_asc", "按价格升序"),
+            ("price_desc", "按价格降序"),
+        ],
+        required=False,
+        label="排序",
+        initial="newest",
+    )
+    page = forms.IntegerField(min_value=1, required=False, label="页码")
+
+    def clean_q(self):
+        q: str = self.cleaned_data.get("q", "")
+        q = q.strip()
+        return q
+
+    def clean_max_price(self):
+        max_price = self.cleaned_data.get("max_price")
+        if max_price is None:
+            max_price = 99999999
+        return max_price
+
+    def clean_min_price(self):
+        min_price = self.cleaned_data.get("min_price")
+        if min_price is None:
+            min_price = 0
+        return min_price
+
+    def clean_page(self):
+        page = self.cleaned_data.get("page")
+        if page is None:
+            page = 1
+        return page
+
+    def clean(self) -> dict[str, Any]:
+        cleaned_data = super().clean()
+
+        max_price = cleaned_data.get("max_price")
+        min_price = cleaned_data.get("min_price")
+
+        if max_price is not None and min_price is not None and max_price < min_price:
+            raise ValidationError("最高价格不得低于最低价格")
+
+        return cleaned_data

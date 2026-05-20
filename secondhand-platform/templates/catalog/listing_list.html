@@ -303,29 +303,31 @@
         <ul class="public-listing-grid">
             {% for listing in listings %}
                 <li class="public-listing-card">
-                    <div class="public-listing-cover" aria-hidden="true">
-                        {% with cover=listing.images.all|first %}
-                            {% if cover %}
-                                <img src="{{ cover.image.url }}" alt="">
-                            {% else %}
-                                <span>暂无图片</span>
-                            {% endif %}
-                        {% endwith %}
-                    </div>
+                    <a class="public-listing-link" href="{% url 'catalog:listing_detail' listing.pk %}">
+                        <div class="public-listing-cover" aria-hidden="true">
+                            {% with cover=listing.images.all|first %}
+                                {% if cover %}
+                                    <img src="{{ cover.image.url }}" alt="">
+                                {% else %}
+                                    <span>暂无图片</span>
+                                {% endif %}
+                            {% endwith %}
+                        </div>
 
-                    <div class="public-listing-body">
-                        <h2 class="public-listing-title">{{ listing.title }}</h2>
-                        <p class="public-listing-price">¥{{ listing.price }}</p>
-                        <dl class="public-listing-meta">
-                            <div><dt>分类</dt><dd>{{ listing.category.name }}</dd></div>
-                            <div><dt>类型</dt><dd>{{ listing.get_item_type_display }}</dd></div>
-                            <div><dt>发布时间</dt><dd>{{ listing.published_at|date:"Y-m-d H:i" }}</dd></div>
-                            <div><dt>卖家</dt><dd>{{ listing.owner.profile.nickname|default:listing.owner.username }}</dd></div>
-                        </dl>
-                        {% if listing.owner.profile.bio %}
-                            <p class="public-seller-summary">{{ listing.owner.profile.bio|truncatechars:48 }}</p>
-                        {% endif %}
-                    </div>
+                        <div class="public-listing-body">
+                            <h2 class="public-listing-title">{{ listing.title }}</h2>
+                            <p class="public-listing-price">¥{{ listing.price }}</p>
+                            <dl class="public-listing-meta">
+                                <div><dt>分类</dt><dd>{{ listing.category.name }}</dd></div>
+                                <div><dt>类型</dt><dd>{{ listing.get_item_type_display }}</dd></div>
+                                <div><dt>发布时间</dt><dd>{{ listing.published_at|date:"Y-m-d H:i" }}</dd></div>
+                                <div><dt>卖家</dt><dd>{{ listing.owner.profile.nickname|default:listing.owner.username }}</dd></div>
+                            </dl>
+                            {% if listing.owner.profile.bio %}
+                                <p class="public-seller-summary">{{ listing.owner.profile.bio|truncatechars:48 }}</p>
+                            {% endif %}
+                        </div>
+                    </a>
                 </li>
             {% endfor %}
         </ul>

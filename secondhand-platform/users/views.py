@@ -3,7 +3,8 @@
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, logout
-from django.shortcuts import render, redirect
+from django.shortcuts import get_object_or_404, render, redirect
+from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -12,7 +13,8 @@ from django.views.decorators.csrf import csrf_protect
 
 from users.forms import UserLoginForm, UserRegisterForm, ProfileForm
 from users.services import register_add_group
-from users.models import Profile
+from users.models import Profile, User
+from catalog.selectors import get_publish_listing_queryset
 
 
 class LoginView(View):
@@ -173,3 +175,34 @@ class ProfileView(LoginRequiredMixin, View):
             return redirect("users:profile")
 
         return render(request, self.template_name, context=context)
+
+
+class PublicProfileView(View):
+    template_name = "users/public_profile.html"
+
+    def get(self, request, user_id):
+        user = get_object_or_404(User, pk=user_id)
+        profile, _ = Profile.objects.get_or_create(user=user)
+        public_listing_list = get_publish_listing_queryset().filter(owner=user)
+        # 回退链接
+        fallback_return_url = reverse("catalog:listing_list")
+        # 记录来源链接，可以返回
+        referrer_url = request.META.get("HTTP_REFERER")
+        # 校验该链接是否来自本站安全url，如果异常或者是外站来源则回退到商品列表
+        if referrer_url and url_has_allowed_host_and_scheme(
+            url=referrer_url,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        ):
+            return_url = referrer_url
+        else:
+            return_url = fallback_return_url
+
+        context = {
+            "public_listing_list": public_listing_list,
+            "profile": profile,
+            "seller": user,
+            "return_url": return_url,
+        }
+
+        return render(request, self.template_name, context)

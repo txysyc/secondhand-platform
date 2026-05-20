@@ -1,14 +1,17 @@
 from typing import Any
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
+from django.db.models import Q
 from django.db.models.query import QuerySet
 from django.http import HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views import View
-from django.views.generic import ListView
+from django.views.generic import ListView, DetailView
 
 from catalog.forms import ListingForm, ListingImageFormSet, ListingFilterForm
 from catalog.models import Listing
@@ -262,7 +265,9 @@ class ListingListView(ListView):
             parts.append(f"分类「{data['category'].name}」")
         if data.get("item_type"):
             item_type_labels = dict(self._filter_form.fields["item_type"].choices)
-            parts.append(f"类型「{item_type_labels.get(data['item_type'], data['item_type'])}」")
+            parts.append(
+                f"类型「{item_type_labels.get(data['item_type'], data['item_type'])}」"
+            )
         raw_min = self.request.GET.get("min_price")
         raw_max = self.request.GET.get("max_price")
         if raw_min:
@@ -274,3 +279,65 @@ class ListingListView(ListView):
         if sort_val and sort_val != "newest":
             parts.append(f"排序「{sort_labels.get(sort_val, sort_val)}」")
         return "、".join(parts)
+
+
+class ListingDetailView(DetailView):
+    template_name = "catalog/listing_detail.html"
+    model = Listing
+    context_object_name = "listing"
+
+    def get_queryset(self) -> QuerySet[Any]:
+        queryset = self.model.objects.select_related(
+            "category", "owner", "owner__profile"
+        ).prefetch_related("images")
+
+        public_filter = Q(
+            status__in=[
+                Listing.Status.ACTIVE,
+                Listing.Status.RESERVED,
+                Listing.Status.SOLD,
+            ],
+            category__is_active=True,
+        )
+
+        user = self.request.user
+        if user.is_authenticated:
+            owner_withdrawn_filter = Q(owner=user, status=Listing.Status.WITHDRAWN)
+            return queryset.filter(public_filter | owner_withdrawn_filter)
+
+        return queryset.filter(public_filter)
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+        listing = self.object
+        user = self.request.user
+        is_seller = user.is_authenticated and listing.owner_id == user.id
+        # 购买链接
+        purchase_path = f"/listings/{listing.pk}/purchase/"
+        purchase_url = purchase_path
+        purchase_disabled_reason = ""
+
+        can_purchase = listing.status == Listing.Status.ACTIVE and not is_seller
+        if can_purchase and not user.is_authenticated:
+            purchase_url = (
+                f"{reverse('users:login')}?{urlencode({'next': purchase_path})}"
+            )
+        elif is_seller:
+            purchase_disabled_reason = "不能购买自己发布的商品"
+        elif listing.status == Listing.Status.RESERVED:
+            purchase_disabled_reason = "商品正在交易中，暂时无法购买"
+        elif listing.status == Listing.Status.SOLD:
+            purchase_disabled_reason = "商品已售出"
+        elif listing.status == Listing.Status.WITHDRAWN:
+            purchase_disabled_reason = "商品已下架"
+
+        context.update(
+            {
+                "is_seller": is_seller,
+                "can_purchase": can_purchase,
+                "purchase_url": purchase_url,
+                "purchase_disabled_reason": purchase_disabled_reason,
+                "purchase_requires_login": can_purchase and not user.is_authenticated,
+            }
+        )
+        return context

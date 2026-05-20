@@ -1758,6 +1758,14 @@ class PublicListingListViewTest(TestCase):
         self.assertContains(response, "只展示公开简介")
         self.assertContains(response, "暂无图片")
 
+    def test_listing_card_links_to_detail_page(self):
+        listing = self.make_listing(title="可点击商品")
+        detail_url = reverse("catalog:listing_detail", kwargs={"pk": listing.pk})
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, f'href="{detail_url}"')
+
     def test_page_excludes_non_public_statuses_and_inactive_category(self):
         visible = self.make_listing(title="可浏览商品")
         hidden_cases = [
@@ -2010,6 +2018,183 @@ class PublicListingListViewTest(TestCase):
 
         self.assertContains(response, "清除筛选")
         self.assertContains(response, "清除全部")
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
+class ListingDetailViewTest(TestCase):
+    """商品详情页视图测试。"""
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+
+    def setUp(self):
+        self.seller = get_user_model().objects.create_user(
+            username="detseller",
+            email="detail_seller@example.com",
+            password="StrongPass123",
+        )
+        self.buyer = get_user_model().objects.create_user(
+            username="detbuyer",
+            email="detail_buyer@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="详情数码")
+        self.inactive_category = Category.objects.create(
+            name="详情停用分类", is_active=False
+        )
+        self.seller.profile.nickname = "详情卖家"
+        self.seller.profile.bio = "只展示公开卖家简介"
+        self.seller.profile.save(update_fields=["nickname", "bio", "updated_at"])
+
+    def make_listing(self, **overrides):
+        data = {
+            "owner": self.seller,
+            "category": self.category,
+            "title": "详情相机",
+            "item_type": Listing.ItemType.PHYSICAL,
+            "status": Listing.Status.ACTIVE,
+            "price": Decimal("388.00"),
+            "condition": Listing.Condition.LIKE_NEW,
+            "description": "详情页完整描述",
+            "delivery_notes": "地铁站面交",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "published_at": timezone.datetime(
+                2026, 5, 2, 9, 15, tzinfo=timezone.get_current_timezone()
+            ),
+        }
+        data.update(overrides)
+        return Listing.objects.create(**data)
+
+    def detail_url(self, listing):
+        return reverse("catalog:listing_detail", kwargs={"pk": listing.pk})
+
+    def test_active_detail_renders_complete_fields_for_guest(self):
+        listing = self.make_listing()
+        ListingImage.objects.create(
+            listing=listing,
+            image=create_test_image("detail-first.png"),
+            sort_order=2,
+        )
+        ListingImage.objects.create(
+            listing=listing,
+            image=create_test_image("detail-second.png"),
+            sort_order=1,
+        )
+
+        response = self.client.get(self.detail_url(listing))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "catalog/listing_detail.html")
+        self.assertContains(response, "详情相机")
+        self.assertContains(response, "¥388.00")
+        self.assertContains(response, "详情页完整描述")
+        self.assertContains(response, "详情数码")
+        self.assertContains(response, "实体商品")
+        self.assertContains(response, "几乎全新")
+        self.assertContains(response, "线下自提/面交")
+        self.assertContains(response, "地铁站面交")
+        self.assertContains(response, "2026-05-02 09:15")
+        self.assertContains(response, "在售")
+        self.assertContains(response, "详情卖家")
+        self.assertContains(response, "只展示公开卖家简介")
+        self.assertContains(response, "detail-first")
+        self.assertContains(response, "detail-second")
+        self.assertContains(response, "详情相机 图片 1")
+        self.assertContains(response, "详情相机 图片 2")
+        self.assertNotContains(response, "暂无图片")
+        self.assertContains(response, "登录后购买")
+        self.assertContains(response, reverse("users:login"))
+        self.assertContains(response, f"next=%2Flistings%2F{listing.pk}%2Fpurchase%2F")
+
+    def test_virtual_detail_renders_valid_until(self):
+        listing = self.make_listing(
+            title="虚拟会员码",
+            item_type=Listing.ItemType.VIRTUAL,
+            condition=None,
+            physical_delivery_method=None,
+            virtual_valid_until=timezone.localdate() + timezone.timedelta(days=30),
+        )
+
+        response = self.client.get(self.detail_url(listing))
+
+        self.assertContains(response, "虚拟商品")
+        self.assertContains(response, "有效期")
+        self.assertContains(response, listing.virtual_valid_until.isoformat())
+
+    def test_reserved_detail_shows_unavailable_message(self):
+        listing = self.make_listing(status=Listing.Status.RESERVED, title="占用详情")
+
+        response = self.client.get(self.detail_url(listing))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "交易占用")
+        self.assertContains(response, "商品正在交易中，暂时无法购买")
+        self.assertNotContains(response, "购买确认")
+
+    def test_sold_detail_shows_sold_message(self):
+        listing = self.make_listing(status=Listing.Status.SOLD, title="已售详情")
+
+        response = self.client.get(self.detail_url(listing))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "已售出")
+        self.assertContains(response, "商品已售出")
+        self.assertNotContains(response, "购买确认")
+
+    def test_withdrawn_listing_returns_404_for_non_owner(self):
+        listing = self.make_listing(status=Listing.Status.WITHDRAWN)
+
+        response = self.client.get(self.detail_url(listing))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_draft_listing_returns_404_for_non_owner_and_owner(self):
+        listing = self.make_listing(status=Listing.Status.DRAFT)
+
+        response = self.client.get(self.detail_url(listing))
+        self.assertEqual(response.status_code, 404)
+
+        self.client.force_login(self.seller)
+        response = self.client.get(self.detail_url(listing))
+        self.assertEqual(response.status_code, 404)
+
+    def test_owner_can_view_own_withdrawn_detail(self):
+        listing = self.make_listing(status=Listing.Status.WITHDRAWN)
+        self.client.force_login(self.seller)
+
+        response = self.client.get(self.detail_url(listing))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "商品已下架")
+        self.assertContains(response, "不能购买自己发布的商品")
+        self.assertNotContains(response, "购买确认")
+
+    def test_active_buyer_gets_purchase_entry(self):
+        listing = self.make_listing()
+        self.client.force_login(self.buyer)
+
+        response = self.client.get(self.detail_url(listing))
+
+        self.assertContains(response, "购买确认")
+        self.assertContains(response, f"/listings/{listing.pk}/purchase/")
+
+    def test_seller_does_not_get_purchase_entry_for_own_active_listing(self):
+        listing = self.make_listing()
+        self.client.force_login(self.seller)
+
+        response = self.client.get(self.detail_url(listing))
+
+        self.assertContains(response, "不能购买自己发布的商品")
+        self.assertNotContains(response, "购买确认")
+
+    def test_inactive_category_detail_is_hidden_from_public(self):
+        listing = self.make_listing(category=self.inactive_category)
+
+        response = self.client.get(self.detail_url(listing))
+
+        self.assertEqual(response.status_code, 404)
 
 
 class ListingStatusUpdateViewTest(TestCase):

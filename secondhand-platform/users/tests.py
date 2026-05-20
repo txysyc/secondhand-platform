@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 
 from django.conf import settings
@@ -10,7 +11,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.test import RequestFactory, TestCase
+from django.utils import timezone
 
+from catalog.models import Category, Listing
 from users.admin import ProfileInline
 from users.models import Profile, User, avatar_upload_to
 from users.signals import create_user_profile
@@ -590,3 +593,113 @@ class ProfileEditFlowTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(Profile.objects.filter(user=self.user).exists())
+
+
+class PublicProfileViewTest(TestCase):
+    """卖家公开主页视图测试。"""
+
+    def setUp(self):
+        self.seller = User.objects.create_user(
+            username="pubseller",
+            email="public_seller@example.com",
+            password="StrongPass123",
+        )
+        self.other_user = User.objects.create_user(
+            username="pubother",
+            email="public_other@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="公开主页分类")
+        self.inactive_category = Category.objects.create(
+            name="公开停用分类", is_active=False
+        )
+        self.seller.profile.nickname = "主页卖家"
+        self.seller.profile.bio = "卖家公开简介"
+        self.seller.profile.save(update_fields=["nickname", "bio", "updated_at"])
+        self.url = reverse("public_profile", kwargs={"user_id": self.seller.pk})
+
+    def make_listing(self, **overrides):
+        data = {
+            "owner": self.seller,
+            "category": self.category,
+            "title": "主页公开商品",
+            "item_type": Listing.ItemType.PHYSICAL,
+            "status": Listing.Status.ACTIVE,
+            "price": Decimal("66.00"),
+            "condition": Listing.Condition.GOOD,
+            "description": "公开主页商品描述",
+            "delivery_notes": "面交",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "published_at": timezone.datetime(
+                2026, 5, 3, 11, 0, tzinfo=timezone.get_current_timezone()
+            ),
+        }
+        data.update(overrides)
+        return Listing.objects.create(**data)
+
+    def test_public_profile_uses_users_route_and_renders_public_fields(self):
+        listing = self.make_listing()
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(self.url, f"/users/{self.seller.pk}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "users/public_profile.html")
+        self.assertContains(response, "主页卖家")
+        self.assertContains(response, "卖家公开简介")
+        self.assertContains(response, listing.title)
+        self.assertContains(response, "¥66.00")
+        self.assertContains(response, "公开主页分类")
+        self.assertNotContains(response, self.seller.email)
+        self.assertNotContains(response, "密码")
+
+    def test_public_profile_return_link_uses_safe_detail_referrer(self):
+        listing = self.make_listing()
+        detail_url = reverse("catalog:listing_detail", kwargs={"pk": listing.pk})
+
+        response = self.client.get(self.url, HTTP_REFERER=detail_url)
+
+        self.assertContains(response, f'href="{detail_url}"')
+
+    def test_public_profile_ignores_external_referrer(self):
+        response = self.client.get(
+            self.url,
+            HTTP_REFERER="https://example.com/phishing",
+        )
+
+        self.assertContains(response, f'href="{reverse("catalog:listing_list")}"')
+        self.assertNotContains(response, "https://example.com/phishing")
+
+    def test_public_profile_shows_only_target_seller_active_public_listings(self):
+        visible = self.make_listing(title="目标卖家在售")
+        hidden_cases = [
+            {"title": "目标草稿", "status": Listing.Status.DRAFT},
+            {"title": "目标下架", "status": Listing.Status.WITHDRAWN},
+            {"title": "目标占用", "status": Listing.Status.RESERVED},
+            {"title": "目标已售", "status": Listing.Status.SOLD},
+            {
+                "title": "目标停用分类",
+                "status": Listing.Status.ACTIVE,
+                "category": self.inactive_category,
+            },
+            {
+                "title": "其他卖家在售",
+                "status": Listing.Status.ACTIVE,
+                "owner": self.other_user,
+            },
+        ]
+        for overrides in hidden_cases:
+            self.make_listing(**overrides)
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, visible.title)
+        for overrides in hidden_cases:
+            self.assertNotContains(response, overrides["title"])
+
+    def test_public_profile_returns_404_for_missing_user(self):
+        response = self.client.get(
+            reverse("public_profile", kwargs={"user_id": 99999})
+        )
+
+        self.assertEqual(response.status_code, 404)

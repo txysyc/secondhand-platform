@@ -7,6 +7,7 @@ from catalog.views import (
     ListingUpdateView,
     MyListingListView,
     ListingListView,
+    ListingDetailView,
 )
 
 app_name = "catalog"
@@ -22,4 +23,5 @@ urlpatterns = [
         name="listing_status_update",
     ),
     path("", ListingListView.as_view(), name="listing_list"),
+    path("<int:pk>/", ListingDetailView.as_view(), name="listing_detail"),
 ]

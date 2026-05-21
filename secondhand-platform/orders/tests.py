@@ -3,13 +3,13 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 
 from catalog.models import Category, Listing
 from orders.models import Order
-from orders.services import create_order
+from orders.services import cancel_expired_pending_orders, create_order, pay_order
 
 User = get_user_model()
 
@@ -355,6 +355,15 @@ class OrderDetailViewTest(TestCase):
         self.assertContains(response, "模拟支付")
         self.assertContains(response, "模拟支付，不会真实扣款")
 
+    def test_expired_pending_order_shows_server_side_expiry(self):
+        self.order.payment_deadline = timezone.now() - timedelta(minutes=1)
+        self.order.save()
+        self.client.login(username="买家A", password="testpass123")
+        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
+        response = self.client.get(url)
+        self.assertContains(response, "订单已超时")
+        self.assertNotContains(response, "确认模拟支付")
+
     def test_order_detail_shows_snapshot_after_listing_deleted(self):
         temp_listing = Listing.objects.create(
             owner=self.seller,
@@ -384,3 +393,314 @@ class OrderDetailViewTest(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "即将删除的商品")
+
+
+class PayOrderServiceTest(TransactionTestCase):
+    """pay_order 服务层测试。使用 TransactionTestCase 以正确测试 select_for_update 行为。"""
+
+    def setUp(self):
+        self.buyer = User.objects.create_user(
+            username="买家A", email="buyer@test.com", password="testpass123"
+        )
+        self.seller = User.objects.create_user(
+            username="卖家B", email="seller@test.com", password="testpass123"
+        )
+        self.other_user = User.objects.create_user(
+            username="路人C", email="other@test.com", password="testpass123"
+        )
+        self.category = Category.objects.create(name="数码产品")
+        self.listing = Listing.objects.create(
+            owner=self.seller,
+            category=self.category,
+            title="测试商品",
+            item_type=Listing.ItemType.PHYSICAL,
+            status=Listing.Status.ACTIVE,
+            price=Decimal("99.00"),
+            description="测试描述",
+        )
+
+    def _create_pending_order(self, buyer=None, listing=None, deadline_minutes=15):
+        buyer = buyer or self.buyer
+        listing = listing or self.listing
+        return Order.objects.create(
+            buyer=buyer,
+            seller=self.seller,
+            listing=listing,
+            buyer_display_name=buyer.username,
+            seller_display_name=self.seller.username,
+            listing_title_snapshot=listing.title,
+            order_price=listing.price,
+            status=Order.OrderStatus.PENDING_PAYMENT,
+            payment_deadline=timezone.now() + timedelta(minutes=deadline_minutes),
+        )
+
+    def test_buyer_can_pay_pending_order(self):
+        order = self._create_pending_order()
+        pay_order(self.buyer, order.pk)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.OrderStatus.AWAITING_SHIPMENT)
+        self.assertIsNotNone(order.paid_at)
+
+    def test_payment_sets_listing_to_reserved(self):
+        order = self._create_pending_order()
+        pay_order(self.buyer, order.pk)
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.RESERVED)
+
+    def test_payment_does_not_set_completed(self):
+        order = self._create_pending_order()
+        pay_order(self.buyer, order.pk)
+        order.refresh_from_db()
+        self.assertNotEqual(order.status, Order.OrderStatus.COMPLETED)
+        self.assertEqual(order.status, Order.OrderStatus.AWAITING_SHIPMENT)
+
+    def test_seller_cannot_pay(self):
+        order = self._create_pending_order()
+        with self.assertRaises(PermissionDenied):
+            pay_order(self.seller, order.pk)
+
+    def test_other_user_cannot_pay(self):
+        order = self._create_pending_order()
+        with self.assertRaises(PermissionDenied):
+            pay_order(self.other_user, order.pk)
+
+    def test_expired_order_payment_fails_and_cancels(self):
+        order = self._create_pending_order(deadline_minutes=-1)
+        with self.assertRaises(ValidationError) as ctx:
+            pay_order(self.buyer, order.pk)
+        self.assertIn("超时", str(ctx.exception.message))
+
+    def test_non_active_listing_payment_fails(self):
+        self.listing.status = Listing.Status.RESERVED
+        self.listing.save()
+        order = self._create_pending_order()
+        with self.assertRaises(ValidationError) as ctx:
+            pay_order(self.buyer, order.pk)
+        self.assertIn("不可购买", str(ctx.exception.message))
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.OrderStatus.PENDING_PAYMENT)
+
+    def test_concurrent_orders_only_one_succeeds(self):
+        buyer2 = User.objects.create_user(
+            username="买家D", email="buyerd@test.com", password="testpass123"
+        )
+        order1 = self._create_pending_order(buyer=self.buyer)
+        order2 = self._create_pending_order(buyer=buyer2)
+
+        pay_order(self.buyer, order1.pk)
+
+        with self.assertRaises(ValidationError):
+            pay_order(buyer2, order2.pk)
+
+        order1.refresh_from_db()
+        order2.refresh_from_db()
+        self.listing.refresh_from_db()
+        self.assertEqual(order1.status, Order.OrderStatus.AWAITING_SHIPMENT)
+        self.assertNotEqual(order2.status, Order.OrderStatus.AWAITING_SHIPMENT)
+        self.assertEqual(self.listing.status, Listing.Status.RESERVED)
+
+    def test_listing_none_payment_fails(self):
+        order = self._create_pending_order()
+        order.listing = None
+        order.save()
+        with self.assertRaises(ValidationError) as ctx:
+            pay_order(self.buyer, order.pk)
+        self.assertIn("商品不存在", str(ctx.exception.message))
+
+    def test_already_paid_order_cannot_pay_again(self):
+        order = self._create_pending_order()
+        pay_order(self.buyer, order.pk)
+        with self.assertRaises(ValidationError):
+            pay_order(self.buyer, order.pk)
+
+
+class CancelExpiredOrdersTest(TestCase):
+    """cancel_expired_pending_orders 服务层测试。"""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.buyer = User.objects.create_user(
+            username="买家A", email="buyer@test.com", password="testpass123"
+        )
+        cls.seller = User.objects.create_user(
+            username="卖家B", email="seller@test.com", password="testpass123"
+        )
+        cls.category = Category.objects.create(name="数码产品")
+        cls.listing = Listing.objects.create(
+            owner=cls.seller,
+            category=cls.category,
+            title="测试商品",
+            item_type=Listing.ItemType.PHYSICAL,
+            status=Listing.Status.ACTIVE,
+            price=Decimal("99.00"),
+            description="测试描述",
+        )
+
+    def _create_order(self, status, deadline_minutes):
+        return Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=self.listing,
+            buyer_display_name="买家A",
+            seller_display_name="卖家B",
+            listing_title_snapshot="测试商品",
+            order_price=Decimal("99.00"),
+            status=status,
+            payment_deadline=timezone.now() + timedelta(minutes=deadline_minutes),
+        )
+
+    def test_cancels_expired_pending_orders(self):
+        order = self._create_order(Order.OrderStatus.PENDING_PAYMENT, -5)
+        count = cancel_expired_pending_orders()
+        self.assertEqual(count, 1)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.OrderStatus.CANCELLED)
+        self.assertIsNotNone(order.cancelled_at)
+
+    def test_does_not_cancel_non_expired_orders(self):
+        order = self._create_order(Order.OrderStatus.PENDING_PAYMENT, 10)
+        count = cancel_expired_pending_orders()
+        self.assertEqual(count, 0)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.OrderStatus.PENDING_PAYMENT)
+
+    def test_does_not_modify_paid_orders(self):
+        order = self._create_order(Order.OrderStatus.AWAITING_SHIPMENT, -5)
+        count = cancel_expired_pending_orders()
+        self.assertEqual(count, 0)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.OrderStatus.AWAITING_SHIPMENT)
+
+    def test_does_not_modify_already_cancelled_orders(self):
+        order = self._create_order(Order.OrderStatus.CANCELLED, -5)
+        count = cancel_expired_pending_orders()
+        self.assertEqual(count, 0)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.OrderStatus.CANCELLED)
+
+    def test_idempotent_repeated_execution(self):
+        self._create_order(Order.OrderStatus.PENDING_PAYMENT, -5)
+        count1 = cancel_expired_pending_orders()
+        count2 = cancel_expired_pending_orders()
+        self.assertEqual(count1, 1)
+        self.assertEqual(count2, 0)
+
+    def test_does_not_modify_listing_status(self):
+        self._create_order(Order.OrderStatus.PENDING_PAYMENT, -5)
+        cancel_expired_pending_orders()
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
+
+
+class OrderPayViewTest(TestCase):
+    """OrderPayView 视图层测试。"""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.buyer = User.objects.create_user(
+            username="买家A", email="buyer@test.com", password="testpass123"
+        )
+        cls.seller = User.objects.create_user(
+            username="卖家B", email="seller@test.com", password="testpass123"
+        )
+        cls.other_user = User.objects.create_user(
+            username="路人C", email="other@test.com", password="testpass123"
+        )
+        cls.category = Category.objects.create(name="数码产品")
+        cls.listing = Listing.objects.create(
+            owner=cls.seller,
+            category=cls.category,
+            title="测试商品",
+            item_type=Listing.ItemType.PHYSICAL,
+            status=Listing.Status.ACTIVE,
+            price=Decimal("99.00"),
+            description="测试描述",
+        )
+
+    def _create_pending_order(self):
+        return Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=self.listing,
+            buyer_display_name="买家A",
+            seller_display_name="卖家B",
+            listing_title_snapshot="测试商品",
+            order_price=Decimal("99.00"),
+            status=Order.OrderStatus.PENDING_PAYMENT,
+            payment_deadline=timezone.now() + timedelta(minutes=15),
+        )
+
+    def test_get_not_allowed(self):
+        self.client.login(username="买家A", password="testpass123")
+        order = self._create_pending_order()
+        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 405)
+
+    def test_guest_redirected_to_login(self):
+        order = self._create_pending_order()
+        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/accounts/login/", response.url)
+
+    def test_buyer_can_pay_via_post(self):
+        self.client.login(username="买家A", password="testpass123")
+        order = self._create_pending_order()
+        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
+        response = self.client.post(url)
+        self.assertRedirects(
+            response,
+            reverse("orders:order_detail", kwargs={"pk": order.pk}),
+            fetch_redirect_response=False,
+        )
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.OrderStatus.AWAITING_SHIPMENT)
+
+    def test_seller_cannot_pay(self):
+        self.client.login(username="卖家B", password="testpass123")
+        order = self._create_pending_order()
+        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
+        response = self.client.post(url)
+        self.assertRedirects(
+            response,
+            reverse("orders:order_detail", kwargs={"pk": order.pk}),
+            fetch_redirect_response=False,
+        )
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.OrderStatus.PENDING_PAYMENT)
+
+    def test_other_user_cannot_pay(self):
+        self.client.login(username="路人C", password="testpass123")
+        order = self._create_pending_order()
+        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
+        response = self.client.post(url)
+        self.assertRedirects(
+            response,
+            reverse("orders:order_detail", kwargs={"pk": order.pk}),
+            fetch_redirect_response=False,
+        )
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.OrderStatus.PENDING_PAYMENT)
+
+    def test_expired_order_shows_error_message(self):
+        self.client.login(username="买家A", password="testpass123")
+        order = self._create_pending_order()
+        order.payment_deadline = timezone.now() - timedelta(minutes=1)
+        order.save()
+        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
+        response = self.client.post(url, follow=True)
+        self.assertContains(response, "超时")
+
+    def test_success_shows_success_message(self):
+        self.client.login(username="买家A", password="testpass123")
+        order = self._create_pending_order()
+        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
+        response = self.client.post(url, follow=True)
+        self.assertContains(response, "完成支付")
+
+    def test_nonexistent_order_returns_404(self):
+        self.client.login(username="买家A", password="testpass123")
+        url = reverse("orders:order_pay", kwargs={"pk": 99999})
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 404)

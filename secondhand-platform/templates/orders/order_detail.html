@@ -108,13 +108,72 @@
         </dl>
     </div>
 
-    {% if order.status == "pending_payment" %}
+    {% if order.status == "pending_payment" and request.user == order.buyer and not is_expired %}
     <div class="order-panel order-payment-box">
         <p style="margin:0; font-weight:700; color:var(--color-accent);">⚠️ 模拟支付，不会真实扣款</p>
         <p style="margin:8px 0 0; color:var(--color-secondary);">本平台为教学演示项目，所有支付流程均为模拟操作，不会产生任何真实费用。</p>
+        <p style="margin:8px 0 0; font-size:14px;">
+            支付截止时间：<strong>{{ order.payment_deadline|date:"Y-m-d H:i:s" }}</strong>
+            <span id="countdown" aria-live="polite" aria-atomic="true"></span>
+        </p>
         <div class="order-actions">
-            <button class="button" type="button" disabled>模拟支付（Story 4.2 实现）</button>
+            <form method="post" action="{% url 'orders:order_pay' order.pk %}">
+                {% csrf_token %}
+                <button class="button" type="submit" id="pay-btn">确认模拟支付</button>
+            </form>
         </div>
+    </div>
+    <script>
+    (function() {
+        var deadline = new Date("{{ order.payment_deadline|date:'c' }}");
+        var countdownEl = document.getElementById("countdown");
+        var payBtn = document.getElementById("pay-btn");
+        function update() {
+            var now = new Date();
+            var diff = deadline - now;
+            if (diff <= 0) {
+                countdownEl.textContent = "（已超时）";
+                payBtn.disabled = true;
+                payBtn.textContent = "订单已超时";
+                return;
+            }
+            var minutes = Math.floor(diff / 60000);
+            var seconds = Math.floor((diff % 60000) / 1000);
+            countdownEl.textContent = "（剩余 " + minutes + " 分 " + seconds + " 秒）";
+            setTimeout(update, 1000);
+        }
+        update();
+    })();
+    </script>
+    {% elif order.status == "pending_payment" and request.user == order.buyer and is_expired %}
+    <div class="order-panel">
+        <p style="margin:0; font-weight:700; color:var(--color-danger);">订单已超时，支付通道已关闭</p>
+        <p style="margin:8px 0 0; color:var(--color-secondary);">该订单已超过 15 分钟支付时限，系统将自动取消。</p>
+    </div>
+    {% elif order.status == "pending_payment" and request.user == order.seller %}
+    <div class="order-panel order-payment-box">
+        <p style="margin:0; font-weight:700;">等待买家支付</p>
+        <p style="margin:8px 0 0; color:var(--color-secondary);">支付截止时间：{{ order.payment_deadline|date:"Y-m-d H:i:s" }}</p>
+    </div>
+    {% elif order.status == "cancelled" %}
+    <div class="order-panel">
+        <p style="margin:0; font-weight:700; color:var(--color-danger);">订单已取消</p>
+        {% if order.cancelled_at %}
+        <p style="margin:8px 0 0; color:var(--color-secondary);">取消时间：{{ order.cancelled_at|date:"Y-m-d H:i" }}</p>
+        {% endif %}
+    </div>
+    {% elif order.status == "awaiting_shipment" %}
+    <div class="order-panel">
+        <p style="margin:0; font-weight:700; color:var(--color-success);">支付成功，等待卖家发货</p>
+        <p style="margin:8px 0 0; color:var(--color-secondary);">支付时间：{{ order.paid_at|date:"Y-m-d H:i" }}</p>
+    </div>
+    {% elif order.status == "awaiting_receipt" %}
+    <div class="order-panel">
+        <p style="margin:0; font-weight:700;">卖家已发货，等待买家确认收货</p>
+    </div>
+    {% elif order.status == "completed" %}
+    <div class="order-panel">
+        <p style="margin:0; font-weight:700; color:var(--color-success);">交易已完成</p>
     </div>
     {% endif %}
 

@@ -56,7 +56,7 @@ class Order(models.Model):
     order_price = models.DecimalField(
         max_digits=8, decimal_places=2, verbose_name="订单价格"
     )
-    payment_deadline = models.DateTimeField(verbose_name="截止时间", null=True)
+    payment_deadline = models.DateTimeField(verbose_name="截止时间")
     paid_at = models.DateTimeField(verbose_name="支付成功时间", null=True)
     shipped_at = models.DateTimeField(verbose_name="卖家确认交付时间", null=True)
     received_at = models.DateTimeField(verbose_name="买家确认收货时间", null=True)

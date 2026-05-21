@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -148,3 +149,18 @@ LOGOUT_REDIRECT_URL = "/"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Celery通用配置
+CELERY_BEAT_SCHEDULE = {
+    "cleanup_expired_unpaid_orders": {
+        "task": "orders.tasks.cancel_expired_pending_orders_task",
+        "schedule": crontab(minute="*/1"),
+    }
+}
+
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+
+CELERY_TIMEZONE = "Asia/Shanghai"
+CELERY_ENABLE_UTC = True

@@ -3,7 +3,7 @@ from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError, PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.db.models.query import QuerySet
@@ -27,6 +27,7 @@ from catalog.services import (
     ensure_listing_owner,
     update_listing,
 )
+from orders.services import create_order
 
 
 class ListingCreateView(LoginRequiredMixin, View):
@@ -341,3 +342,43 @@ class ListingDetailView(DetailView):
             }
         )
         return context
+
+
+class PurchaseConfirmView(LoginRequiredMixin, View):
+    template_name = "catalog/purchase_confirm.html"
+
+    def get_object(self, pk):
+        return get_object_or_404(Listing, pk=pk)
+
+    def get_context_data(self, listing):
+        context = {
+            "listing": listing,
+            "seller": listing.owner,
+            "hit": "请确认是否购买该商品",
+        }
+        return context
+
+    def get(self, request, pk):
+        listing = self.get_object(pk)
+        if listing.status != Listing.Status.ACTIVE:
+            messages.error(request, "该商品当前不可购买")
+            return redirect("catalog:listing_detail", pk=pk)
+        if request.user == listing.owner:
+            messages.error(request, "不能购买自己发布的商品")
+            return redirect("catalog:listing_detail", pk=pk)
+        context = self.get_context_data(listing)
+        return render(request, self.template_name, context)
+
+    def post(self, request, pk):
+        listing = self.get_object(pk)
+
+        try:
+            order = create_order(request.user, listing)
+        except PermissionDenied:
+            messages.error(request, "不能购买自己发布的商品")
+            return redirect("catalog:listing_detail", pk=pk)
+        except ValidationError:
+            messages.error(request, "该商品当前不可购买")
+            return redirect("catalog:listing_detail", pk=pk)
+
+        return redirect("orders:order_detail", pk=order.pk)

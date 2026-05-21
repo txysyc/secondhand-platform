@@ -69,7 +69,7 @@ class Listing(models.Model):
         settings.AUTH_USER_MODEL,
         verbose_name="所属用户",
         related_name="listing",
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
     )
     category = models.ForeignKey(
         "Category",

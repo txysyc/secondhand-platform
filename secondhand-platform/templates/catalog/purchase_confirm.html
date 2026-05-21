@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}购买确认 - {{ listing.title }}{% endblock %}
+
+{% block content %}
+<style>
+    .purchase-layout {
+        max-width: 640px;
+        margin: 0 auto;
+    }
+
+    .purchase-panel {
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-background);
+        box-shadow: var(--shadow-soft);
+        padding: 28px;
+        margin-top: 24px;
+    }
+
+    .purchase-summary {
+        display: grid;
+        grid-template-columns: 100px 1fr;
+        gap: 18px;
+        align-items: start;
+    }
+
+    .purchase-thumb {
+        width: 100px;
+        height: 75px;
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--color-muted);
+        display: grid;
+        place-items: center;
+        color: var(--color-secondary);
+        font-size: 12px;
+    }
+
+    .purchase-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .purchase-info {
+        display: grid;
+        gap: 6px;
+    }
+
+    .purchase-title {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 800;
+    }
+
+    .purchase-price {
+        margin: 0;
+        font-size: 26px;
+        font-weight: 800;
+    }
+</style>
+<section class="purchase-layout" aria-labelledby="purchase-title">
+    <p class="eyebrow">购买确认</p>
+    <h1 id="purchase-title">确认购买商品</h1>
+    <p class="lede">{{ hit }}</p>
+
+    <div class="purchase-panel">
+        <div class="purchase-summary">
+            <div class="purchase-thumb">
+                {% if listing.images.all %}
+                    <img src="{{ listing.images.all.0.image.url }}" alt="{{ listing.title }}">
+                {% else %}
+                    暂无图片
+                {% endif %}
+            </div>
+            <div class="purchase-info">
+                <h2 class="purchase-title">{{ listing.title }}</h2>
+                <p class="purchase-price">¥{{ listing.price }}</p>
+                <p style="margin:0; color:var(--color-secondary);">{{ listing.get_item_type_display }}{% if listing.item_type == listing.ItemType.PHYSICAL and listing.physical_delivery_method %} · {{ listing.get_physical_delivery_method_display }}{% endif %}</p>
+            </div>
+        </div>
+
+        <dl class="detail-facts" style="margin-top:18px;">
+            <div><dt>卖家</dt><dd>{{ seller.profile.nickname|default:seller.username }}</dd></div>
+            <div><dt>商品类型</dt><dd>{{ listing.get_item_type_display }}</dd></div>
+            {% if listing.item_type == listing.ItemType.PHYSICAL and listing.physical_delivery_method %}
+                <div><dt>交付方式</dt><dd>{{ listing.get_physical_delivery_method_display }}</dd></div>
+            {% endif %}
+            {% if listing.delivery_notes %}
+                <div><dt>交付说明</dt><dd>{{ listing.delivery_notes }}</dd></div>
+            {% endif %}
+        </dl>
+    </div>
+
+    <div class="purchase-panel" style="border-left: 4px solid var(--color-accent);">
+        <p style="margin:0; font-weight:700; color:var(--color-accent);">⚠️ 模拟支付，不会真实扣款</p>
+        <p style="margin:8px 0 0; color:var(--color-secondary);">本平台为教学演示项目，所有支付流程均为模拟操作，不会产生任何真实费用。</p>
+    </div>
+
+    <div class="purchase-panel">
+        <form method="post" action="{% url 'catalog:listing_purchase' listing.pk %}">
+            {% csrf_token %}
+            <div class="form-actions">
+                <button class="button" type="submit">确认下单</button>
+                <a class="button-secondary" href="{% url 'catalog:listing_detail' listing.pk %}">返回商品详情</a>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}

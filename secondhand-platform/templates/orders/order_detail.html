@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}订单详情 - 二手交易平台{% endblock %}
+
+{% block content %}
+<style>
+    .order-layout {
+        max-width: 720px;
+        margin: 0 auto;
+    }
+
+    .order-panel {
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-background);
+        box-shadow: var(--shadow-soft);
+        padding: 24px;
+        margin-top: 20px;
+    }
+
+    .order-status-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 34px;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        padding: 6px 12px;
+        background: var(--color-surface);
+        font-weight: 700;
+        font-size: 14px;
+    }
+
+    .order-price {
+        margin: 12px 0 0;
+        font-size: 30px;
+        font-weight: 800;
+    }
+
+    .order-facts {
+        margin: 0;
+        display: grid;
+        gap: 10px;
+    }
+
+    .order-facts div {
+        display: grid;
+        grid-template-columns: 120px minmax(0, 1fr);
+        gap: 12px;
+        padding-top: 10px;
+        border-top: 1px solid var(--color-border);
+    }
+
+    .order-facts dt {
+        margin: 0;
+        font-weight: 800;
+    }
+
+    .order-facts dd {
+        margin: 0;
+        color: var(--color-secondary);
+        overflow-wrap: anywhere;
+    }
+    .order-payment-box {
+        border-left: 4px solid var(--color-accent);
+    }
+
+    .order-actions {
+        display: grid;
+        gap: 12px;
+        margin-top: 18px;
+    }
+
+    @media (max-width: 640px) {
+        .order-facts div {
+            grid-template-columns: 1fr;
+            gap: 4px;
+        }
+    }
+</style>
+
+<section class="order-layout" aria-labelledby="order-detail-title">
+    <p class="eyebrow">订单详情</p>
+    <h1 id="order-detail-title">{{ order.listing_title_snapshot }}</h1>
+    <span class="order-status-badge">{{ order.get_status_display }}</span>
+    <p class="order-price">¥{{ order.order_price }}</p>
+
+    <div class="order-panel">
+        <h2 style="margin:0 0 16px; font-size:20px;">订单信息</h2>
+        <dl class="order-facts">
+            <div><dt>商品名称</dt><dd>{% if order.listing %}<a href="{% url 'catalog:listing_detail' order.listing.pk %}">{{ order.listing_title_snapshot }}</a>{% else %}{{ order.listing_title_snapshot }}（商品已删除）{% endif %}</dd></div>
+            <div><dt>买家</dt><dd>{{ order.buyer_display_name }}</dd></div>
+            <div><dt>卖家</dt><dd>{{ order.seller_display_name }}</dd></div>
+            <div><dt>订单状态</dt><dd>{{ order.get_status_display }}</dd></div>
+            <div><dt>下单时间</dt><dd>{{ order.created_at|date:"Y-m-d H:i" }}</dd></div>
+            <div><dt>支付截止</dt><dd>{{ order.payment_deadline|date:"Y-m-d H:i" }}</dd></div>
+            {% if order.paid_at %}
+                <div><dt>支付时间</dt><dd>{{ order.paid_at|date:"Y-m-d H:i" }}</dd></div>
+            {% endif %}
+            {% if order.shipped_at %}
+                <div><dt>发货时间</dt><dd>{{ order.shipped_at|date:"Y-m-d H:i" }}</dd></div>
+            {% endif %}
+            {% if order.received_at %}
+                <div><dt>收货时间</dt><dd>{{ order.received_at|date:"Y-m-d H:i" }}</dd></div>
+            {% endif %}
+            {% if order.cancelled_at %}
+                <div><dt>取消时间</dt><dd>{{ order.cancelled_at|date:"Y-m-d H:i" }}</dd></div>
+            {% endif %}
+        </dl>
+    </div>
+
+    {% if order.status == "pending_payment" %}
+    <div class="order-panel order-payment-box">
+        <p style="margin:0; font-weight:700; color:var(--color-accent);">⚠️ 模拟支付，不会真实扣款</p>
+        <p style="margin:8px 0 0; color:var(--color-secondary);">本平台为教学演示项目，所有支付流程均为模拟操作，不会产生任何真实费用。</p>
+        <div class="order-actions">
+            <button class="button" type="button" disabled>模拟支付（Story 4.2 实现）</button>
+        </div>
+    </div>
+    {% endif %}
+
+    <nav style="margin-top:22px; display:flex; flex-wrap:wrap; gap:10px;" aria-label="返回入口">
+        <a class="button-secondary" href="{% url 'catalog:listing_list' %}">返回浏览商品</a>
+    </nav>
+</section>
+{% endblock %}

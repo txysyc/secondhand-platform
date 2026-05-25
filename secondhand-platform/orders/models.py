@@ -2,8 +2,6 @@ from django.db import models
 
 from django.conf import settings
 
-
-# Create your models here.
 class Order(models.Model):
     class Meta:
         verbose_name = "订单"
@@ -20,6 +18,7 @@ class Order(models.Model):
         CANCELLED = "cancelled", "已取消"
         AWAITING_SHIPMENT = "awaiting_shipment", "待发货"
         AWAITING_RECEIPT = "awaiting_receipt", "待收货"
+        SIGNED = "signed", "已签收"
         COMPLETED = "completed", "已完成"
 
     buyer = models.ForeignKey(
@@ -58,8 +57,12 @@ class Order(models.Model):
     )
     payment_deadline = models.DateTimeField(verbose_name="截止时间")
     paid_at = models.DateTimeField(verbose_name="支付成功时间", null=True)
-    shipped_at = models.DateTimeField(verbose_name="卖家确认交付时间", null=True)
-    received_at = models.DateTimeField(verbose_name="买家确认收货时间", null=True)
+    shipped_at = models.DateTimeField(verbose_name="卖家确认发货时间", null=True)
+    logistics_signed_due_at = models.DateTimeField(
+        verbose_name="模拟物流到达时间", null=True
+    )
+    signed_at = models.DateTimeField(verbose_name="签收时间", null=True)
+    completed_at = models.DateTimeField(verbose_name="签收时间", null=True)
     cancelled_at = models.DateTimeField(verbose_name="取消时间", null=True)
     created_at = models.DateTimeField(verbose_name="创建时间", auto_now_add=True)
     updated_at = models.DateTimeField(verbose_name="更新时间", auto_now=True)

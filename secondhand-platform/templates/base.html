@@ -100,6 +100,9 @@
         .nav-user {
             color: var(--color-secondary);
             font-size: 14px;
+            min-width: 0;
+            max-width: 100%;
+            overflow-wrap: anywhere;
         }
 
         .button,
@@ -363,6 +366,10 @@
                 justify-content: flex-start;
             }
 
+            .nav-user {
+                width: 100%;
+            }
+
             .main-content {
                 padding: 32px 0 48px;
             }
@@ -401,6 +408,8 @@
                 {% if user.is_authenticated %}
                     <span class="nav-user">已登录：{{ user.username }}</span>
                     <a class="button-secondary" href="{% url 'catalog:my_listing_list' %}">我的商品</a>
+                    <a class="button-secondary" href="{% url 'orders:buyer_order_list' %}">我的订单</a>
+                    <a class="button-secondary" href="{% url 'orders:seller_order_list' %}">卖出订单</a>
                     <a class="button-secondary" href="{% url 'users:profile' %}">我的资料</a>
                     <form method="post" action="{% url 'users:logout' %}">
                         {% csrf_token %}

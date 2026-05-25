@@ -2,8 +2,6 @@ from django.contrib import admin
 
 from orders.models import Order
 
-
-# Register your models here.
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = [
@@ -15,7 +13,8 @@ class OrderAdmin(admin.ModelAdmin):
         "payment_deadline",
         "paid_at",
         "shipped_at",
-        "received_at",
+        "signed_at",
+        "completed_at",
         "cancelled_at",
         "created_at",
         "updated_at",

@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}卖出订单 - 二手交易平台{% endblock %}
+
+{% block content %}
+<style>
+    .order-list-header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 28px;
+    }
+
+    .order-list {
+        display: grid;
+        gap: 14px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .order-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 16px;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-background);
+        box-shadow: var(--shadow-soft);
+        padding: 18px;
+    }
+
+    .order-card.needs-action {
+        border-left: 4px solid var(--color-accent);
+    }
+
+    .order-card-body {
+        display: grid;
+        gap: 10px;
+        min-width: 0;
+    }
+
+    .order-card-title {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+    }
+
+    .order-card-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        margin: 0;
+        color: var(--color-secondary);
+        font-size: 14px;
+    }
+
+    .order-card-meta dt {
+        display: inline;
+        margin: 0;
+        font-weight: 800;
+    }
+
+    .order-card-meta dd {
+        display: inline;
+        margin: 0 0 0 4px;
+    }
+
+    .order-status {
+        min-height: 34px;
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        padding: 6px 10px;
+        background: var(--color-surface);
+        font-weight: 800;
+        width: fit-content;
+    }
+
+    .order-next-step {
+        margin: 0;
+        color: var(--color-secondary);
+        overflow-wrap: anywhere;
+    }
+
+    .order-empty {
+        border: 1px dashed var(--color-border);
+        border-radius: 8px;
+        background: var(--color-surface);
+        padding: 18px;
+        color: var(--color-secondary);
+    }
+
+    .pagination {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 22px;
+    }
+
+    @media (max-width: 640px) {
+        .order-card {
+            grid-template-columns: 1fr;
+        }
+
+        .order-card-actions .button-secondary {
+            width: 100%;
+        }
+    }
+</style>
+
+<section aria-labelledby="seller-orders-title">
+    <div class="order-list-header">
+        <div>
+            <p class="eyebrow">订单管理</p>
+            <h1 id="seller-orders-title">卖出订单</h1>
+            <p class="lede">查看与你发布商品相关的待处理订单和历史订单。</p>
+        </div>
+        <a class="button-secondary" href="{% url 'catalog:my_listing_list' %}">返回我的商品</a>
+    </div>
+
+    {% if orders %}
+        <ul class="order-list">
+            {% for order in orders %}
+                <li class="order-card{% if order.status == "awaiting_shipment" %} needs-action{% endif %}">
+                    <div class="order-card-body">
+                        <h2 class="order-card-title">#{{ order.pk }} {{ order.listing_title_snapshot }}</h2>
+                        <span class="order-status">{{ order.get_status_display }}</span>
+                        <dl class="order-card-meta">
+                            <div><dt>买家</dt><dd>{{ order.buyer_display_name }}</dd></div>
+                            <div><dt>金额</dt><dd>¥{{ order.order_price }}</dd></div>
+                            <div><dt>下单时间</dt><dd>{{ order.created_at|date:"Y-m-d H:i" }}</dd></div>
+                            <div><dt>支付截止</dt><dd>{{ order.payment_deadline|date:"Y-m-d H:i" }}</dd></div>
+                            {% if order.paid_at %}<div><dt>支付时间</dt><dd>{{ order.paid_at|date:"Y-m-d H:i" }}</dd></div>{% endif %}
+                            {% if order.shipped_at %}<div><dt>发货时间</dt><dd>{{ order.shipped_at|date:"Y-m-d H:i" }}</dd></div>{% endif %}
+                            {% if order.logistics_signed_due_at %}<div><dt>预计签收</dt><dd>{{ order.logistics_signed_due_at|date:"Y-m-d H:i" }}</dd></div>{% endif %}
+                            {% if order.signed_at %}<div><dt>签收时间</dt><dd>{{ order.signed_at|date:"Y-m-d H:i" }}</dd></div>{% endif %}
+                            {% if order.completed_at %}<div><dt>完成时间</dt><dd>{{ order.completed_at|date:"Y-m-d H:i" }}</dd></div>{% endif %}
+                            {% if order.cancelled_at %}<div><dt>取消时间</dt><dd>{{ order.cancelled_at|date:"Y-m-d H:i" }}</dd></div>{% endif %}
+                        </dl>
+                        {% if order.status == "pending_payment" and order.payment_deadline < now %}
+                            <p class="order-next-step">支付已超时，等待系统取消，不需要卖家处理。</p>
+                        {% elif order.status == "pending_payment" %}
+                            <p class="order-next-step">等待买家支付，不需要卖家处理。</p>
+                        {% elif order.status == "awaiting_shipment" %}
+                            <p class="order-next-step">需要卖家继续处理：进入详情页确认发货或交付。</p>
+                        {% elif order.status == "awaiting_receipt" %}
+                            {% if not order.listing %}
+                                <p class="order-next-step">关联商品已删除，无法继续确认收货，等待后续治理处理。</p>
+                            {% elif order.listing.item_type == "physical" %}
+                                <p class="order-next-step">已发货，运输中，等待模拟物流签收或买家提前确认收货。</p>
+                            {% else %}
+                                <p class="order-next-step">已交付，等待买家确认或系统自动确认。</p>
+                            {% endif %}
+                        {% elif order.status == "signed" %}
+                            <p class="order-next-step">已签收，等待买家确认收货；签收后 3 天将自动确认。</p>
+                        {% elif order.status == "cancelled" %}
+                            <p class="order-next-step">该订单已取消，不需要处理。</p>
+                        {% elif order.status == "completed" %}
+                            <p class="order-next-step">该订单已完成{% if order.completed_at %}，完成时间：{{ order.completed_at|date:"Y-m-d H:i" }}{% endif %}。</p>
+                        {% endif %}
+                    </div>
+                    <div class="order-card-actions">
+                        <a class="button-secondary" href="{% url 'orders:order_detail' order.pk %}">查看详情</a>
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+
+        {% if is_paginated %}
+            <nav class="pagination" aria-label="订单分页">
+                {% if page_obj.has_previous %}
+                    <a class="button-secondary" href="?page={{ page_obj.previous_page_number }}">上一页</a>
+                {% endif %}
+                <span class="status-pill">第 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} 页</span>
+                {% if page_obj.has_next %}
+                    <a class="button-secondary" href="?page={{ page_obj.next_page_number }}">下一页</a>
+                {% endif %}
+            </nav>
+        {% endif %}
+    {% else %}
+        <div class="order-empty">
+            <p style="margin:0;">目前还没有与你发布商品相关的订单。</p>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

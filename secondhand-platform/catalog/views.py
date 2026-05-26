@@ -12,6 +12,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views import View
 from django.views.generic import ListView, DetailView
+from django.conf import settings
 
 from catalog.forms import ListingForm, ListingImageFormSet, ListingFilterForm
 from catalog.models import Listing
@@ -28,6 +29,8 @@ from catalog.services import (
     update_listing,
 )
 from orders.services import create_order
+from interactions.forms import CommentForm
+from interactions.selectors import get_listing_comments
 
 
 class ListingCreateView(LoginRequiredMixin, View):
@@ -313,11 +316,20 @@ class ListingDetailView(DetailView):
         listing = self.object
         user = self.request.user
         is_seller = user.is_authenticated and listing.owner_id == user.id
+        # 获取所属的评论
+        comments = get_listing_comments(listing)
+        # 判断用户是否登录，可以进行评论
+        if user.is_authenticated:
+            comment_form = CommentForm()
+            can_comment = True
+            if listing.status != Listing.Status.ACTIVE:
+                can_comment = False
+            context.update({"comment_form": comment_form, "can_comment": can_comment})
         # 购买链接
         purchase_path = f"/listings/{listing.pk}/purchase/"
         purchase_url = purchase_path
         purchase_disabled_reason = ""
-
+        # 判断是否可以购买
         can_purchase = listing.status == Listing.Status.ACTIVE and not is_seller
         if can_purchase and not user.is_authenticated:
             purchase_url = (
@@ -339,12 +351,15 @@ class ListingDetailView(DetailView):
                 "purchase_url": purchase_url,
                 "purchase_disabled_reason": purchase_disabled_reason,
                 "purchase_requires_login": can_purchase and not user.is_authenticated,
+                "comments": comments,
             }
         )
         return context
 
 
 class PurchaseConfirmView(LoginRequiredMixin, View):
+    """确认购买"""
+
     template_name = "catalog/purchase_confirm.html"
 
     def get_object(self, pk):

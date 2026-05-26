@@ -14,6 +14,7 @@ urlpatterns = [
     path("users/<int:user_id>/", PublicProfileView.as_view(), name="public_profile"),
     path("listings/", include("catalog.urls", namespace="catalog")),
     path("orders/", include("orders.urls", namespace="orders")),
+    path("comments/", include("interactions.urls", namespace="interactions")),
 ]
 
 if settings.DEBUG:

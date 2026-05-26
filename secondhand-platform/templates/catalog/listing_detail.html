@@ -178,6 +178,104 @@
         gap: 10px;
     }
 
+    .comment-thread {
+        margin-top: 24px;
+    }
+
+    .comment-thread-list {
+        margin-top: 18px;
+        display: grid;
+        gap: 14px;
+    }
+
+    .comment-compose {
+        display: grid;
+        gap: 10px;
+    }
+
+    .comment-form {
+        display: grid;
+        gap: 10px;
+    }
+
+    .comment-form label {
+        font-weight: 800;
+    }
+
+    .comment-form textarea {
+        width: 100%;
+        min-height: 112px;
+        resize: vertical;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font: inherit;
+        color: var(--color-text);
+        background: var(--color-background);
+        box-sizing: border-box;
+    }
+
+    .comment-thread-item {
+        display: grid;
+        gap: 8px;
+        border-top: 1px solid var(--color-border);
+        padding-top: 14px;
+    }
+
+    .comment-thread-item:first-child {
+        border-top: 0;
+        padding-top: 0;
+    }
+
+    .comment-thread-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        color: var(--color-secondary);
+        font-size: 14px;
+    }
+
+    .comment-thread-meta strong {
+        color: var(--color-text);
+    }
+
+    .comment-seller-badge {
+        min-height: 26px;
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        padding: 3px 8px;
+        background: var(--color-surface);
+        color: var(--color-text);
+        font-weight: 700;
+    }
+
+    .comment-thread-content,
+    .comment-thread-empty,
+    .comment-form-error {
+        margin: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .comment-thread-empty {
+        color: var(--color-secondary);
+    }
+
+    .comment-form-error {
+        color: var(--color-danger);
+        font-weight: 700;
+    }
+
+    .comment-delete-form {
+        justify-self: start;
+    }
+
+    .comment-delete-button {
+        color: var(--color-danger);
+    }
+
     @media (max-width: 800px) {
         .detail-header,
         .detail-layout {
@@ -277,6 +375,8 @@
             </dl>
         </aside>
     </div>
+
+    {% include "interactions/comment_thread.html" %}
 
     <nav class="detail-back" aria-label="返回入口">
         <a class="button-secondary" href="{% url 'catalog:listing_list' %}">返回浏览商品</a>

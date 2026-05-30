@@ -249,10 +249,11 @@ class PurchaseConfirmViewTest(TestCase):
     def test_post_creates_order_and_redirects(self):
         self.client.login(username="买家A", password="testpass123")
         url = reverse("catalog:listing_purchase", kwargs={"pk": self.listing.pk})
+        before_count = Order.objects.count()
         response = self.client.post(url)
 
-        self.assertEqual(Order.objects.count(), 1)
-        order = Order.objects.first()
+        self.assertEqual(Order.objects.count(), before_count + 1)
+        order = Order.objects.get(listing=self.listing, buyer=self.buyer)
         self.assertEqual(order.buyer, self.buyer)
         self.assertEqual(order.seller, self.seller)
         self.assertRedirects(
@@ -263,9 +264,10 @@ class PurchaseConfirmViewTest(TestCase):
     def test_post_self_purchase_redirects_with_error(self):
         self.client.login(username="卖家B", password="testpass123")
         url = reverse("catalog:listing_purchase", kwargs={"pk": self.listing.pk})
+        before_count = Order.objects.count()
         response = self.client.post(url)
 
-        self.assertEqual(Order.objects.count(), 0)
+        self.assertEqual(Order.objects.count(), before_count)
         self.assertRedirects(
             response,
             reverse("catalog:listing_detail", kwargs={"pk": self.listing.pk}),
@@ -283,9 +285,10 @@ class PurchaseConfirmViewTest(TestCase):
             description="测试",
         )
         url = reverse("catalog:listing_purchase", kwargs={"pk": withdrawn_listing.pk})
+        before_count = Order.objects.count()
         response = self.client.post(url)
 
-        self.assertEqual(Order.objects.count(), 0)
+        self.assertEqual(Order.objects.count(), before_count)
         self.assertRedirects(
             response,
             reverse("catalog:listing_detail", kwargs={"pk": withdrawn_listing.pk}),

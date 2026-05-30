@@ -4,6 +4,8 @@ from interactions.models import Comment
 
 
 class CommentForm(forms.ModelForm):
+    """留言表单"""
+
     class Meta:
         model = Comment
         fields = ["content"]

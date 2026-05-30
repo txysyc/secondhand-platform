@@ -227,6 +227,30 @@
         padding-top: 0;
     }
 
+    .comment-replies {
+        display: grid;
+        gap: 10px;
+        margin-top: 4px;
+        padding-left: 16px;
+        border-left: 3px solid var(--color-border);
+        min-width: 0;
+    }
+
+    .comment-reply-item {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .comment-reply-form {
+        margin-top: 4px;
+        max-width: 640px;
+    }
+
+    .comment-reply-form textarea {
+        min-height: 82px;
+    }
+
     .comment-thread-meta {
         display: flex;
         flex-wrap: wrap;
@@ -285,6 +309,10 @@
         .detail-facts div {
             grid-template-columns: 1fr;
             gap: 4px;
+        }
+
+        .comment-replies {
+            padding-left: 10px;
         }
     }
 </style>

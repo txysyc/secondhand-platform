@@ -86,6 +86,9 @@ class OrderConfirmDeliveryView(LoginRequiredMixin, View):
     def post(self, request, pk):
         try:
             confirm_order_delivery(request.user, pk)
+        except PermissionDenied:
+            messages.error(request, "当前用户不是订单卖家，无权确认发货")
+            return redirect("orders:order_detail", pk)
         except ValidationError as e:
             messages.error(request, e.messages)
             return redirect("orders:order_detail", pk)
@@ -98,6 +101,9 @@ class OrderConfirmReceiptView(LoginRequiredMixin, View):
     def post(self, request, pk):
         try:
             confirm_order_receipt(request.user, pk)
+        except PermissionDenied:
+            messages.error(request, "当前用户不是订单买家，无权确认收货")
+            return redirect("orders:order_detail", pk)
         except ValidationError as e:
             messages.error(request, e.messages)
             return redirect("orders:order_detail", pk)

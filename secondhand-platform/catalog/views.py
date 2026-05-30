@@ -31,6 +31,7 @@ from catalog.services import (
 from orders.services import create_order
 from interactions.forms import CommentForm
 from interactions.selectors import get_listing_comments
+from interactions.services import can_interact_with_listing
 
 
 class ListingCreateView(LoginRequiredMixin, View):
@@ -318,13 +319,14 @@ class ListingDetailView(DetailView):
         is_seller = user.is_authenticated and listing.owner_id == user.id
         # 获取所属的评论
         comments = get_listing_comments(listing)
-        # 判断用户是否登录，可以进行评论
+        can_comment = can_interact_with_listing(listing)
         if user.is_authenticated:
-            comment_form = CommentForm()
-            can_comment = True
-            if listing.status != Listing.Status.ACTIVE:
-                can_comment = False
-            context.update({"comment_form": comment_form, "can_comment": can_comment})
+            context.update(
+                {
+                    "comment_form": CommentForm(),
+                    "reply_form": CommentForm(),
+                }
+            )
         # 购买链接
         purchase_path = f"/listings/{listing.pk}/purchase/"
         purchase_url = purchase_path
@@ -347,6 +349,7 @@ class ListingDetailView(DetailView):
         context.update(
             {
                 "is_seller": is_seller,
+                "can_comment": can_comment,
                 "can_purchase": can_purchase,
                 "purchase_url": purchase_url,
                 "purchase_disabled_reason": purchase_disabled_reason,

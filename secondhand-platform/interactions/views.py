@@ -6,7 +6,7 @@ from django.contrib import messages
 
 from interactions.forms import CommentForm
 from interactions.models import Comment
-from interactions.services import create_comment, delete_comment
+from interactions.services import create_comment, delete_comment, create_reply
 from catalog.models import Listing
 
 
@@ -57,17 +57,50 @@ class CommentDeleteView(LoginRequiredMixin, View):
         return redirect("catalog:listing_detail", listing_id)
 
 
-def _first_form_error_message(form, fallback):
+def _first_form_error_message(form, fallback: str):
+    """处理表单校验未通过时的错误"""
     for errors in form.errors.values():
         if errors:
             return errors[0]
     return fallback
 
 
-def _first_error_message(error, fallback):
+def _first_error_message(error, fallback: str):
+    """校验服务层异常错误"""
     messages_list = getattr(error, "messages", None)
     if messages_list:
         return messages_list[0]
     if error.args:
         return str(error.args[0])
     return fallback
+
+
+class CommentReplyView(LoginRequiredMixin, View):
+    http_method_names = ["post"]
+    form_class = CommentForm
+    model = Comment
+
+    def post(self, request, pk):
+        form = self.form_class(request.POST)
+        comment = get_object_or_404(
+            Comment.objects.select_related(
+                "listing", "listing__category", "listing__owner"
+            ),
+            pk=pk,
+        )
+
+        if form.is_valid():
+            content = form.cleaned_data.get("content", "")
+            try:
+                create_reply(request.user, comment, content)
+            except ValidationError as error:
+                messages.error(request, _first_error_message(error, "留言回复失败"))
+                return redirect("catalog:listing_detail", pk=comment.listing_id)
+            except PermissionDenied as error:
+                messages.error(request, _first_error_message(error, "无权回复留言"))
+                return redirect("catalog:listing_detail", pk=comment.listing_id)
+            messages.success(request, "留言回复成功")
+            return redirect("catalog:listing_detail", pk=comment.listing_id)
+
+        messages.error(request, _first_form_error_message(form, "留言回复失败"))
+        return redirect("catalog:listing_detail", pk=comment.listing_id)

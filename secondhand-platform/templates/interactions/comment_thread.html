@@ -46,6 +46,36 @@
                         <button class="button-secondary comment-delete-button" type="submit">删除</button>
                     </form>
                 {% endif %}
+
+                <div class="comment-replies" aria-label="回复列表">
+                    {% for reply in comment.replies.all %}
+                        <article class="comment-reply-item">
+                            <header class="comment-thread-meta">
+                                <strong>
+                                    {% if reply.author %}
+                                        {{ reply.author.profile.nickname|default:reply.author.username }}
+                                    {% else %}
+                                        已注销用户
+                                    {% endif %}
+                                </strong>
+                                {% if reply.author_id == listing.owner_id %}
+                                    <span class="comment-seller-badge">卖家</span>
+                                {% endif %}
+                                <time datetime="{{ reply.created_at|date:'c' }}">{{ reply.created_at|date:"Y-m-d H:i" }}</time>
+                            </header>
+                            <p class="comment-thread-content">{{ reply.content|linebreaksbr }}</p>
+                        </article>
+                    {% endfor %}
+                </div>
+
+                {% if request.user.is_authenticated and can_comment %}
+                    <form method="post" action="{% url 'interactions:reply' comment.pk %}" class="comment-form comment-reply-form">
+                        {% csrf_token %}
+                        <label for="reply-content-{{ comment.pk }}">回复内容</label>
+                        <textarea id="reply-content-{{ comment.pk }}" name="content" maxlength="1000" rows="3" required></textarea>
+                        <button class="button-secondary" type="submit">回复</button>
+                    </form>
+                {% endif %}
             </article>
         {% empty %}
             <p class="comment-thread-empty">暂无留言，后续咨询会显示在这里。</p>

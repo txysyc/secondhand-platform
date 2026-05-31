@@ -36,14 +36,15 @@ class ListingAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
         "condition",
-        "delivery_notes",
+        "delivery_notes_summary",
         "physical_delivery_method",
         "virtual_valid_until",
     ]
     list_filter = [
-        "category",
-        "item_type",
         "status",
+        "category",
+        "owner",
+        "item_type",
         "created_at",
     ]
     list_select_related = ["owner", "category"]
@@ -60,3 +61,7 @@ class ListingAdmin(admin.ModelAdmin):
     @admin.display(description="图片数量", ordering="image_count_value")
     def image_count_value(self, obj):
         return obj.image_count_value
+
+    @admin.display(description="交付说明摘要")
+    def delivery_notes_summary(self, obj):
+        return obj.delivery_notes[0:20]

@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.contrib.auth.models import AnonymousUser
@@ -10,6 +11,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from catalog.models import Category, Listing
+from orders.admin import OrderAdmin
 from orders.models import Order
 from orders.selectors import get_buyer_orders, get_seller_orders
 from orders.services import (
@@ -93,6 +95,75 @@ class OrderModelTest(TestCase):
         order.refresh_from_db()
         self.assertIsNone(order.buyer)
         self.assertEqual(order.buyer_display_name, "临时买家")
+
+
+class OrderAdminTest(TestCase):
+    """订单后台注册、治理字段和访问烟雾测试。"""
+
+    def test_order_admin_is_registered(self):
+        self.assertIsInstance(admin.site._registry[Order], OrderAdmin)
+
+    def test_order_admin_exposes_required_columns_filters_search_and_readonly_fields(self):
+        order_admin = admin.site._registry[Order]
+
+        expected_display = [
+            "id",
+            "buyer",
+            "seller",
+            "listing",
+            "status",
+            "order_price",
+            "payment_deadline",
+            "paid_at",
+            "shipped_at",
+            "signed_at",
+            "completed_at",
+            "cancelled_at",
+            "created_at",
+            "updated_at",
+        ]
+        for field in expected_display:
+            self.assertIn(field, order_admin.list_display)
+            self.assertIn(field, order_admin.readonly_fields)
+        self.assertIn("logistics_signed_due_at", order_admin.readonly_fields)
+
+        for field in ["status", "buyer", "seller", "created_at", "updated_at"]:
+            self.assertIn(field, order_admin.list_filter)
+
+        for field in [
+            "listing_title_snapshot",
+            "buyer_display_name",
+            "seller_display_name",
+            "buyer__username",
+            "seller__username",
+        ]:
+            self.assertIn(field, order_admin.search_fields)
+
+        self.assertEqual(order_admin.list_select_related, ["buyer", "seller", "listing"])
+
+    def test_superuser_can_open_order_admin_changelist(self):
+        superuser = User.objects.create_superuser(
+            username="orderadmin",
+            email="orderadmin@example.com",
+            password="StrongPass123",
+        )
+        self.client.force_login(superuser)
+
+        response = self.client.get(reverse("admin:orders_order_changelist"))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_regular_user_cannot_open_order_admin_changelist(self):
+        user = User.objects.create_user(
+            username="ordnorm",
+            email="ordernormal@example.com",
+            password="StrongPass123",
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("admin:orders_order_changelist"))
+
+        self.assertIn(response.status_code, [302, 403])
 
 
 class CreateOrderServiceTest(TestCase):

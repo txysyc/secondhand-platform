@@ -2,8 +2,9 @@ from decimal import Decimal
 from pathlib import Path
 
 from django.conf import settings
+from django.contrib import admin
 from django.contrib.admin.sites import AdminSite
-from django.contrib.auth import SESSION_KEY
+from django.contrib.auth import SESSION_KEY, authenticate
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
@@ -14,7 +15,7 @@ from django.test import RequestFactory, TestCase
 from django.utils import timezone
 
 from catalog.models import Category, Listing
-from users.admin import ProfileInline
+from users.admin import MyUserAdmin, ProfileInline
 from users.models import Profile, User, avatar_upload_to
 from users.signals import create_user_profile
 
@@ -163,6 +164,67 @@ class UserProfileSignalTest(TestCase):
         create_user_profile(sender=User, instance=user, created=True, raw=False)
 
         self.assertEqual(Profile.objects.filter(user=user).count(), 1)
+
+
+class UserAdminTest(TestCase):
+    """用户后台注册、治理字段和访问烟雾测试。"""
+
+    def test_user_admin_is_registered_with_profile_inline(self):
+        user_admin = admin.site._registry[User]
+
+        self.assertIsInstance(user_admin, MyUserAdmin)
+        self.assertIn(ProfileInline, user_admin.inlines)
+
+    def test_user_admin_exposes_required_columns_filters_search_and_readonly_fields(self):
+        user_admin = admin.site._registry[User]
+
+        for field in [
+            "id",
+            "username",
+            "email",
+            "is_active",
+            "is_staff",
+            "is_superuser",
+            "created_at",
+            "updated_at",
+        ]:
+            self.assertIn(field, user_admin.list_display)
+
+        for field in ["is_active", "is_staff", "is_superuser", "groups", "created_at"]:
+            self.assertIn(field, user_admin.list_filter)
+
+        for field in ["id", "username", "email"]:
+            self.assertIn(field, user_admin.search_fields)
+
+        for field in ["created_at", "updated_at", "last_login"]:
+            self.assertIn(field, user_admin.readonly_fields)
+
+        permission_fields = user_admin.fieldsets[2][1]["fields"]
+        self.assertIn("is_active", permission_fields)
+
+    def test_superuser_can_open_user_admin_changelist(self):
+        superuser = User.objects.create_superuser(
+            username="useradmin",
+            email="useradmin@example.com",
+            password="StrongPass123",
+        )
+        self.client.force_login(superuser)
+
+        response = self.client.get(reverse("admin:users_user_changelist"))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_regular_user_cannot_open_user_admin_changelist(self):
+        user = User.objects.create_user(
+            username="normadm",
+            email="normaladmin@example.com",
+            password="StrongPass123",
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("admin:users_user_changelist"))
+
+        self.assertIn(response.status_code, [302, 403])
 
 
 class ProfileInlineAdminTest(TestCase):
@@ -342,6 +404,49 @@ class AuthenticationFlowTest(TestCase):
 
         self.assertRedirects(response, settings.LOGIN_REDIRECT_URL)
         self.assertEqual(int(self.client.session[SESSION_KEY]), user.pk)
+
+    def test_inactive_user_cannot_login_by_username_or_email_until_restored(self):
+        user = User.objects.create_user(
+            username="inactiveu",
+            email="inactive@example.com",
+            password="StrongPass123",
+            is_active=False,
+        )
+
+        username_response = self.client.post(
+            reverse("users:login"),
+            data={"username": user.username, "password": "StrongPass123"},
+        )
+        email_response = self.client.post(
+            reverse("users:login"),
+            data={"username": user.email, "password": "StrongPass123"},
+        )
+
+        self.assertEqual(username_response.status_code, 200)
+        self.assertEqual(email_response.status_code, 200)
+        self.assertNotIn(SESSION_KEY, self.client.session)
+        self.assertIsNone(authenticate(username=user.username, password="StrongPass123"))
+        self.assertIsNone(authenticate(username=user.email, password="StrongPass123"))
+
+        user.is_active = True
+        user.save(update_fields=["is_active", "updated_at"])
+        restored_response = self.client.post(
+            reverse("users:login"),
+            data={"username": user.email, "password": "StrongPass123"},
+        )
+
+        self.assertRedirects(restored_response, settings.LOGIN_REDIRECT_URL)
+        self.assertEqual(int(self.client.session[SESSION_KEY]), user.pk)
+
+    def test_email_backend_rejects_inactive_user(self):
+        user = User.objects.create_user(
+            username="ineml",
+            email="inactive-email@example.com",
+            password="StrongPass123",
+            is_active=False,
+        )
+
+        self.assertIsNone(authenticate(username=user.email, password="StrongPass123"))
 
     def test_email_login_fails_when_case_insensitive_match_is_ambiguous(self):
         User.objects.create_user(

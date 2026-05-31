@@ -11,7 +11,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from catalog.models import Category, Listing
-from interactions.admin import CommentAdmin
+from interactions.admin import CommentAdmin, ReplyStatusFilter
 from interactions.models import Comment
 from interactions.selectors import get_listing_comments
 from interactions.services import create_comment, create_reply
@@ -235,21 +235,111 @@ class CommentSelectorTest(CommentTestMixin, TestCase):
         self.assertEqual(list(comments[0].replies.all()), [first_reply, second_reply])
 
 
-class CommentAdminTest(TestCase):
-    """留言后台基础配置测试。"""
+class CommentAdminTest(CommentTestMixin, TestCase):
+    """留言后台基础配置、回复筛选和访问烟雾测试。"""
 
     def test_comment_registered_to_admin_site(self):
         self.assertIsInstance(site._registry[Comment], CommentAdmin)
 
-    def test_comment_admin_exposes_required_columns_filters_and_search(self):
+    def test_comment_admin_exposes_required_columns_filters_search_and_readonly_fields(self):
         comment_admin = site._registry[Comment]
 
-        for field in ["listing", "author", "short_content", "created_at"]:
+        for field in [
+            "author",
+            "listing",
+            "parent",
+            "is_reply",
+            "short_content",
+            "created_at",
+            "updated_at",
+        ]:
             self.assertIn(field, comment_admin.list_display)
+
+        self.assertIn("author", comment_admin.list_filter)
+        self.assertIn(ReplyStatusFilter, comment_admin.list_filter)
         self.assertIn("created_at", comment_admin.list_filter)
-        self.assertIn("content", comment_admin.search_fields)
-        self.assertIn("listing__title", comment_admin.search_fields)
-        self.assertIn("author__username", comment_admin.search_fields)
+        self.assertIn("listing", comment_admin.list_filter)
+
+        for field in ["content", "listing__title", "author__username"]:
+            self.assertIn(field, comment_admin.search_fields)
+
+        for field in ["author", "listing", "parent", "created_at", "updated_at"]:
+            self.assertIn(field, comment_admin.readonly_fields)
+
+        self.assertEqual(comment_admin.list_select_related, ["author", "listing", "parent"])
+
+    def test_comment_admin_summary_and_reply_marker_use_existing_comment_fields(self):
+        comment_admin = site._registry[Comment]
+        parent = Comment.objects.create(
+            listing=self.listing,
+            author=self.buyer,
+            content="这是一段超过二十个字符的留言内容用于验证摘要截断",
+        )
+        reply = Comment.objects.create(
+            listing=self.listing,
+            author=self.seller,
+            parent=parent,
+            content="回复内容",
+        )
+
+        self.assertEqual(comment_admin.short_content(parent), parent.content[0:20])
+        self.assertFalse(comment_admin.is_reply(parent))
+        self.assertTrue(comment_admin.is_reply(reply))
+
+    def test_reply_status_filter_limits_top_level_comments_and_replies(self):
+        comment_admin = site._registry[Comment]
+        parent = Comment.objects.create(
+            listing=self.listing,
+            author=self.buyer,
+            content="顶层留言",
+        )
+        reply = Comment.objects.create(
+            listing=self.listing,
+            author=self.seller,
+            parent=parent,
+            content="二级回复",
+        )
+
+        reply_filter = ReplyStatusFilter(
+            None,
+            {"is_reply": ["yes"]},
+            Comment,
+            comment_admin,
+        )
+        top_level_filter = ReplyStatusFilter(
+            None,
+            {"is_reply": ["no"]},
+            Comment,
+            comment_admin,
+        )
+
+        self.assertQuerySetEqual(
+            reply_filter.queryset(None, Comment.objects.order_by("id")),
+            [reply],
+        )
+        self.assertQuerySetEqual(
+            top_level_filter.queryset(None, Comment.objects.order_by("id")),
+            [parent],
+        )
+
+    def test_superuser_can_open_comment_admin_changelist(self):
+        superuser = User.objects.create_superuser(
+            username="cmtadmin",
+            email="commentadmin@example.com",
+            password="StrongPass123",
+        )
+        self.client.force_login(superuser)
+
+        response = self.client.get(reverse("admin:interactions_comment_changelist"))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_regular_user_cannot_open_comment_admin_changelist(self):
+        self.client.force_login(self.buyer)
+
+        response = self.client.get(reverse("admin:interactions_comment_changelist"))
+
+        self.assertIn(response.status_code, [302, 403])
 
 
 class ListingCommentThreadViewTest(CommentTestMixin, TestCase):

@@ -193,19 +193,61 @@ class CatalogAdminTest(TestCase):
             "published_at",
             "created_at",
             "updated_at",
+            "delivery_notes_summary",
         ]:
             self.assertIn(field, listing_admin.list_display)
+        self.assertNotIn("delivery_notes", listing_admin.list_display)
 
-        for field in ["category", "item_type", "status", "created_at"]:
+        for field in ["status", "category", "owner", "item_type", "created_at"]:
             self.assertIn(field, listing_admin.list_filter)
 
-        for field in ["title", "description", "owner__username"]:
+        for field in ["title", "description", "owner__username", "category__name"]:
             self.assertIn(field, listing_admin.search_fields)
 
-    def test_listing_admin_exposes_image_count(self):
+        self.assertEqual(listing_admin.list_select_related, ["owner", "category"])
+        for field in ["created_at", "updated_at", "published_at"]:
+            self.assertIn(field, listing_admin.readonly_fields)
+
+    def test_listing_admin_exposes_image_count_and_image_inline(self):
         listing_admin = admin.site._registry[Listing]
 
         self.assertIn("image_count_value", listing_admin.list_display)
+        image_inline = next(
+            inline for inline in listing_admin.inlines if inline.model is ListingImage
+        )
+        self.assertEqual(image_inline.max_num, 6)
+
+    def test_listing_admin_uses_delivery_notes_summary(self):
+        listing_admin = admin.site._registry[Listing]
+        listing = Listing(delivery_notes="这是一段超过二十个字符的交付说明用于验证摘要")
+
+        self.assertEqual(listing_admin.delivery_notes_summary(listing), listing.delivery_notes[0:20])
+
+    def test_superuser_can_open_category_and_listing_admin_changelists(self):
+        superuser = get_user_model().objects.create_superuser(
+            username="catadmin",
+            email="catalogadmin@example.com",
+            password="StrongPass123",
+        )
+        self.client.force_login(superuser)
+
+        category_response = self.client.get(reverse("admin:catalog_category_changelist"))
+        listing_response = self.client.get(reverse("admin:catalog_listing_changelist"))
+
+        self.assertEqual(category_response.status_code, 200)
+        self.assertEqual(listing_response.status_code, 200)
+
+    def test_regular_user_cannot_open_listing_admin_changelist(self):
+        user = get_user_model().objects.create_user(
+            username="catnorm",
+            email="catalognormal@example.com",
+            password="StrongPass123",
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("admin:catalog_listing_changelist"))
+
+        self.assertIn(response.status_code, [302, 403])
 
 
 class ListingFormTest(TestCase):

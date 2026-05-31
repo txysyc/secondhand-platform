@@ -57,7 +57,16 @@ class MyUserAdmin(UserAdmin):
     配置用户列表展示、搜索字段、创建/编辑表单字段，以及用户资料内联表单。
     """
 
-    list_display = ["id", "username", "email", "created_at", "updated_at"]
+    list_display = [
+        "id",
+        "username",
+        "email",
+        "is_active",
+        "is_staff",
+        "is_superuser",
+        "created_at",
+        "updated_at",
+    ]
     # 修改对象时的表单
     fieldsets = (
         ("基本信息", {"fields": ("username", "email", "password")}),
@@ -83,6 +92,7 @@ class MyUserAdmin(UserAdmin):
     # 搜寻字段
     search_fields = ["id", "username", "email"]
     list_per_page = 20
+    list_filter = ["is_active", "is_staff", "is_superuser", "groups", "created_at"]
     readonly_fields = [
         "created_at",
         "updated_at",

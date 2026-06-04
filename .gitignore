@@ -1,5 +1,3 @@
-_bmad/
-_bmad-output/
 .agents/
 .claude/
 __pycache__/
@@ -12,5 +10,6 @@ build/
 
 .playwright-mcp/
 
-BMAD-启动清单.md
-BMAD-METHOD-中文说明.md
+AGENTS.md
+
+docs/

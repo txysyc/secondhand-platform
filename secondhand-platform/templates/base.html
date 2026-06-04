@@ -5,422 +5,37 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}二手交易平台{% endblock %}</title>
-    <style>
-        :root {
-            --color-primary: #171717;
-            --color-on-primary: #ffffff;
-            --color-secondary: #404040;
-            --color-accent: #a16207;
-            --color-background: #ffffff;
-            --color-surface: #f7f7f4;
-            --color-muted: #e8ecf0;
-            --color-border: #e5e5e5;
-            --color-danger: #dc2626;
-            --color-success: #166534;
-            --color-ring: #171717;
-            --shadow-soft: 0 18px 48px rgba(23, 23, 23, 0.08);
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            min-height: 100vh;
-            background: var(--color-background);
-            color: var(--color-primary);
-            font-family: "Nunito Sans", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
-            line-height: 1.6;
-        }
-
-        a {
-            color: inherit;
-            text-decoration: none;
-        }
-
-        a:hover {
-            color: var(--color-accent);
-        }
-
-        button,
-        input {
-            font: inherit;
-        }
-
-        .site-shell {
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .site-header {
-            border-bottom: 1px solid var(--color-border);
-            background: rgba(255, 255, 255, 0.94);
-        }
-
-        .site-nav {
-            width: min(1120px, calc(100% - 32px));
-            margin: 0 auto;
-            min-height: 72px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 24px;
-        }
-
-        .brand {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            font-family: "Rubik", "Microsoft YaHei", system-ui, sans-serif;
-            font-weight: 700;
-            letter-spacing: 0;
-        }
-
-        .brand-mark {
-            width: 32px;
-            height: 32px;
-            border-radius: 8px;
-            background: var(--color-primary);
-            color: var(--color-on-primary);
-            display: inline-grid;
-            place-items: center;
-            font-size: 14px;
-        }
-
-        .nav-actions {
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .nav-user {
-            color: var(--color-secondary);
-            font-size: 14px;
-            min-width: 0;
-            max-width: 100%;
-            overflow-wrap: anywhere;
-        }
-
-        .button,
-        .button-secondary,
-        .button-ghost {
-            min-height: 44px;
-            border-radius: 8px;
-            padding: 10px 18px;
-            border: 1px solid transparent;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
-        }
-
-        .button {
-            background: var(--color-primary);
-            color: var(--color-on-primary);
-        }
-
-        .button:hover,
-        .button:focus-visible {
-            background: var(--color-accent);
-            color: var(--color-on-primary);
-        }
-
-        .button-secondary {
-            background: var(--color-surface);
-            color: var(--color-primary);
-            border-color: var(--color-border);
-        }
-
-        .button-secondary:hover,
-        .button-secondary:focus-visible {
-            border-color: var(--color-primary);
-        }
-
-        .button-ghost {
-            background: transparent;
-            color: var(--color-primary);
-            border-color: var(--color-border);
-        }
-
-        .button-ghost:hover,
-        .button-ghost:focus-visible {
-            border-color: var(--color-accent);
-            color: var(--color-accent);
-        }
-
-        .main-content {
-            width: min(1120px, calc(100% - 32px));
-            margin: 0 auto;
-            padding: 48px 0 64px;
-            flex: 1;
-        }
-
-        .messages {
-            display: grid;
-            gap: 12px;
-            margin-bottom: 24px;
-        }
-
-        .message {
-            border: 1px solid var(--color-border);
-            border-left: 4px solid var(--color-primary);
-            border-radius: 8px;
-            padding: 12px 14px;
-            background: var(--color-surface);
-        }
-
-        .message.success {
-            border-left-color: var(--color-success);
-        }
-
-        .message.error {
-            border-left-color: var(--color-danger);
-        }
-
-        .auth-layout {
-            min-height: calc(100vh - 220px);
-            display: grid;
-            place-items: center;
-        }
-
-        .auth-panel {
-            width: min(100%, 440px);
-            border: 1px solid var(--color-border);
-            border-radius: 8px;
-            background: var(--color-background);
-            box-shadow: var(--shadow-soft);
-            padding: 32px;
-        }
-
-        .eyebrow {
-            margin: 0 0 8px;
-            color: var(--color-accent);
-            font-weight: 800;
-            font-size: 14px;
-        }
-
-        h1 {
-            margin: 0;
-            font-family: "Rubik", "Microsoft YaHei", system-ui, sans-serif;
-            font-size: 36px;
-            line-height: 1.15;
-            letter-spacing: 0;
-        }
-
-        .lede {
-            margin: 14px 0 0;
-            color: var(--color-secondary);
-        }
-
-        .form-stack {
-            margin-top: 28px;
-            display: grid;
-            gap: 18px;
-        }
-
-        .field {
-            display: grid;
-            gap: 8px;
-        }
-
-        .field label {
-            font-weight: 700;
-        }
-
-        .field input,
-        .field textarea {
-            width: 100%;
-            min-height: 46px;
-            border: 1px solid var(--color-border);
-            border-radius: 8px;
-            padding: 10px 12px;
-            background: var(--color-background);
-            color: var(--color-primary);
-        }
-
-        .field textarea {
-            min-height: 132px;
-            resize: vertical;
-        }
-
-        .field input[type="file"] {
-            padding: 10px;
-        }
-
-        .field input:focus,
-        .field textarea:focus {
-            outline: 3px solid rgba(161, 98, 7, 0.24);
-            border-color: var(--color-accent);
-        }
-
-        .help-text {
-            margin: 0;
-            color: var(--color-secondary);
-            font-size: 14px;
-        }
-
-        .error-list {
-            margin: 0;
-            padding-left: 18px;
-            color: var(--color-danger);
-            font-size: 14px;
-        }
-
-        .form-errors {
-            border: 1px solid rgba(220, 38, 38, 0.35);
-            border-radius: 8px;
-            background: #fff5f5;
-            color: var(--color-danger);
-            padding: 12px 14px;
-        }
-
-        .form-actions {
-            display: grid;
-            gap: 14px;
-            margin-top: 6px;
-        }
-
-        .switch-link {
-            margin: 0;
-            color: var(--color-secondary);
-            text-align: center;
-        }
-
-        .home-hero {
-            min-height: calc(100vh - 220px);
-            display: grid;
-            align-items: center;
-        }
-
-        .home-panel {
-            max-width: 760px;
-        }
-
-
-        .home-actions {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            margin-top: 28px;
-        }
-
-        .status-pill {
-            min-height: 44px;
-            border-radius: 8px;
-            padding: 10px 18px;
-            border: 1px solid var(--color-border);
-            background: var(--color-surface);
-            color: var(--color-primary);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-        }
-
-        .benefit-list {
-            margin: 28px 0 0;
-            padding: 0;
-            display: grid;
-            gap: 12px;
-            list-style: none;
-        }
-
-        .benefit-list li {
-            border-left: 4px solid var(--color-accent);
-            padding-left: 14px;
-            color: var(--color-secondary);
-        }
-
-        .site-footer {
-            border-top: 1px solid var(--color-border);
-            color: var(--color-secondary);
-            padding: 22px 0;
-        }
-
-        .site-footer-inner {
-            width: min(1120px, calc(100% - 32px));
-            margin: 0 auto;
-            font-size: 14px;
-        }
-
-        :focus-visible {
-            outline: 3px solid rgba(161, 98, 7, 0.35);
-            outline-offset: 2px;
-        }
-
-        @media (max-width: 640px) {
-            .site-nav {
-                align-items: flex-start;
-                flex-direction: column;
-                padding: 16px 0;
-            }
-
-            .nav-actions {
-                width: 100%;
-                justify-content: flex-start;
-            }
-
-            .nav-user {
-                width: 100%;
-            }
-
-            .main-content {
-                padding: 32px 0 48px;
-            }
-
-            .auth-panel {
-                padding: 24px;
-            }
-
-            h1 {
-                font-size: 30px;
-            }
-
-            .button,
-            .button-secondary,
-            .button-ghost,
-            .status-pill {
-                width: 100%;
-            }
-
-            .home-actions {
-                display: grid;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    {% block extra_head %}{% endblock %}
 </head>
 <body>
 <div class="site-shell">
     <header class="site-header">
-        <nav class="site-nav" aria-label="主导航">
+        <div class="brand-row">
             <a class="brand" href="{% url 'home' %}">
                 <span class="brand-mark" aria-hidden="true">二</span>
                 <span>二手交易平台</span>
             </a>
-            <div class="nav-actions">
-                <a class="button-secondary" href="{% url 'catalog:listing_list' %}">浏览商品</a>
-                {% if user.is_authenticated %}
-                    <span class="nav-user">已登录：{{ user.username }}</span>
-                    <a class="button-secondary" href="{% url 'catalog:my_listing_list' %}">我的商品</a>
-                    <a class="button-secondary" href="{% url 'orders:buyer_order_list' %}">我的订单</a>
-                    <a class="button-secondary" href="{% url 'orders:seller_order_list' %}">卖出订单</a>
-                    <a class="button-secondary" href="{% url 'messaging:conversation_list' %}">私信</a>
-                    <a class="button-secondary" href="{% url 'users:profile' %}">我的资料</a>
-                    <form method="post" action="{% url 'users:logout' %}">
-                        {% csrf_token %}
-                        <button class="button-ghost" type="submit">退出登录</button>
-                    </form>
-                {% else %}
-                    <a class="button-ghost" href="{% url 'users:login' %}">登录</a>
-                    <a class="button" href="{% url 'users:register' %}">注册</a>
-                {% endif %}
-            </div>
+            {% if user.is_authenticated %}
+                <span class="nav-user">已登录：{{ user.username }}</span>
+            {% endif %}
+        </div>
+        <nav class="nav-actions" aria-label="功能导航">
+            <a class="button-secondary" href="{% url 'catalog:listing_list' %}">浏览商品</a>
+            {% if user.is_authenticated %}
+                <a class="button-secondary" href="{% url 'catalog:my_listing_list' %}">我的商品</a>
+                <a class="button-secondary" href="{% url 'orders:buyer_order_list' %}">我的订单</a>
+                <a class="button-secondary" href="{% url 'orders:seller_order_list' %}">卖出订单</a>
+                <a class="button-secondary" href="{% url 'messaging:conversation_list' %}">私信</a>
+                <a class="button-secondary" href="{% url 'users:profile' %}">我的资料</a>
+                <form method="post" action="{% url 'users:logout' %}">
+                    {% csrf_token %}
+                    <button class="button-ghost" type="submit">退出登录</button>
+                </form>
+            {% else %}
+                <a class="button-ghost" href="{% url 'users:login' %}">登录</a>
+                <a class="button" href="{% url 'users:register' %}">注册</a>
+            {% endif %}
         </nav>
     </header>
 
@@ -439,5 +54,7 @@
         <div class="site-footer-inner">先完成账号闭环，再进入商品发布与交易流程。</div>
     </footer>
 </div>
+<script src="{% static 'js/app.js' %}" defer></script>
+{% block extra_scripts %}{% endblock %}
 </body>
 </html>

@@ -3,67 +3,6 @@
 {% block title %}私信 - 二手交易平台{% endblock %}
 
 {% block content %}
-<style>
-    .message-layout {
-        max-width: 780px;
-        margin: 0 auto;
-    }
-
-    .conversation-list {
-        display: grid;
-        gap: 12px;
-        margin: 24px 0 0;
-        padding: 0;
-        list-style: none;
-    }
-
-    .conversation-card {
-        border: 1px solid var(--color-border);
-        border-radius: 8px;
-        background: var(--color-background);
-        box-shadow: var(--shadow-soft);
-    }
-
-    .conversation-link {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 14px;
-        padding: 18px;
-    }
-
-    .conversation-name {
-        margin: 0;
-        font-size: 20px;
-        font-weight: 800;
-        overflow-wrap: anywhere;
-    }
-
-    .conversation-meta,
-    .message-empty {
-        margin: 0;
-        color: var(--color-secondary);
-    }
-
-    .unread-badge {
-        min-width: 34px;
-        min-height: 34px;
-        display: inline-grid;
-        place-items: center;
-        border-radius: 8px;
-        background: var(--color-primary);
-        color: var(--color-on-primary);
-        font-weight: 800;
-    }
-
-    @media (max-width: 640px) {
-        .conversation-link {
-            align-items: flex-start;
-            flex-direction: column;
-        }
-    }
-</style>
-
 <section class="message-layout" aria-labelledby="conversation-list-title">
     <p class="eyebrow">站内沟通</p>
     <h1 id="conversation-list-title">私信</h1>
@@ -74,16 +13,43 @@
             {% for conversation in conversations %}
                 <li class="conversation-card">
                     <a class="conversation-link" href="{% url 'messaging:conversation_detail' conversation.pk %}">
-                        <div>
-                            <p class="conversation-name">
-                                {% if conversation.participant_a_id == user.pk %}
-                                    {{ conversation.participant_b.profile.nickname|default:conversation.participant_b.username }}
+                        {% if conversation.participant_a_id == user.pk %}
+                            <span class="avatar" aria-hidden="true">
+                                {% if conversation.participant_b.profile.avatar %}
+                                    <img src="{{ conversation.participant_b.profile.avatar.url }}" alt="">
                                 {% else %}
-                                    {{ conversation.participant_a.profile.nickname|default:conversation.participant_a.username }}
+                                    {{ conversation.participant_b.profile.nickname|default:conversation.participant_b.username|slice:":1" }}
                                 {% endif %}
-                            </p>
-                            <p class="conversation-meta">最近更新：{{ conversation.updated_at|date:"Y-m-d H:i" }}</p>
-                        </div>
+                            </span>
+                            <div class="conversation-content">
+                                <div class="conversation-topline">
+                                    <p class="conversation-name">{{ conversation.participant_b.profile.nickname|default:conversation.participant_b.username }}</p>
+                                    <time class="conversation-time" datetime="{% if conversation.latest_message_created_at %}{{ conversation.latest_message_created_at|date:'c' }}{% else %}{{ conversation.updated_at|date:'c' }}{% endif %}">
+                                        {% if conversation.latest_message_created_at %}{{ conversation.latest_message_created_at|date:"m-d H:i" }}{% else %}{{ conversation.updated_at|date:"m-d H:i" }}{% endif %}
+                                    </time>
+                                </div>
+                                <p class="conversation-preview">{{ conversation.latest_message_content|default:"还没有消息，打开会话开始沟通。" }}</p>
+                                <p class="conversation-meta">最近更新：{{ conversation.updated_at|date:"Y-m-d H:i" }}</p>
+                            </div>
+                        {% else %}
+                            <span class="avatar" aria-hidden="true">
+                                {% if conversation.participant_a.profile.avatar %}
+                                    <img src="{{ conversation.participant_a.profile.avatar.url }}" alt="">
+                                {% else %}
+                                    {{ conversation.participant_a.profile.nickname|default:conversation.participant_a.username|slice:":1" }}
+                                {% endif %}
+                            </span>
+                            <div class="conversation-content">
+                                <div class="conversation-topline">
+                                    <p class="conversation-name">{{ conversation.participant_a.profile.nickname|default:conversation.participant_a.username }}</p>
+                                    <time class="conversation-time" datetime="{% if conversation.latest_message_created_at %}{{ conversation.latest_message_created_at|date:'c' }}{% else %}{{ conversation.updated_at|date:'c' }}{% endif %}">
+                                        {% if conversation.latest_message_created_at %}{{ conversation.latest_message_created_at|date:"m-d H:i" }}{% else %}{{ conversation.updated_at|date:"m-d H:i" }}{% endif %}
+                                    </time>
+                                </div>
+                                <p class="conversation-preview">{{ conversation.latest_message_content|default:"还没有消息，打开会话开始沟通。" }}</p>
+                                <p class="conversation-meta">最近更新：{{ conversation.updated_at|date:"Y-m-d H:i" }}</p>
+                            </div>
+                        {% endif %}
                         {% if conversation.unread_count %}
                             <span class="unread-badge" aria-label="{{ conversation.unread_count }} 条未读">{{ conversation.unread_count }}</span>
                         {% endif %}
@@ -92,7 +58,12 @@
             {% endfor %}
         </ul>
     {% else %}
-        <p class="message-empty">还没有私信。你可以从商品详情页或卖家主页联系对方。</p>
+        <div class="empty-state message-empty-card">
+            <p class="message-empty">还没有私信。你可以从商品详情页或卖家主页联系对方。</p>
+            <div class="inline-actions empty-state-actions">
+                <a class="button" href="{% url 'catalog:listing_list' %}">去浏览商品</a>
+            </div>
+        </div>
     {% endif %}
 
     {% if is_paginated %}

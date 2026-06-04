@@ -84,7 +84,7 @@
 | 文件 | 行号 | 变更 |
 | --- | --- | --- |
 | `secondhand-platform/messaging/urls.py` | 9-21 | 定义私信列表、开始会话、会话详情三个 HTTP 路由。 |
-| `secondhand-platform/messaging/views.py` | 24-31 | `ConversationListView` 展示当前用户会话列表。 |
+| `secondhand-platform/messaging/views.py` | 24-39 | `ConversationListView` 作为 `/messages/` 入口；有会话时直达最近会话详情，无会话时保留空列表页。 |
 | `secondhand-platform/messaging/views.py` | 33-46 | `StartConversationView` 从商品详情或卖家主页发起会话。 |
 | `secondhand-platform/messaging/views.py` | 49-96 | `ConversationDetailView` 展示会话、标记已读，并保留 HTTP POST 发送消息作为 WebSocket 失败时的回退路径。 |
 | `secondhand-platform/messaging/routing.py` | 5-7 | 定义 `/ws/messages/<conversation_id>/` WebSocket 路由。 |
@@ -92,6 +92,18 @@
 | `secondhand-platform/messaging/consumers.py` | 36-58 | 接收 JSON 消息，创建私信后通过 channel layer 广播给会话双方。 |
 | `secondhand-platform/messaging/consumers.py` | 61-78 | 向前端发送消息事件，并封装数据库访问。 |
 | `secondhand-platform/messaging/admin.py` | 6-64 | 注册会话和消息后台管理，列表中只展示消息摘要。 |
+
+## 私信入口直达会话详情调整
+
+| 文件 | 行号 | 后端变更 |
+| --- | --- | --- |
+| `secondhand-platform/messaging/urls.py` | 11-12 | `/messages/` 继续保留为 `conversation_list` 命名入口，顶部“私信”导航无需改 URL。 |
+| `secondhand-platform/messaging/views.py` | 24-30 | `ConversationListView` 继续复用 `get_user_conversations()` 作为当前用户会话来源。 |
+| `secondhand-platform/messaging/views.py` | 32-38 | `ConversationListView.get()` 取第一条会话；存在会话时重定向到 `messaging:conversation_detail`，跳过中间列表页。 |
+| `secondhand-platform/messaging/views.py` | 39 | 当用户没有任何会话时，才回退到原列表页空状态，避免 `/messages/` 无目标会话时报错。 |
+| `secondhand-platform/messaging/selectors.py` | 7-33 | `get_user_conversations()` 按 `-updated_at, -id` 排序，因此 `ConversationListView.get()` 的第一条会话就是最近会话。 |
+| `secondhand-platform/messaging/selectors.py` | 10-30 | 会话查询同时注解最近消息内容与时间，供详情页左侧“最近会话”列表复用。 |
+| `secondhand-platform/messaging/views.py` | 97-105 | `ConversationDetailView.get_context_data()` 向详情页提供当前会话、会话列表、对方用户、消息列表和发送表单，支撑直达后的双栏私信工作台。 |
 
 ## 页面入口与模板
 

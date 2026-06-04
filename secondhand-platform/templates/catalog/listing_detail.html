@@ -3,413 +3,110 @@
 {% block title %}{{ listing.title }} - 二手交易平台{% endblock %}
 
 {% block content %}
-<style>
-    .detail-header {
-        display: grid;
-        grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr);
-        gap: 28px;
-        align-items: start;
-        margin-bottom: 28px;
-    }
-
-    .detail-title-stack {
-        display: grid;
-        gap: 12px;
-    }
-
-    .detail-status-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        align-items: center;
-    }
-
-    .detail-status,
-    .detail-type {
-        min-height: 34px;
-        display: inline-flex;
-        align-items: center;
-        border: 1px solid var(--color-border);
-        border-radius: 8px;
-        padding: 6px 10px;
-        background: var(--color-surface);
-        font-weight: 700;
-        font-size: 14px;
-    }
-
-    .detail-price {
-        margin: 0;
-        font-size: 34px;
-        line-height: 1.1;
-        font-weight: 800;
-    }
-
-    .detail-actions {
-        display: grid;
-        gap: 10px;
-        border: 1px solid var(--color-border);
-        border-radius: 8px;
-        padding: 18px;
-        background: var(--color-surface);
-    }
-
-    .detail-actions p {
-        margin: 0;
-        color: var(--color-secondary);
-    }
-
-    .detail-layout {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 320px;
-        gap: 24px;
-        align-items: start;
-    }
-
-    .detail-panel {
-        border: 1px solid var(--color-border);
-        border-radius: 8px;
-        background: var(--color-background);
-        box-shadow: var(--shadow-soft);
-        padding: 22px;
-    }
-
-    .detail-panel h2 {
-        margin: 0 0 16px;
-        font-size: 22px;
-        line-height: 1.2;
-    }
-
-    .detail-gallery {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 12px;
-    }
-
-    .detail-image {
-        aspect-ratio: 4 / 3;
-        border-radius: 8px;
-        overflow: hidden;
-        background: var(--color-muted);
-        display: grid;
-        place-items: center;
-        color: var(--color-secondary);
-        font-weight: 700;
-    }
-
-    .detail-image img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
-    }
-
-    .detail-description {
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-    }
-
-    .detail-facts {
-        margin: 0;
-        display: grid;
-        gap: 10px;
-    }
-
-    .detail-facts div {
-        display: grid;
-        grid-template-columns: 110px minmax(0, 1fr);
-        gap: 12px;
-        padding-top: 10px;
-        border-top: 1px solid var(--color-border);
-    }
-
-    .detail-facts dt,
-    .detail-facts dd {
-        margin: 0;
-    }
-
-    .detail-facts dt {
-        font-weight: 800;
-    }
-
-    .detail-facts dd {
-        color: var(--color-secondary);
-        overflow-wrap: anywhere;
-    }
-
-    .seller-summary {
-        display: grid;
-        gap: 12px;
-    }
-
-    .seller-avatar {
-        width: 72px;
-        height: 72px;
-        border-radius: 8px;
-        overflow: hidden;
-        background: var(--color-muted);
-        display: grid;
-        place-items: center;
-        font-weight: 800;
-    }
-
-    .seller-avatar img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
-    }
-
-    .seller-name {
-        margin: 0;
-        font-size: 20px;
-        font-weight: 800;
-    }
-
-    .seller-bio {
-        margin: 0;
-        color: var(--color-secondary);
-        overflow-wrap: anywhere;
-    }
-
-    .detail-back {
-        margin-top: 22px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-    }
-
-    .comment-thread {
-        margin-top: 24px;
-    }
-
-    .comment-thread-list {
-        margin-top: 18px;
-        display: grid;
-        gap: 14px;
-    }
-
-    .comment-compose {
-        display: grid;
-        gap: 10px;
-    }
-
-    .comment-form {
-        display: grid;
-        gap: 10px;
-    }
-
-    .comment-form label {
-        font-weight: 800;
-    }
-
-    .comment-form textarea {
-        width: 100%;
-        min-height: 112px;
-        resize: vertical;
-        border: 1px solid var(--color-border);
-        border-radius: 8px;
-        padding: 10px 12px;
-        font: inherit;
-        color: var(--color-text);
-        background: var(--color-background);
-        box-sizing: border-box;
-    }
-
-    .comment-thread-item {
-        display: grid;
-        gap: 8px;
-        border-top: 1px solid var(--color-border);
-        padding-top: 14px;
-    }
-
-    .comment-thread-item:first-child {
-        border-top: 0;
-        padding-top: 0;
-    }
-
-    .comment-replies {
-        display: grid;
-        gap: 10px;
-        margin-top: 4px;
-        padding-left: 16px;
-        border-left: 3px solid var(--color-border);
-        min-width: 0;
-    }
-
-    .comment-reply-item {
-        display: grid;
-        gap: 6px;
-        min-width: 0;
-    }
-
-    .comment-reply-form {
-        margin-top: 4px;
-        max-width: 640px;
-    }
-
-    .comment-reply-form textarea {
-        min-height: 82px;
-    }
-
-    .comment-thread-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: center;
-        color: var(--color-secondary);
-        font-size: 14px;
-    }
-
-    .comment-thread-meta strong {
-        color: var(--color-text);
-    }
-
-    .comment-seller-badge {
-        min-height: 26px;
-        display: inline-flex;
-        align-items: center;
-        border: 1px solid var(--color-border);
-        border-radius: 8px;
-        padding: 3px 8px;
-        background: var(--color-surface);
-        color: var(--color-text);
-        font-weight: 700;
-    }
-
-    .comment-thread-content,
-    .comment-thread-empty,
-    .comment-form-error {
-        margin: 0;
-        overflow-wrap: anywhere;
-    }
-
-    .comment-thread-empty {
-        color: var(--color-secondary);
-    }
-
-    .comment-form-error {
-        color: var(--color-danger);
-        font-weight: 700;
-    }
-
-    .comment-delete-form {
-        justify-self: start;
-    }
-
-    .comment-delete-button {
-        color: var(--color-danger);
-    }
-
-    @media (max-width: 800px) {
-        .detail-header,
-        .detail-layout {
-            grid-template-columns: 1fr;
-        }
-
-        .detail-facts div {
-            grid-template-columns: 1fr;
-            gap: 4px;
-        }
-
-        .comment-replies {
-            padding-left: 10px;
-        }
-    }
-</style>
-
 <section aria-labelledby="listing-detail-title">
-    <div class="detail-header">
-        <div class="detail-title-stack">
-            <p class="eyebrow">商品详情</p>
-            <h1 id="listing-detail-title">{{ listing.title }}</h1>
-            <div class="detail-status-row">
-                <span class="detail-status">{{ listing.get_status_display }}</span>
-                <span class="detail-type">{{ listing.get_item_type_display }}</span>
-            </div>
-            <p class="detail-price">¥{{ listing.price }}</p>
-        </div>
-
-        <aside class="detail-actions" aria-label="购买状态">
-            {% if can_purchase %}
-                {% if purchase_requires_login %}
-                    <p>商品在售，登录后可以继续购买。</p>
-                    <a class="button" href="{{ purchase_url }}">登录后购买</a>
-                {% else %}
-                    <p>商品在售，可以继续购买。</p>
-                    <a class="button" href="{{ purchase_url }}">购买确认</a>
-                {% endif %}
-            {% else %}
-                <p>{{ purchase_disabled_reason }}</p>
-                {% if is_seller and listing.status == listing.Status.WITHDRAWN %}
-                    <p>商品已下架。</p>
-                {% endif %}
-            {% endif %}
-        </aside>
-    </div>
-
-    <div class="detail-layout">
-        <div class="detail-panel">
-            <h2>商品图片</h2>
-            <div class="detail-gallery">
+    <div class="detail-product-shell">
+        <div class="detail-media-panel" data-gallery>
+            <div class="detail-thumb-rail" aria-label="商品图片缩略图">
                 {% for image in listing.images.all %}
-                    <div class="detail-image">
+                    <button class="detail-thumb{% if forloop.first %} is-active{% endif %}" type="button" data-gallery-thumb="{{ image.image.url }}" data-gallery-alt="{{ listing.title }} 图片 {{ forloop.counter }}">
                         <img src="{{ image.image.url }}" alt="{{ listing.title }} 图片 {{ forloop.counter }}">
-                    </div>
+                    </button>
                 {% empty %}
-                    <div class="detail-image">暂无图片</div>
+                    <div class="detail-thumb-placeholder" aria-hidden="true">无图</div>
+                {% endfor %}
+            </div>
+
+            <div class="detail-main-image">
+                {% for image in listing.images.all %}
+                    {% if forloop.first %}
+                        <img data-gallery-main src="{{ image.image.url }}" alt="{{ listing.title }} 图片 {{ forloop.counter }}">
+                    {% endif %}
+                {% empty %}
+                    <span>暂无图片</span>
                 {% endfor %}
             </div>
         </div>
 
-        <aside class="detail-panel seller-summary" aria-labelledby="seller-summary-title">
-            <h2 id="seller-summary-title">卖家公开资料</h2>
-            <div class="seller-avatar" aria-hidden="true">
-                {% if listing.owner.profile.avatar %}
-                    <img src="{{ listing.owner.profile.avatar.url }}" alt="">
+        <article class="detail-info-panel">
+            <div class="detail-title-stack">
+                <p class="eyebrow">商品详情</p>
+                <h1 id="listing-detail-title">{{ listing.title }}</h1>
+                <div class="detail-status-row">
+                    <span class="detail-status">{{ listing.get_status_display }}</span>
+                    <span class="detail-type">{{ listing.get_item_type_display }}</span>
+                </div>
+                <p class="detail-price">¥{{ listing.price }}</p>
+            </div>
+
+            <div class="detail-actions" aria-label="购买状态">
+                {% if can_purchase %}
+                    {% if purchase_requires_login %}
+                        <p>商品在售，登录后可以继续购买。</p>
+                        <a class="button" href="{{ purchase_url }}">登录后购买</a>
+                    {% else %}
+                        <p>商品在售，可以继续购买。</p>
+                        <a class="button" href="{{ purchase_url }}">购买确认</a>
+                    {% endif %}
                 {% else %}
-                    <span>{{ listing.owner.profile.nickname|default:listing.owner.username|slice:":1" }}</span>
+                    <p>{{ purchase_disabled_reason }}</p>
+                    {% if is_seller and listing.status == listing.Status.WITHDRAWN %}
+                        <p>商品已下架。</p>
+                    {% endif %}
                 {% endif %}
             </div>
-            <p class="seller-name">{{ listing.owner.profile.nickname|default:listing.owner.username }}</p>
-            {% if listing.owner.profile.bio %}
-                <p class="seller-bio">{{ listing.owner.profile.bio }}</p>
-            {% else %}
-                <p class="seller-bio">卖家暂未填写简介。</p>
-            {% endif %}
-            <a class="button-secondary" href="{% url 'public_profile' listing.owner.pk %}">查看卖家主页</a>
-            {% if user.is_authenticated and not is_seller %}
-                <form method="post" action="{% url 'messaging:start_conversation' listing.owner.pk %}">
-                    {% csrf_token %}
-                    <button class="button-secondary" type="submit">联系卖家</button>
-                </form>
-            {% elif not user.is_authenticated %}
-                <a class="button-secondary" href="{% url 'users:login' %}?next={{ request.get_full_path|urlencode }}">登录后私信</a>
-            {% endif %}
-        </aside>
-    </div>
 
-    <div class="detail-layout" style="margin-top: 24px;">
-        <article class="detail-panel">
-            <h2>商品描述</h2>
-            <p class="detail-description">{{ listing.description }}</p>
+            <section class="detail-seller-strip" aria-labelledby="seller-summary-title">
+                <div class="seller-avatar" aria-hidden="true">
+                    {% if listing.owner.profile.avatar %}
+                        <img src="{{ listing.owner.profile.avatar.url }}" alt="">
+                    {% else %}
+                        <span>{{ listing.owner.profile.nickname|default:listing.owner.username|slice:":1" }}</span>
+                    {% endif %}
+                </div>
+                <div class="seller-summary">
+                    <h2 id="seller-summary-title">卖家公开资料</h2>
+                    <p class="seller-name">{{ listing.owner.profile.nickname|default:listing.owner.username }}</p>
+                    {% if listing.owner.profile.bio %}
+                        <p class="seller-bio">{{ listing.owner.profile.bio }}</p>
+                    {% else %}
+                        <p class="seller-bio">卖家暂未填写简介。</p>
+                    {% endif %}
+                    <div class="inline-actions">
+                        <a class="button-secondary" href="{% url 'public_profile' listing.owner.pk %}">查看卖家主页</a>
+                        {% if user.is_authenticated and not is_seller %}
+                            <form method="post" action="{% url 'messaging:start_conversation' listing.owner.pk %}">
+                                {% csrf_token %}
+                                <button class="button-secondary" type="submit">联系卖家</button>
+                            </form>
+                        {% elif not user.is_authenticated %}
+                            <a class="button-secondary" href="{% url 'users:login' %}?next={{ request.get_full_path|urlencode }}">登录后私信</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </section>
+
+            <section class="detail-inline-section" aria-labelledby="listing-description-title">
+                <h2 id="listing-description-title">商品描述</h2>
+                <p class="detail-description">{{ listing.description }}</p>
+            </section>
+
+            <section class="detail-inline-section" aria-labelledby="listing-facts-title">
+                <h2 id="listing-facts-title">商品信息</h2>
+                <dl class="detail-facts">
+                    <div><dt>业务分类</dt><dd>{{ listing.category.name }}</dd></div>
+                    <div><dt>商品类型</dt><dd>{{ listing.get_item_type_display }}</dd></div>
+                    <div><dt>商品状态</dt><dd>{{ listing.get_status_display }}</dd></div>
+                    <div><dt>发布时间</dt><dd>{{ listing.published_at|date:"Y-m-d H:i"|default:"尚未发布" }}</dd></div>
+                    {% if listing.item_type == listing.ItemType.PHYSICAL %}
+                        <div><dt>成色</dt><dd>{{ listing.get_condition_display|default:"未填写" }}</dd></div>
+                        <div><dt>交付方式</dt><dd>{{ listing.get_physical_delivery_method_display|default:"未填写" }}</dd></div>
+                    {% elif listing.item_type == listing.ItemType.VIRTUAL %}
+                        <div><dt>有效期</dt><dd>{{ listing.virtual_valid_until|date:"Y-m-d"|default:"未填写" }}</dd></div>
+                    {% endif %}
+                    <div><dt>交付说明</dt><dd>{{ listing.delivery_notes|default:"未填写" }}</dd></div>
+                </dl>
+            </section>
         </article>
-
-        <aside class="detail-panel">
-            <h2>商品信息</h2>
-            <dl class="detail-facts">
-                <div><dt>业务分类</dt><dd>{{ listing.category.name }}</dd></div>
-                <div><dt>商品类型</dt><dd>{{ listing.get_item_type_display }}</dd></div>
-                <div><dt>商品状态</dt><dd>{{ listing.get_status_display }}</dd></div>
-                <div><dt>发布时间</dt><dd>{{ listing.published_at|date:"Y-m-d H:i"|default:"尚未发布" }}</dd></div>
-                {% if listing.item_type == listing.ItemType.PHYSICAL %}
-                    <div><dt>成色</dt><dd>{{ listing.get_condition_display|default:"未填写" }}</dd></div>
-                    <div><dt>交付方式</dt><dd>{{ listing.get_physical_delivery_method_display|default:"未填写" }}</dd></div>
-                {% elif listing.item_type == listing.ItemType.VIRTUAL %}
-                    <div><dt>有效期</dt><dd>{{ listing.virtual_valid_until|date:"Y-m-d"|default:"未填写" }}</dd></div>
-                {% endif %}
-                <div><dt>交付说明</dt><dd>{{ listing.delivery_notes|default:"未填写" }}</dd></div>
-            </dl>
-        </aside>
     </div>
 
     {% include "interactions/comment_thread.html" %}

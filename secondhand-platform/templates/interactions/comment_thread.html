@@ -4,20 +4,32 @@
     <div class="comment-compose" aria-label="发布留言">
         {% if request.user.is_authenticated %}
             {% if can_comment %}
-                <form method="post" action="{% url 'interactions:comment_create' listing.pk %}" class="comment-form">
-                    {% csrf_token %}
-                    <label for="{{ comment_form.content.id_for_label }}">留言内容</label>
-                    {{ comment_form.content }}
-                    {% if comment_form.content.errors %}
-                        <p class="comment-form-error">{{ comment_form.content.errors.0 }}</p>
-                    {% endif %}
-                    <button class="button" type="submit">发布留言</button>
-                </form>
+                <div class="comment-composer">
+                    <span class="avatar" aria-hidden="true">
+                        {% if request.user.profile.avatar %}
+                            <img src="{{ request.user.profile.avatar.url }}" alt="">
+                        {% else %}
+                            {{ request.user.profile.nickname|default:request.user.username|slice:":1" }}
+                        {% endif %}
+                    </span>
+                    <form method="post" action="{% url 'interactions:comment_create' listing.pk %}" class="comment-form" data-disable-empty-submit>
+                        {% csrf_token %}
+                        <label for="{{ comment_form.content.id_for_label }}">留言内容</label>
+                        {{ comment_form.content }}
+                        {% if comment_form.content.errors %}
+                            <p class="comment-form-error">{{ comment_form.content.errors.0 }}</p>
+                        {% endif %}
+                        <div class="comment-compose-tools">
+                            <p class="comment-compose-hint">公开留言会展示给所有浏览该商品的用户。</p>
+                            <button class="button" type="submit">发布留言</button>
+                        </div>
+                    </form>
+                </div>
             {% else %}
-                <p class="comment-thread-empty">当前商品暂不支持新增留言，历史留言仍可查看。</p>
+                <p class="comment-thread-empty empty-state">当前商品暂不支持新增留言，历史留言仍可查看。</p>
             {% endif %}
         {% else %}
-            <p class="comment-thread-empty">
+            <p class="comment-thread-empty empty-state">
                 <a href="{% url 'users:login' %}?next={{ request.path }}">登录后留言</a>
             </p>
         {% endif %}
@@ -26,59 +38,110 @@
     <div class="comment-thread-list">
         {% for comment in comments %}
             <article class="comment-thread-item">
-                <header class="comment-thread-meta">
-                    <strong>
-                        {% if comment.author %}
-                            {{ comment.author.profile.nickname|default:comment.author.username }}
+                <div class="comment-body">
+                    <span class="avatar" aria-hidden="true">
+                        {% if comment.author and comment.author.profile.avatar %}
+                            <img src="{{ comment.author.profile.avatar.url }}" alt="">
+                        {% elif comment.author %}
+                            {{ comment.author.profile.nickname|default:comment.author.username|slice:":1" }}
                         {% else %}
-                            已注销用户
+                            注
                         {% endif %}
-                    </strong>
-                    {% if comment.author_id == listing.owner_id %}
-                        <span class="comment-seller-badge">卖家</span>
-                    {% endif %}
-                    <time datetime="{{ comment.created_at|date:'c' }}">{{ comment.created_at|date:"Y-m-d H:i" }}</time>
-                </header>
-                <p class="comment-thread-content">{{ comment.content|linebreaksbr }}</p>
-                {% if request.user.is_authenticated and comment.author_id == request.user.id %}
-                    <form method="post" action="{% url 'interactions:comment_delete' comment.pk %}" class="comment-delete-form">
-                        {% csrf_token %}
-                        <button class="button-secondary comment-delete-button" type="submit">删除</button>
-                    </form>
-                {% endif %}
+                    </span>
+                    <div class="comment-main">
+                        <header class="comment-thread-meta">
+                            <strong>
+                                {% if comment.author %}
+                                    {{ comment.author.profile.nickname|default:comment.author.username }}
+                                {% else %}
+                                    已注销用户
+                                {% endif %}
+                            </strong>
+                            {% if comment.author_id == listing.owner_id %}
+                                <span class="comment-seller-badge">卖家</span>
+                            {% endif %}
+                            <time datetime="{{ comment.created_at|date:'c' }}">{{ comment.created_at|date:"Y-m-d H:i" }}</time>
+                        </header>
+                        <p class="comment-thread-content">{{ comment.content|linebreaksbr }}</p>
+
+                        <div class="comment-actions">
+                            <div class="inline-actions">
+                                {% if request.user.is_authenticated and can_comment %}
+                                    <button
+                                        class="button-ghost"
+                                        type="button"
+                                        data-reply-toggle="reply-form-{{ comment.pk }}"
+                                        aria-controls="reply-form-{{ comment.pk }}"
+                                        aria-expanded="false"
+                                    >回复</button>
+                                {% endif %}
+                                {% if request.user.is_authenticated and comment.author_id == request.user.id %}
+                                    <form method="post" action="{% url 'interactions:comment_delete' comment.pk %}" class="comment-delete-form">
+                                        {% csrf_token %}
+                                        <button class="button-ghost comment-delete-button" type="submit">删除</button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="comment-replies" aria-label="回复列表">
                     {% for reply in comment.replies.all %}
                         <article class="comment-reply-item">
-                            <header class="comment-thread-meta">
-                                <strong>
-                                    {% if reply.author %}
-                                        {{ reply.author.profile.nickname|default:reply.author.username }}
-                                    {% else %}
-                                        已注销用户
-                                    {% endif %}
-                                </strong>
-                                {% if reply.author_id == listing.owner_id %}
-                                    <span class="comment-seller-badge">卖家</span>
+                            <span class="avatar" aria-hidden="true">
+                                {% if reply.author and reply.author.profile.avatar %}
+                                    <img src="{{ reply.author.profile.avatar.url }}" alt="">
+                                {% elif reply.author %}
+                                    {{ reply.author.profile.nickname|default:reply.author.username|slice:":1" }}
+                                {% else %}
+                                    注
                                 {% endif %}
-                                <time datetime="{{ reply.created_at|date:'c' }}">{{ reply.created_at|date:"Y-m-d H:i" }}</time>
-                            </header>
-                            <p class="comment-thread-content">{{ reply.content|linebreaksbr }}</p>
+                            </span>
+                            <div class="comment-reply-main">
+                                <header class="comment-thread-meta">
+                                    <strong>
+                                        {% if reply.author %}
+                                            {{ reply.author.profile.nickname|default:reply.author.username }}
+                                        {% else %}
+                                            已注销用户
+                                        {% endif %}
+                                    </strong>
+                                    {% if reply.author_id == listing.owner_id %}
+                                        <span class="comment-seller-badge">卖家</span>
+                                    {% endif %}
+                                    <time datetime="{{ reply.created_at|date:'c' }}">{{ reply.created_at|date:"Y-m-d H:i" }}</time>
+                                </header>
+                                <p class="comment-thread-content">{{ reply.content|linebreaksbr }}</p>
+                            </div>
                         </article>
                     {% endfor %}
                 </div>
 
                 {% if request.user.is_authenticated and can_comment %}
-                    <form method="post" action="{% url 'interactions:reply' comment.pk %}" class="comment-form comment-reply-form">
+                    <form
+                        id="reply-form-{{ comment.pk }}"
+                        method="post"
+                        action="{% url 'interactions:reply' comment.pk %}"
+                        class="comment-form comment-reply-form"
+                        data-disable-empty-submit
+                        hidden
+                    >
                         {% csrf_token %}
-                        <label for="reply-content-{{ comment.pk }}">回复内容</label>
+                        <label for="reply-content-{{ comment.pk }}">写下你的回复</label>
                         <textarea id="reply-content-{{ comment.pk }}" name="content" maxlength="1000" rows="3" required></textarea>
-                        <button class="button-secondary" type="submit">回复</button>
+                        <div class="comment-compose-tools">
+                            <p class="comment-compose-hint">回复会显示在当前留言下方。</p>
+                            <div class="inline-actions">
+                                <button class="button-secondary" type="button" data-reply-cancel>取消</button>
+                                <button class="button" type="submit">发布回复</button>
+                            </div>
+                        </div>
                     </form>
                 {% endif %}
             </article>
         {% empty %}
-            <p class="comment-thread-empty">暂无留言，后续咨询会显示在这里。</p>
+            <p class="comment-thread-empty empty-state">暂无留言，后续咨询会显示在这里。</p>
         {% endfor %}
     </div>
 </section>

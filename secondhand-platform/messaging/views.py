@@ -29,6 +29,15 @@ class ConversationListView(LoginRequiredMixin, ListView):
     def get_queryset(self):
         return get_user_conversations(self.request.user)
 
+    def get(self, request, *args, **kwargs):
+        latest_conversation = self.get_queryset().first()
+        if latest_conversation is not None:
+            return redirect(
+                "messaging:conversation_detail",
+                pk=latest_conversation.pk,
+            )
+        return super().get(request, *args, **kwargs)
+
 
 class StartConversationView(LoginRequiredMixin, View):
     http_method_names = ["post"]
@@ -89,6 +98,7 @@ class ConversationDetailView(LoginRequiredMixin, View):
         other_user = conversation.other_participant(request.user)
         return {
             "conversation": conversation,
+            "conversations": get_user_conversations(request.user),
             "other_user": other_user,
             "private_messages": get_conversation_messages(conversation),
             "form": form,

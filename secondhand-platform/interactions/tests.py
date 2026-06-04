@@ -492,7 +492,9 @@ class ListingCommentThreadViewTest(CommentTestMixin, TestCase):
 
         self.assertContains(response, "留言内容")
         self.assertContains(response, "发布留言")
-        self.assertContains(response, "回复内容")
+        self.assertContains(response, "data-reply-toggle")
+        self.assertContains(response, f'id="reply-form-{comment.pk}"')
+        self.assertContains(response, "hidden")
         self.assertContains(response, reverse("interactions:reply", kwargs={"pk": comment.pk}))
         self.assertContains(
             response,

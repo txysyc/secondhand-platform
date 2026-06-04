@@ -125,6 +125,8 @@ class ConversationSelectorTest(MessagingTestMixin, TestCase):
 
         self.assertEqual(conversations, [target])
         self.assertEqual(conversations[0].unread_count, 1)
+        self.assertEqual(conversations[0].latest_message_content, "未读消息")
+        self.assertIsNotNone(conversations[0].latest_message_created_at)
 
     def test_get_conversation_for_user_rejects_non_participant(self):
         conversation = get_or_create_conversation(self.buyer, self.seller)
@@ -189,6 +191,18 @@ class MessagingViewTest(MessagingTestMixin, TestCase):
             reverse("messaging:conversation_detail", kwargs={"pk": conversation.pk}),
         )
 
+    def test_conversation_list_redirects_to_latest_conversation(self):
+        conversation = get_or_create_conversation(self.buyer, self.seller)
+        create_private_message(self.seller, conversation, "列表预览消息")
+        self.client.force_login(self.buyer)
+
+        response = self.client.get(reverse("messaging:conversation_list"))
+
+        self.assertRedirects(
+            response,
+            reverse("messaging:conversation_detail", kwargs={"pk": conversation.pk}),
+        )
+
     def test_conversation_detail_renders_messages_and_rejects_non_participant(self):
         conversation = get_or_create_conversation(self.buyer, self.seller)
         create_private_message(self.seller, conversation, "历史私信")
@@ -201,6 +215,9 @@ class MessagingViewTest(MessagingTestMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "历史私信")
         self.assertContains(response, "卖家昵称")
+        self.assertContains(response, "最近会话")
+        self.assertIn("conversations", response.context)
+        self.assertEqual(list(response.context["conversations"]), [conversation])
 
         self.client.force_login(self.other_user)
         response = self.client.get(

@@ -1,5 +1,5 @@
 from django.core.exceptions import PermissionDenied
-from django.db.models import Count, Q
+from django.db.models import Count, OuterRef, Q, Subquery
 
 from messaging.models import Conversation, PrivateMessage
 
@@ -7,6 +7,9 @@ from messaging.models import Conversation, PrivateMessage
 def get_user_conversations(user):
     if user is None or not user.is_authenticated:
         return Conversation.objects.none()
+    latest_messages = PrivateMessage.objects.filter(conversation=OuterRef("pk")).order_by(
+        "-created_at", "-id"
+    )
     return (
         Conversation.objects.filter(Q(participant_a=user) | Q(participant_b=user))
         .select_related(
@@ -20,7 +23,11 @@ def get_user_conversations(user):
                 "private_messages",
                 filter=Q(private_messages__read_at__isnull=True)
                 & ~Q(private_messages__sender_id=user.pk),
-            )
+            ),
+            latest_message_content=Subquery(latest_messages.values("content")[:1]),
+            latest_message_created_at=Subquery(
+                latest_messages.values("created_at")[:1]
+            ),
         )
         .order_by("-updated_at", "-id")
     )

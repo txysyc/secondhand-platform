@@ -22,8 +22,10 @@
         margin: 0;
         padding: 0;
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(260px, 320px));
         gap: 16px;
+        justify-content: start;
+        align-items: start;
     }
 
     .public-listing-card {
@@ -34,6 +36,12 @@
         box-shadow: var(--shadow-soft);
         overflow: hidden;
         display: grid;
+        grid-template-rows: auto 1fr;
+    }
+
+    .public-listing-link {
+        display: grid;
+        height: 100%;
         grid-template-rows: auto 1fr;
     }
 

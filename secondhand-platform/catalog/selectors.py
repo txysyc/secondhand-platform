@@ -1,9 +1,12 @@
 from typing import Any
 from collections import OrderedDict
 
-from django.db.models import Q
+from django.core.cache import cache
+from django.db.models import Count, Max, Q
 from catalog.models import Category, Listing
 
+CACHE_KEY_ACTIVE_CATEGORY_IDS = "catalog:active_category_ids"
+CACHE_TIMEOUT_ACTIVE_CATEGORY_IDS = 60 * 10
 
 # 卖家“我的商品”页面的稳定分组顺序与中文展示文案。
 # 顺序与状态值都不应被调用方覆盖；模板和 selector 都直接依赖这一份契约。
@@ -41,8 +44,55 @@ _OWNER_LISTING_GROUP_DEFINITIONS = (
 )
 
 
+def clear_active_category_cache():
+    """清理启用分类缓存，供分类保存或删除信号调用。"""
+
+    cache.delete(CACHE_KEY_ACTIVE_CATEGORY_IDS)
+
+
+def get_active_category_ids():
+    """读取启用分类 ID 列表。
+
+    只缓存稳定的小型 ID 列表，调用方仍返回 QuerySet 或继续做数据库过滤，
+    避免缓存完整模型对象导致表单和模板行为变得隐晦。
+    """
+
+    cache_key = _active_category_ids_cache_key()
+    category_ids = cache.get(cache_key)
+    if category_ids is None:
+        category_ids = list(
+            Category.objects.filter(is_active=True)
+            .order_by("id")
+            .values_list("id", flat=True)
+        )
+        cache.set(
+            cache_key,
+            category_ids,
+            CACHE_TIMEOUT_ACTIVE_CATEGORY_IDS,
+        )
+        cache.set(
+            CACHE_KEY_ACTIVE_CATEGORY_IDS,
+            category_ids,
+            CACHE_TIMEOUT_ACTIVE_CATEGORY_IDS,
+        )
+    return category_ids
+
+
+def _active_category_ids_cache_key():
+    state = Category.objects.aggregate(
+        total=Count("id"),
+        latest_updated_at=Max("updated_at"),
+    )
+    latest_updated_at = state["latest_updated_at"]
+    latest = latest_updated_at.isoformat() if latest_updated_at else "none"
+    return f"{CACHE_KEY_ACTIVE_CATEGORY_IDS}:{state['total']}:{latest}"
+
+
 def get_active_categories():
-    return Category.objects.filter(is_active=True).order_by("id")
+    category_ids = get_active_category_ids()
+    if not category_ids:
+        return Category.objects.none()
+    return Category.objects.filter(id__in=category_ids).order_by("id")
 
 
 def get_owner_listing_groups(user):
@@ -89,8 +139,15 @@ def get_owner_listing_groups(user):
 
 def get_publish_listing_queryset(cleaned_data: dict[str, Any] | None = None):
 
+    active_category_ids = get_active_category_ids()
+    if not active_category_ids:
+        return Listing.objects.none()
+
     listing_queryset = (
-        Listing.objects.filter(status=Listing.Status.ACTIVE, category__is_active=True)
+        Listing.objects.filter(
+            status=Listing.Status.ACTIVE,
+            category_id__in=active_category_ids,
+        )
         .select_related("category", "owner", "owner__profile")
         .prefetch_related("images")
         .order_by("-published_at", "-id")

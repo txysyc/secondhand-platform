@@ -192,6 +192,14 @@
             {% endif %}
             <div class="profile-actions">
                 <a class="button-secondary" href="{{ return_url }}">返回商品详情</a>
+                {% if user.is_authenticated and user.pk != seller.pk %}
+                    <form method="post" action="{% url 'messaging:start_conversation' seller.pk %}" style="display:inline-flex; margin-left:8px;">
+                        {% csrf_token %}
+                        <button class="button-secondary" type="submit">联系卖家</button>
+                    </form>
+                {% elif not user.is_authenticated %}
+                    <a class="button-secondary" href="{% url 'users:login' %}?next={{ request.get_full_path|urlencode }}" style="margin-left:8px;">登录后私信</a>
+                {% endif %}
             </div>
         </div>
     </header>

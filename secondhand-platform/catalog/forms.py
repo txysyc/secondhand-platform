@@ -5,7 +5,7 @@ from django.forms import BaseInlineFormSet, inlineformset_factory
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 
-from catalog.models import Listing, ListingImage
+from catalog.models import Category, Listing, ListingImage
 from catalog.selectors import get_active_categories
 
 MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
@@ -128,7 +128,7 @@ ListingImageFormSet = inlineformset_factory(
 class ListingFilterForm(forms.Form):
     q = forms.CharField(max_length=100, required=False, label="关键字")
     category = forms.ModelChoiceField(
-        get_active_categories(), required=False, label="分类"
+        Category.objects.none(), required=False, label="分类"
     )
     item_type = forms.ChoiceField(
         choices=[("", "全部类型")] + list(Listing.ItemType.choices),
@@ -154,6 +154,12 @@ class ListingFilterForm(forms.Form):
         initial="newest",
     )
     page = forms.IntegerField(min_value=1, required=False, label="页码")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        category = self.fields["category"]
+        if isinstance(category, forms.ModelChoiceField):
+            category.queryset = get_active_categories()
 
     def clean_q(self):
         q: str = self.cleaned_data.get("q", "")

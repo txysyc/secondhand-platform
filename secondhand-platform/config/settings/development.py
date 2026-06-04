@@ -22,6 +22,6 @@ SECRET_KEY = env("DJANGO_DEV_SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-# Celery配置
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
-CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://localhost:6379/1")
+# Celery配置：本地默认连接 secondhand-platform-redis 容器映射到宿主机的 6380 端口。
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6380/0")
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://localhost:6380/1")

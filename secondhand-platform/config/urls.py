@@ -15,6 +15,7 @@ urlpatterns = [
     path("listings/", include("catalog.urls", namespace="catalog")),
     path("orders/", include("orders.urls", namespace="orders")),
     path("comments/", include("interactions.urls", namespace="interactions")),
+    path("messages/", include("messaging.urls", namespace="messaging")),
 ]
 
 if settings.DEBUG:

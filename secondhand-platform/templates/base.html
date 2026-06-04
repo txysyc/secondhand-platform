@@ -410,6 +410,7 @@
                     <a class="button-secondary" href="{% url 'catalog:my_listing_list' %}">我的商品</a>
                     <a class="button-secondary" href="{% url 'orders:buyer_order_list' %}">我的订单</a>
                     <a class="button-secondary" href="{% url 'orders:seller_order_list' %}">卖出订单</a>
+                    <a class="button-secondary" href="{% url 'messaging:conversation_list' %}">私信</a>
                     <a class="button-secondary" href="{% url 'users:profile' %}">我的资料</a>
                     <form method="post" action="{% url 'users:logout' %}">
                         {% csrf_token %}

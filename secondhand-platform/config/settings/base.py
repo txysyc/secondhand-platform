@@ -21,6 +21,7 @@ ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS")
 # 应用注册
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -31,6 +32,7 @@ INSTALLED_APPS = [
     "catalog.apps.CatalogConfig",
     "orders.apps.OrdersConfig",
     "interactions.apps.InteractionsConfig",
+    "messaging.apps.MessagingConfig",
 ]
 
 MIDDLEWARE = [
@@ -63,6 +65,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
 
 
 # 数据库配置
@@ -125,6 +128,27 @@ AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "users.auth_backends.EmailBackend",
 ]
+
+# Redis-backed Django cache 与 Channels channel layer 使用独立 Redis DB。
+# 本地默认连接 secondhand-platform-redis 容器映射到宿主机的 6380 端口。
+DJANGO_CACHE_URL = env("DJANGO_CACHE_URL", default="redis://localhost:6380/2")
+CHANNEL_REDIS_URL = env("CHANNEL_REDIS_URL", default="redis://localhost:6380/3")
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": DJANGO_CACHE_URL,
+    }
+}
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [CHANNEL_REDIS_URL],
+        },
+    },
+}
 
 # 认证成功和退出后的公开落点先指向最小首页，后续商品列表 story 可接管该路径。
 LOGIN_URL = "users:login"

@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}与{{ other_user.profile.nickname|default:other_user.username }}的私信 - 二手交易平台{% endblock %}
+
+{% block content %}
+<style>
+    .message-layout {
+        max-width: 780px;
+        margin: 0 auto;
+    }
+
+    .message-panel {
+        margin-top: 22px;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-background);
+        box-shadow: var(--shadow-soft);
+        padding: 20px;
+    }
+
+    .message-list {
+        display: grid;
+        gap: 12px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .message-item {
+        display: grid;
+        gap: 6px;
+        max-width: min(100%, 620px);
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-surface);
+        padding: 12px;
+    }
+
+    .message-item.is-mine {
+        justify-self: end;
+        background: #f8fafc;
+    }
+
+    .message-meta {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        color: var(--color-secondary);
+        font-size: 14px;
+    }
+
+    .message-content,
+    .message-empty,
+    .message-error {
+        margin: 0;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+    }
+
+    .message-error {
+        color: var(--color-danger);
+        font-weight: 800;
+    }
+
+    .message-compose {
+        display: grid;
+        gap: 10px;
+        margin-top: 18px;
+    }
+
+    .message-compose textarea {
+        width: 100%;
+        min-height: 96px;
+        resize: vertical;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font: inherit;
+    }
+</style>
+
+<section class="message-layout" aria-labelledby="conversation-detail-title">
+    <p class="eyebrow">站内私信</p>
+    <h1 id="conversation-detail-title">与{{ other_user.profile.nickname|default:other_user.username }}沟通</h1>
+    <p class="lede">消息仅会展示给当前会话的两个参与者。</p>
+
+    <div class="message-panel">
+        <ul id="message-list" class="message-list" aria-live="polite">
+            {% for private_message in private_messages %}
+                <li class="message-item{% if private_message.sender_id == user.pk %} is-mine{% endif %}">
+                    <div class="message-meta">
+                        <strong>{{ private_message.sender.profile.nickname|default:private_message.sender.username }}</strong>
+                        <span>{{ private_message.created_at|date:"Y-m-d H:i" }}</span>
+                    </div>
+                    <p class="message-content">{{ private_message.content }}</p>
+                </li>
+            {% empty %}
+                <li id="message-empty" class="message-empty">还没有消息，发送第一条私信开始沟通。</li>
+            {% endfor %}
+        </ul>
+
+        <form id="message-form" class="message-compose" method="post" action="{% url 'messaging:conversation_detail' conversation.pk %}">
+            {% csrf_token %}
+            {% if form.errors %}
+                <p class="message-error">{{ form.content.errors.0 }}</p>
+            {% endif %}
+            <label for="{{ form.content.id_for_label }}">{{ form.content.label }}</label>
+            {{ form.content }}
+            <button class="button" type="submit">发送</button>
+            <p id="message-error" class="message-error" hidden></p>
+        </form>
+    </div>
+
+    <nav style="margin-top:22px; display:flex; flex-wrap:wrap; gap:10px;" aria-label="返回入口">
+        <a class="button-secondary" href="{% url 'messaging:conversation_list' %}">返回私信列表</a>
+    </nav>
+</section>
+
+<script>
+(function() {
+    var form = document.getElementById("message-form");
+    var textarea = document.getElementById("id_content");
+    var list = document.getElementById("message-list");
+    var empty = document.getElementById("message-empty");
+    var error = document.getElementById("message-error");
+    var currentUserId = Number("{{ user.pk }}");
+    var protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+    var socket = new WebSocket(protocol + window.location.host + "/ws/messages/{{ conversation.pk }}/");
+
+    function appendMessage(message) {
+        if (empty) {
+            empty.remove();
+            empty = null;
+        }
+        var item = document.createElement("li");
+        item.className = "message-item" + (message.sender_id === currentUserId ? " is-mine" : "");
+
+        var meta = document.createElement("div");
+        meta.className = "message-meta";
+        var name = document.createElement("strong");
+        name.textContent = message.sender_display_name;
+        var time = document.createElement("span");
+        time.textContent = new Date(message.created_at).toLocaleString("zh-CN", {
+            hour12: false,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit"
+        });
+        meta.appendChild(name);
+        meta.appendChild(time);
+
+        var body = document.createElement("p");
+        body.className = "message-content";
+        body.textContent = message.content;
+
+        item.appendChild(meta);
+        item.appendChild(body);
+        list.appendChild(item);
+    }
+
+    socket.addEventListener("message", function(event) {
+        var payload = JSON.parse(event.data);
+        if (payload.type === "message") {
+            error.hidden = true;
+            appendMessage(payload.message);
+        }
+        if (payload.type === "error") {
+            error.textContent = payload.message;
+            error.hidden = false;
+        }
+    });
+
+    form.addEventListener("submit", function(event) {
+        if (socket.readyState !== WebSocket.OPEN) {
+            return;
+        }
+        event.preventDefault();
+        var content = textarea.value.trim();
+        if (!content) {
+            error.textContent = "消息内容不能为空";
+            error.hidden = false;
+            return;
+        }
+        socket.send(JSON.stringify({content: content}));
+        textarea.value = "";
+    });
+})();
+</script>
+{% endblock %}

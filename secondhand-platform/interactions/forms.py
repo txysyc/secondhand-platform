@@ -17,6 +17,8 @@ class CommentForm(forms.ModelForm):
         }
 
     def clean_content(self):
+        """去除留言内容两端空白并拒绝空内容。"""
+
         content: str = self.cleaned_data["content"]
         content = content.strip()
         if content == "":

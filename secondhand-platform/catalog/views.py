@@ -43,6 +43,8 @@ class ListingCreateView(LoginRequiredMixin, View):
     image_formset_prefix = "images"
 
     def get(self, request):
+        """渲染空的商品创建表单和图片表单集。"""
+
         form = self.form_class()
         formset = self.image_formset_class(prefix=self.image_formset_prefix)
         context = self.get_context_data(form=form, formset=formset)
@@ -50,6 +52,8 @@ class ListingCreateView(LoginRequiredMixin, View):
         return render(request, self.template_name, context=context)
 
     def post(self, request):
+        """处理商品创建提交，并按提交意图保存草稿或发布。"""
+
         form = self.form_class(request.POST)
         formset = self.image_formset_class(
             request.POST, request.FILES, prefix=self.image_formset_prefix
@@ -73,6 +77,8 @@ class ListingCreateView(LoginRequiredMixin, View):
         return render(request, self.template_name, context=context)
 
     def get_context_data(self, **kwargs):
+        """构造商品创建页模板上下文。"""
+
         return {
             **kwargs,
             "is_create": True,
@@ -92,11 +98,15 @@ class ListingUpdateView(LoginRequiredMixin, View):
     model = Listing
 
     def get_listing(self, request, pk):
+        """读取待编辑商品并校验当前用户所有权。"""
+
         listing = get_object_or_404(self.model, pk=pk)
         ensure_listing_owner(request.user, listing)
         return listing
 
     def get(self, request, pk):
+        """渲染商品编辑表单和当前图片表单集。"""
+
         listing = self.get_listing(request, pk)
         form = self.form_class(instance=listing)
         formset = self.image_formset_class(
@@ -107,6 +117,8 @@ class ListingUpdateView(LoginRequiredMixin, View):
         return render(request, self.template_name, context=context)
 
     def post(self, request, pk):
+        """处理商品编辑提交并委托服务层执行状态规则。"""
+
         listing = self.get_listing(request, pk)
         form = self.form_class(request.POST, instance=listing)
         formset = self.image_formset_class(
@@ -136,6 +148,8 @@ class ListingUpdateView(LoginRequiredMixin, View):
         return render(request, self.template_name, context=context)
 
     def get_context_data(self, listing, **kwargs):
+        """构造商品编辑页模板上下文。"""
+
         return {
             **kwargs,
             "listing": listing,
@@ -154,15 +168,21 @@ class ListingDeleteView(LoginRequiredMixin, View):
     model = Listing
 
     def get_listing(self, request, pk):
+        """读取待删除商品并校验当前用户所有权。"""
+
         listing = get_object_or_404(self.model, pk=pk)
         ensure_listing_owner(request.user, listing)
         return listing
 
     def get(self, request, pk):
+        """渲染商品删除确认页。"""
+
         listing = self.get_listing(request, pk)
         return render(request, self.template_name, {"listing": listing})
 
     def post(self, request, pk):
+        """执行商品删除并返回用户资料页。"""
+
         listing = self.get_listing(request, pk)
         try:
             delete_listing(request.user, listing)
@@ -180,6 +200,8 @@ class MyListingListView(LoginRequiredMixin, View):
     template_name = "catalog/my_listing_list.html"
 
     def get(self, request):
+        """渲染当前卖家的商品生命周期分组列表。"""
+
         listing_groups = get_owner_listing_groups(request.user)
         context = {
             "listing_groups": listing_groups,
@@ -201,10 +223,14 @@ class ListingStatusUpdateView(LoginRequiredMixin, View):
     }
 
     def http_method_not_allowed(self, request, *args, **kwargs):
+        """对非 POST 状态变更请求返回显式 405。"""
+
         # 显式 405 响应，确保 GET / PUT 等无法触发状态变更。
         return HttpResponseNotAllowed(["POST"])
 
     def post(self, request, pk):
+        """处理卖家手动下架或重新上架商品的请求。"""
+
         listing = get_object_or_404(
             self.model.objects.select_related("category"), pk=pk
         )
@@ -222,6 +248,8 @@ class ListingStatusUpdateView(LoginRequiredMixin, View):
 
 
 class ListingListView(ListView):
+    """公开商品列表页。"""
+
     model = Listing
     template_name = "catalog/listing_list.html"
     context_object_name = "listings"
@@ -229,6 +257,8 @@ class ListingListView(ListView):
     form = ListingFilterForm
 
     def get_queryset(self) -> QuerySet[Any]:
+        """根据筛选表单返回公开可浏览的商品查询集。"""
+
         self._filter_form = self.form(self.request.GET)
         if self._filter_form.is_valid():
             cleaned_data = self._filter_form.cleaned_data
@@ -240,6 +270,8 @@ class ListingListView(ListView):
         queryset: QuerySet[Any],
         page_size: int,
     ) -> tuple[Paginator, Any, QuerySet[Any], bool]:
+        """使用容错分页，非法页码回落到有效页面。"""
+
         paginator = self.get_paginator(
             queryset,
             page_size,
@@ -250,6 +282,8 @@ class ListingListView(ListView):
         return paginator, page, page.object_list, page.has_other_pages()
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        """补充筛选表单、分页查询串和筛选摘要上下文。"""
+
         context = super().get_context_data(**kwargs)
         query_params = self.request.GET.copy()
         query_params.pop(self.page_kwarg, None)
@@ -260,6 +294,8 @@ class ListingListView(ListView):
         return context
 
     def _build_active_filters_summary(self) -> str:
+        """生成当前公开列表筛选条件的中文摘要。"""
+
         if not self._filter_form.is_valid():
             return ""
         parts = []
@@ -287,11 +323,15 @@ class ListingListView(ListView):
 
 
 class ListingDetailView(DetailView):
+    """商品详情页。"""
+
     template_name = "catalog/listing_detail.html"
     model = Listing
     context_object_name = "listing"
 
     def get_queryset(self) -> QuerySet[Any]:
+        """返回访客可见商品，并允许卖家查看自己的已下架商品。"""
+
         queryset = self.model.objects.select_related(
             "category", "owner", "owner__profile"
         ).prefetch_related("images")
@@ -313,6 +353,8 @@ class ListingDetailView(DetailView):
         return queryset.filter(public_filter)
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        """补充评论、购买入口和卖家视角相关上下文。"""
+
         context = super().get_context_data(**kwargs)
         listing = self.object
         user = self.request.user
@@ -366,9 +408,13 @@ class PurchaseConfirmView(LoginRequiredMixin, View):
     template_name = "catalog/purchase_confirm.html"
 
     def get_object(self, pk):
+        """读取购买确认页对应的商品。"""
+
         return get_object_or_404(Listing, pk=pk)
 
     def get_context_data(self, listing):
+        """构造购买确认页模板上下文。"""
+
         context = {
             "listing": listing,
             "seller": listing.owner,
@@ -377,6 +423,8 @@ class PurchaseConfirmView(LoginRequiredMixin, View):
         return context
 
     def get(self, request, pk):
+        """渲染购买确认页并拒绝不可购买商品。"""
+
         listing = self.get_object(pk)
         if listing.status != Listing.Status.ACTIVE:
             messages.error(request, "该商品当前不可购买")
@@ -388,6 +436,8 @@ class PurchaseConfirmView(LoginRequiredMixin, View):
         return render(request, self.template_name, context)
 
     def post(self, request, pk):
+        """提交购买确认并创建订单。"""
+
         listing = self.get_object(pk)
 
         try:

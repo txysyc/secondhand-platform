@@ -2,7 +2,10 @@ from django.db import models
 
 from django.conf import settings
 
+
 class Order(models.Model):
+    """订单模型，保存交易状态、快照信息和关键流程时间。"""
+
     class Meta:
         verbose_name = "订单"
         verbose_name_plural = "订单"
@@ -14,6 +17,8 @@ class Order(models.Model):
         ]
 
     class OrderStatus(models.TextChoices):
+        """订单生命周期状态。"""
+
         PENDING_PAYMENT = "pending_payment", "待支付"
         CANCELLED = "cancelled", "已取消"
         AWAITING_SHIPMENT = "awaiting_shipment", "待发货"
@@ -68,4 +73,6 @@ class Order(models.Model):
     updated_at = models.DateTimeField(verbose_name="更新时间", auto_now=True)
 
     def __str__(self):
+        """返回后台和调试输出中展示的订单摘要。"""
+
         return f"#{self.pk} {self.listing_title_snapshot}"

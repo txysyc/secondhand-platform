@@ -13,7 +13,10 @@ from django.urls import reverse
 from django.utils import timezone
 
 from catalog.models import Category, Listing
-from catalog.selectors import CACHE_KEY_ACTIVE_CATEGORY_IDS, get_active_category_ids
+from catalog.selectors import (
+    _active_category_ids_cache_key,
+    get_active_category_ids,
+)
 from messaging.admin import ConversationAdmin, PrivateMessageAdmin
 from messaging.models import Conversation, PrivateMessage
 from messaging.routing import websocket_urlpatterns
@@ -251,14 +254,18 @@ class RedisCacheSelectorTest(TestCase):
     def test_active_category_ids_are_cached_and_invalidated_on_save(self):
         first = Category.objects.create(name="缓存分类一")
         ids = get_active_category_ids()
+        first_cache_key = _active_category_ids_cache_key()
 
         self.assertEqual(ids, [first.pk])
-        self.assertEqual(cache.get(CACHE_KEY_ACTIVE_CATEGORY_IDS), [first.pk])
+        self.assertEqual(cache.get(first_cache_key), [first.pk])
 
         second = Category.objects.create(name="缓存分类二")
+        second_cache_key = _active_category_ids_cache_key()
 
-        self.assertIsNone(cache.get(CACHE_KEY_ACTIVE_CATEGORY_IDS))
+        self.assertNotEqual(first_cache_key, second_cache_key)
+        self.assertIsNone(cache.get(second_cache_key))
         self.assertEqual(get_active_category_ids(), [first.pk, second.pk])
+        self.assertEqual(cache.get(second_cache_key), [first.pk, second.pk])
 
 
 @override_settings(

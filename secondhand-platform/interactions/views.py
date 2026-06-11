@@ -10,13 +10,16 @@ from interactions.services import create_comment, delete_comment, create_reply
 from catalog.models import Listing
 
 
-# Create your views here.
 class CommentCreateView(LoginRequiredMixin, View):
+    """处理商品顶层留言创建。"""
+
     model = Comment
     from_class = CommentForm
     http_method_names = ["post"]
 
     def post(self, request, listing_id):
+        """校验留言表单并创建当前商品的顶层留言。"""
+
         form = self.from_class(data=request.POST)
         listing = get_object_or_404(
             Listing.objects.select_related("category"),
@@ -42,10 +45,14 @@ class CommentCreateView(LoginRequiredMixin, View):
 
 
 class CommentDeleteView(LoginRequiredMixin, View):
+    """处理留言删除请求。"""
+
     model = Comment
     http_method_names = ["post"]
 
     def post(self, request, pk):
+        """删除当前用户自己的留言并返回商品详情页。"""
+
         comment = get_object_or_404(Comment, pk=pk)
         listing_id = comment.listing_id
         try:
@@ -76,11 +83,15 @@ def _first_error_message(error, fallback: str):
 
 
 class CommentReplyView(LoginRequiredMixin, View):
+    """处理二级留言回复创建。"""
+
     http_method_names = ["post"]
     form_class = CommentForm
     model = Comment
 
     def post(self, request, pk):
+        """校验回复表单并在目标留言下创建回复。"""
+
         form = self.form_class(request.POST)
         comment = get_object_or_404(
             Comment.objects.select_related(

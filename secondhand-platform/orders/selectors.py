@@ -2,6 +2,8 @@ from orders.models import Order
 
 
 def get_buyer_orders(user):
+    """读取当前用户作为买家的订单列表。"""
+
     if user is None or not user.is_authenticated:
         return Order.objects.none()
     return (
@@ -12,6 +14,8 @@ def get_buyer_orders(user):
 
 
 def get_seller_orders(user):
+    """读取当前用户作为卖家的订单列表。"""
+
     if user is None or not user.is_authenticated:
         return Order.objects.none()
     return (

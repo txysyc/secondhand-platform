@@ -30,6 +30,8 @@ class ListingForm(forms.ModelForm):
         ]
 
     def __init__(self, *args, **kwargs):
+        """初始化表单并把分类选项限制为当前启用分类。"""
+
         super().__init__(*args, **kwargs)
         category = self.fields["category"]
 
@@ -38,12 +40,16 @@ class ListingForm(forms.ModelForm):
             category.queryset = get_active_categories()
 
     def clean_price(self):
+        """校验商品价格必须为正数。"""
+
         price = self.cleaned_data.get("price")
         if price is not None and price <= 0:
             raise forms.ValidationError("价格必须大于0")
         return price
 
     def clean(self):
+        """按商品类型校验并清理不适用的差异字段。"""
+
         cleaned_data = super().clean()
         item_type = cleaned_data.get("item_type")
 
@@ -76,6 +82,8 @@ class ListingImageForm(forms.ModelForm):
         fields = ["image"]
 
     def clean_image(self):
+        """校验单张商品图片的大小限制。"""
+
         image = self.cleaned_data.get("image")
 
         if image is None:
@@ -126,6 +134,8 @@ ListingImageFormSet = inlineformset_factory(
 
 
 class ListingFilterForm(forms.Form):
+    """公开商品列表筛选表单。"""
+
     q = forms.CharField(max_length=100, required=False, label="关键字")
     category = forms.ModelChoiceField(
         Category.objects.none(), required=False, label="分类"
@@ -156,35 +166,47 @@ class ListingFilterForm(forms.Form):
     page = forms.IntegerField(min_value=1, required=False, label="页码")
 
     def __init__(self, *args, **kwargs):
+        """初始化筛选表单并加载当前启用分类作为可选项。"""
+
         super().__init__(*args, **kwargs)
         category = self.fields["category"]
         if isinstance(category, forms.ModelChoiceField):
             category.queryset = get_active_categories()
 
     def clean_q(self):
+        """去除关键词两端空白。"""
+
         q: str = self.cleaned_data.get("q", "")
         q = q.strip()
         return q
 
     def clean_max_price(self):
+        """为空的最高价填充默认上限。"""
+
         max_price = self.cleaned_data.get("max_price")
         if max_price is None:
             max_price = 99999999
         return max_price
 
     def clean_min_price(self):
+        """为空的最低价填充默认下限。"""
+
         min_price = self.cleaned_data.get("min_price")
         if min_price is None:
             min_price = 0
         return min_price
 
     def clean_page(self):
+        """为空的页码填充第一页。"""
+
         page = self.cleaned_data.get("page")
         if page is None:
             page = 1
         return page
 
     def clean(self) -> dict[str, Any]:
+        """校验价格区间的上下限关系。"""
+
         cleaned_data = super().clean()
 
         max_price = cleaned_data.get("max_price")

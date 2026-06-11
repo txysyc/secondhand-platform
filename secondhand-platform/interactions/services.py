@@ -36,9 +36,10 @@ def delete_comment(user: User, comment: Comment):
 
 def can_interact_with_listing(listing: Listing):
     """判断商品能否互动"""
-    if listing.status == Listing.Status.ACTIVE and listing.category.is_active is True:
-        return True
-    return False
+    return (
+        listing.status == Listing.Status.ACTIVE
+        and listing.category.is_active is True
+    )
 
 
 def _create_comment(

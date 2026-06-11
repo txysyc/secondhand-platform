@@ -102,8 +102,6 @@ def confirm_order_delivery(seller, order_id):
         except Listing.DoesNotExist:
             raise ValidationError("订单关联商品不存在")
 
-        if order.listing is None:
-            raise ValidationError("关联商品不存在，无法确认交易")
         if seller.pk != order.seller_id:
             raise PermissionDenied("无权访问该订单")
 
@@ -148,8 +146,6 @@ def confirm_order_receipt(buyer, order_id):
         except Listing.DoesNotExist:
             raise ValidationError("订单关联商品不存在")
 
-        if listing is None:
-            raise ValidationError("订单关联商品不存在")
         if buyer.pk != order.buyer_id:
             raise PermissionDenied("无权操作该订单")
 

@@ -3,8 +3,9 @@ from django.conf import settings
 from django.db import models
 
 
-# Create your models here.
 class Comment(models.Model):
+    """商品留言模型，支持一层回复结构。"""
+
     class Meta:
         verbose_name = "评论"
         verbose_name_plural = "评论"
@@ -45,5 +46,7 @@ class Comment(models.Model):
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
     def __str__(self):
+        """返回后台和调试输出中展示的留言摘要。"""
+
         n = 20
         return self.content[0:n]

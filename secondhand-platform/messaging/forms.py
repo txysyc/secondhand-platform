@@ -18,6 +18,8 @@ class PrivateMessageForm(forms.Form):
     )
 
     def clean_content(self):
+        """去除私信内容两端空白并拒绝空内容。"""
+
         content = self.cleaned_data["content"].strip()
         if content == "":
             raise ValidationError("消息内容不能为空")

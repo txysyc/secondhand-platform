@@ -178,9 +178,13 @@ class ProfileView(LoginRequiredMixin, View):
 
 
 class PublicProfileView(View):
+    """卖家公开主页，展示资料和当前在售商品。"""
+
     template_name = "users/public_profile.html"
 
     def get(self, request, user_id):
+        """渲染指定用户的公开资料页并生成安全返回链接。"""
+
         user = get_object_or_404(User, pk=user_id)
         profile, _ = Profile.objects.get_or_create(user=user)
         public_listing_list = get_publish_listing_queryset().filter(owner=user)

@@ -7,6 +7,8 @@ Max_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
 
 
 class Category(models.Model):
+    """商品分类模型。"""
+
     class Meta:
         verbose_name = "商品分类"
         verbose_name_plural = "商品分类"
@@ -20,6 +22,8 @@ class Category(models.Model):
     updated_at = models.DateTimeField(verbose_name="更新时间", auto_now=True)
 
     def __str__(self):
+        """返回后台和表单选项中展示的分类名称。"""
+
         return f"{self.name}"
 
 
@@ -31,6 +35,8 @@ def valid_virtual_until_time(value):
 
 
 class Listing(models.Model):
+    """平台商品模型，保存发布内容、交易状态和类型差异字段。"""
+
     class Meta:
         verbose_name = "商品列表"
         verbose_name_plural = "商品列表"
@@ -123,6 +129,8 @@ class Listing(models.Model):
     )
 
     def __str__(self):
+        """返回后台和调试输出中展示的商品标题。"""
+
         return f"{self.title}"
 
 
@@ -134,6 +142,8 @@ def valid_imgae_size(value):
 
 
 class ListingImage(models.Model):
+    """商品图片模型，按 sort_order 维护同一商品下的展示顺序。"""
+
     class Meta:
         verbose_name = "商品图片"
         verbose_name_plural = "商品图片"
@@ -156,4 +166,6 @@ class ListingImage(models.Model):
     )  # 对上商品图片进行排序
 
     def __str__(self):
+        """返回后台中展示的商品图片描述。"""
+
         return f"{self.listing}的图片"

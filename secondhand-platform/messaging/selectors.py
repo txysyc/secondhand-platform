@@ -5,6 +5,8 @@ from messaging.models import Conversation, PrivateMessage
 
 
 def get_user_conversations(user):
+    """读取用户参与的会话列表，并附带未读数与最近消息摘要。"""
+
     if user is None or not user.is_authenticated:
         return Conversation.objects.none()
     latest_messages = PrivateMessage.objects.filter(conversation=OuterRef("pk")).order_by(
@@ -34,12 +36,16 @@ def get_user_conversations(user):
 
 
 def get_conversation_for_user(user, conversation_id):
+    """读取当前用户可访问的单个会话。"""
+
     if user is None or not user.is_authenticated:
         raise PermissionDenied("请先登录后再使用私信")
     return get_user_conversations(user).get(pk=conversation_id)
 
 
 def get_conversation_messages(conversation):
+    """读取会话内按时间顺序展示的消息列表。"""
+
     return (
         PrivateMessage.objects.filter(conversation=conversation)
         .select_related("sender", "sender__profile")

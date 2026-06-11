@@ -63,6 +63,8 @@ def _delete_image_files_on_commit(file_fields):
         return
 
     def cleanup():
+        """事务提交成功后删除已不再被数据库引用的图片文件。"""
+
         for storage, name in files:
             storage.delete(name)
 

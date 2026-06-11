@@ -54,14 +54,20 @@ class ListingAdmin(admin.ModelAdmin):
     inlines = [ListingInline]
 
     def get_queryset(self, request):
+        """返回带图片数量聚合字段的后台商品查询集。"""
+
         # 列表页一次性聚合图片数量，避免每行单独查询 images。
         queryset = super().get_queryset(request)
         return queryset.annotate(image_count_value=Count("images"))
 
     @admin.display(description="图片数量", ordering="image_count_value")
     def image_count_value(self, obj):
+        """读取后台列表中展示和排序使用的图片数量。"""
+
         return obj.image_count_value
 
     @admin.display(description="交付说明摘要")
     def delivery_notes_summary(self, obj):
+        """返回后台列表中展示的交付说明前二十个字符。"""
+
         return obj.delivery_notes[0:20]

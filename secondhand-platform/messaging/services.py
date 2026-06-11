@@ -74,17 +74,34 @@ def serialize_private_message(message):
     }
 
 
+def first_error_message(error, fallback):
+    """从 Django 校验异常或普通异常中取出首条可展示错误消息。"""
+
+    messages_list = getattr(error, "messages", None)
+    if messages_list:
+        return messages_list[0]
+    if error.args:
+        return str(error.args[0])
+    return fallback
+
+
 def _ensure_authenticated(user):
+    """校验调用者必须是已登录用户。"""
+
     if user is None or not user.is_authenticated:
         raise PermissionDenied("请先登录后再使用私信")
 
 
 def _ensure_conversation_participant(user, conversation):
+    """校验调用者必须属于指定私信会话。"""
+
     if not conversation.has_participant(user):
         raise PermissionDenied("无权访问该私信会话")
 
 
 def _clean_private_message_content(content):
+    """清理私信内容并校验非空及长度上限。"""
+
     content = (content or "").strip()
     if content == "":
         raise ValidationError("消息内容不能为空")

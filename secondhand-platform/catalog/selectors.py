@@ -1,11 +1,13 @@
 from typing import Any
 from collections import OrderedDict
+from time import time_ns
 
 from django.core.cache import cache
-from django.db.models import Count, Max, Q
+from django.db.models import Q
 from catalog.models import Category, Listing
 
 CACHE_KEY_ACTIVE_CATEGORY_IDS = "catalog:active_category_ids"
+CACHE_KEY_ACTIVE_CATEGORY_VERSION = "catalog:active_category_ids:version"
 CACHE_TIMEOUT_ACTIVE_CATEGORY_IDS = 60 * 10
 
 # 卖家“我的商品”页面的稳定分组顺序与中文展示文案。
@@ -45,9 +47,16 @@ _OWNER_LISTING_GROUP_DEFINITIONS = (
 
 
 def clear_active_category_cache():
-    """清理启用分类缓存，供分类保存或删除信号调用。"""
+    """递增启用分类缓存版本号，供分类保存或删除信号调用。"""
 
-    cache.delete(CACHE_KEY_ACTIVE_CATEGORY_IDS)
+    try:
+        cache.incr(CACHE_KEY_ACTIVE_CATEGORY_VERSION)
+    except ValueError:
+        cache.set(
+            CACHE_KEY_ACTIVE_CATEGORY_VERSION,
+            _new_category_cache_version(),
+            None,
+        )
 
 
 def get_active_category_ids():
@@ -60,6 +69,7 @@ def get_active_category_ids():
     cache_key = _active_category_ids_cache_key()
     category_ids = cache.get(cache_key)
     if category_ids is None:
+        # 缓存未命中时只查询启用分类的主键，避免把模型实例直接写入缓存。
         category_ids = list(
             Category.objects.filter(is_active=True)
             .order_by("id")
@@ -70,28 +80,37 @@ def get_active_category_ids():
             category_ids,
             CACHE_TIMEOUT_ACTIVE_CATEGORY_IDS,
         )
-        cache.set(
-            CACHE_KEY_ACTIVE_CATEGORY_IDS,
-            category_ids,
-            CACHE_TIMEOUT_ACTIVE_CATEGORY_IDS,
-        )
     return category_ids
 
 
 def _active_category_ids_cache_key():
-    state = Category.objects.aggregate(
-        total=Count("id"),
-        latest_updated_at=Max("updated_at"),
-    )
-    latest_updated_at = state["latest_updated_at"]
-    latest = latest_updated_at.isoformat() if latest_updated_at else "none"
-    return f"{CACHE_KEY_ACTIVE_CATEGORY_IDS}:{state['total']}:{latest}"
+    """生成当前启用分类 ID 列表使用的版本化缓存 key。"""
+
+    version = cache.get(CACHE_KEY_ACTIVE_CATEGORY_VERSION)
+    if version is None:
+        version = _new_category_cache_version()
+        cache.add(CACHE_KEY_ACTIVE_CATEGORY_VERSION, version, None)
+        version = cache.get(CACHE_KEY_ACTIVE_CATEGORY_VERSION) or version
+    return f"{CACHE_KEY_ACTIVE_CATEGORY_IDS}:v{version}"
+
+
+def _new_category_cache_version():
+    """生成不易与旧缓存 key 碰撞的分类缓存版本号。"""
+
+    return time_ns()
 
 
 def get_active_categories():
+    """返回当前启用分类的 QuerySet。
+
+    先复用缓存中的启用分类 ID 列表，再重新构造 QuerySet，保证调用方仍能按
+    Django QuerySet 的方式继续过滤、排序或作为表单字段数据源使用。
+    """
+
     category_ids = get_active_category_ids()
     if not category_ids:
         return Category.objects.none()
+    # 通过 ID 重新构造 QuerySet，保留调用方继续链式查询的能力。
     return Category.objects.filter(id__in=category_ids).order_by("id")
 
 
@@ -109,7 +128,7 @@ def get_owner_listing_groups(user):
         .order_by("-updated_at", "-id")
     )
 
-    # 构建一个顺序字典
+    # 先按固定生命周期定义创建所有分组，保证空分组也能在页面上稳定展示。
     groups = OrderedDict(
         (
             definition["status"],
@@ -127,6 +146,7 @@ def get_owner_listing_groups(user):
     )
 
     for listing in listings:
+        # 按商品状态把每个商品放入对应分组，供模板直接按组渲染。
         bucket = groups.get(listing.status)
         if bucket is None:
             # 防御未来新增状态：未知状态不会污染既有分组，等模型扩展再补 selector。
@@ -138,11 +158,18 @@ def get_owner_listing_groups(user):
 
 
 def get_publish_listing_queryset(cleaned_data: dict[str, Any] | None = None):
+    """构建公开商品列表页使用的商品查询。
+
+    默认只返回在售且所属分类仍启用的商品；传入筛选表单清洗后的数据时，
+    继续叠加关键词、分类、类型、价格区间和排序条件。
+    """
 
     active_category_ids = get_active_category_ids()
     if not active_category_ids:
+        # 没有启用分类时，公开列表一定为空，直接返回空 QuerySet。
         return Listing.objects.none()
 
+    # 公开列表只展示在售商品，并排除所属分类已停用的商品。
     listing_queryset = (
         Listing.objects.filter(
             status=Listing.Status.ACTIVE,
@@ -154,8 +181,10 @@ def get_publish_listing_queryset(cleaned_data: dict[str, Any] | None = None):
     )
     if not cleaned_data:
         return listing_queryset
+
+    # 以下筛选条件来自表单 clean 后的数据；空值保持默认公开列表。
     q = cleaned_data.get("q")
-    if q and q != "":
+    if q:
         listing_queryset = listing_queryset.filter(
             Q(title__icontains=q) | Q(description__icontains=q)
         )
@@ -165,7 +194,7 @@ def get_publish_listing_queryset(cleaned_data: dict[str, Any] | None = None):
         listing_queryset = listing_queryset.filter(category=category)
 
     item_type = cleaned_data.get("item_type")
-    if item_type is not None and item_type != "":
+    if item_type:
         listing_queryset = listing_queryset.filter(item_type=item_type)
 
     max_price = cleaned_data.get("max_price")
@@ -177,6 +206,7 @@ def get_publish_listing_queryset(cleaned_data: dict[str, Any] | None = None):
 
     sort = cleaned_data.get("sort")
     if sort:
+        # 排序字段保持白名单匹配，避免把请求参数直接拼进 order_by。
         match sort:
             case "newest":
                 listing_queryset = listing_queryset.order_by("-published_at")

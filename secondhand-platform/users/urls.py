@@ -1,19 +1,20 @@
-"""users 应用认证路由。"""
+"""users 应用 API 路由。"""
 
 from django.urls import path
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from users.views import (
-    LoginView,
-    LogoutView,
-    RegisterView,
-    ProfileView,
+    CurrentUserApiView,
+    PublicUserApiView,
+    RegisterApiView,
+    TokenPairApiView,
 )
 
-app_name = "users"
-
 urlpatterns = [
-    path("login/", LoginView.as_view(), name="login"),
-    path("logout/", LogoutView.as_view(), name="logout"),
-    path("register/", RegisterView.as_view(), name="register"),
-    path("profile/", ProfileView.as_view(), name="profile"),
+    path("auth/register/", RegisterApiView.as_view(), name="auth_register"),
+    path("auth/token/", TokenPairApiView.as_view(), name="auth_token"),
+    path("auth/token/refresh/", TokenRefreshView.as_view(), name="auth_token_refresh"),
+    path("users/me/", CurrentUserApiView.as_view(), name="users_me"),
+    path("users/<int:user_id>/", PublicUserApiView.as_view(), name="users_public"),
 ]
+

@@ -1,29 +1,36 @@
+"""orders 应用 API 路由。"""
+
 from django.urls import path
 
 from orders.views import (
-    OrderDetailView,
-    OrderPayView,
-    BuyerOrderListView,
-    SellerOrderListView,
-    OrderConfirmDeliveryView,
-    OrderConfirmReceiptView,
+    BuyerOrderListApiView,
+    ListingOrderCreateApiView,
+    OrderConfirmDeliveryApiView,
+    OrderConfirmReceiptApiView,
+    OrderDetailApiView,
+    OrderPayApiView,
+    SellerOrderListApiView,
 )
 
-app_name = "orders"
-
 urlpatterns = [
-    path("buying/", BuyerOrderListView.as_view(), name="buyer_order_list"),
-    path("selling/", SellerOrderListView.as_view(), name="seller_order_list"),
-    path("<int:pk>/", OrderDetailView.as_view(), name="order_detail"),
-    path("<int:pk>/pay/", OrderPayView.as_view(), name="order_pay"),
     path(
-        "<int:pk>/confirm-delivery",
-        OrderConfirmDeliveryView.as_view(),
-        name="confirm_delivery",
+        "listings/<int:listing_id>/orders/",
+        ListingOrderCreateApiView.as_view(),
+        name="orders_create",
+    ),
+    path("orders/buyer/", BuyerOrderListApiView.as_view(), name="orders_buyer"),
+    path("orders/seller/", SellerOrderListApiView.as_view(), name="orders_seller"),
+    path("orders/<int:pk>/", OrderDetailApiView.as_view(), name="orders_detail"),
+    path("orders/<int:pk>/pay/", OrderPayApiView.as_view(), name="orders_pay"),
+    path(
+        "orders/<int:pk>/confirm-delivery/",
+        OrderConfirmDeliveryApiView.as_view(),
+        name="orders_confirm_delivery",
     ),
     path(
-        "<int:pk>/confirm-receipt",
-        OrderConfirmReceiptView.as_view(),
-        name="order_confirm_receipt",
+        "orders/<int:pk>/confirm-receipt/",
+        OrderConfirmReceiptApiView.as_view(),
+        name="orders_confirm_receipt",
     ),
 ]
+

@@ -1,15 +1,24 @@
+"""interactions 应用 API 路由。"""
+
 from django.urls import path
 
-from interactions.views import CommentCreateView, CommentDeleteView, CommentReplyView
-
-app_name = "interactions"
+from interactions.views import CommentDeleteApiView, CommentReplyApiView, ListingCommentApiView
 
 urlpatterns = [
     path(
-        "listing/<int:listing_id>/create",
-        CommentCreateView.as_view(),
-        name="comment_create",
+        "listings/<int:listing_id>/comments/",
+        ListingCommentApiView.as_view(),
+        name="listing_comments",
     ),
-    path("<int:pk>/reply", CommentReplyView.as_view(), name="reply"),
-    path("<int:pk>/delete", CommentDeleteView.as_view(), name="comment_delete"),
+    path(
+        "comments/<int:comment_id>/replies/",
+        CommentReplyApiView.as_view(),
+        name="comment_replies",
+    ),
+    path(
+        "comments/<int:comment_id>/",
+        CommentDeleteApiView.as_view(),
+        name="comment_detail",
+    ),
 ]
+

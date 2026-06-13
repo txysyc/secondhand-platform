@@ -2,7 +2,7 @@
 
 from django.urls import include, path
 
-from config.api.views import ApiRootView, AuthenticatedProbeView, StaffProbeView
+from config.api_views import ApiRootView, AuthenticatedProbeView, StaffProbeView
 
 app_name = "api"
 
@@ -14,9 +14,10 @@ urlpatterns = [
         name="authenticated_probe",
     ),
     path("probes/staff/", StaffProbeView.as_view(), name="staff_probe"),
-    path("", include("users.api.urls")),
-    path("", include("catalog.api.urls")),
-    path("", include("interactions.api.urls")),
-    path("", include("orders.api.urls")),
-    path("", include("messaging.api.urls")),
+    path("", include("users.urls")),
+    path("", include("catalog.urls")),
+    path("", include("interactions.urls")),
+    path("", include("orders.urls")),
+    path("", include("messaging.urls")),
 ]
+

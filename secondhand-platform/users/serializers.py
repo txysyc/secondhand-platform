@@ -6,7 +6,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from catalog.models import Listing
-from catalog.selectors import get_publish_listing_queryset
+from catalog.selectors import get_public_listing_queryset
 from users.models import Profile, User
 from users.services import register_user
 
@@ -127,5 +127,5 @@ class PublicUserSerializer(serializers.ModelSerializer):
         fields = ["id", "username", "profile", "listings"]
 
     def get_listings(self, obj):
-        queryset = get_publish_listing_queryset().filter(owner=obj)
+        queryset = get_public_listing_queryset().filter(owner=obj)
         return PublicListingSummarySerializer(queryset, many=True).data

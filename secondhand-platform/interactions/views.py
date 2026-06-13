@@ -1,117 +1,126 @@
-from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib.auth.mixins import LoginRequiredMixin
-from django.views import View
-from django.core.exceptions import PermissionDenied, ValidationError
-from django.contrib import messages
+"""interactions 应用 API 类视图。"""
 
-from interactions.forms import CommentForm
-from interactions.models import Comment
-from interactions.services import create_comment, delete_comment, create_reply
+from django.db.models import Q
+from django.shortcuts import get_object_or_404
+from rest_framework import status
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from config.api_mixins import ServiceErrorMixin
 from catalog.models import Listing
+from interactions.permissions import IsCommentAuthor
+from interactions.serializers import CommentSerializer, CommentWriteSerializer
+from interactions.models import Comment
+from interactions.selectors import get_listing_comments
+from interactions.services import create_comment, create_reply, delete_comment
 
 
-class CommentCreateView(LoginRequiredMixin, View):
-    """处理商品顶层留言创建。"""
+class _VisibleListingMixin:
+    """按当前用户可见性读取留言所属商品。"""
 
-    model = Comment
-    from_class = CommentForm
-    http_method_names = ["post"]
+    def get_visible_listing_queryset(self, user):
+        """构建评论接口可访问的商品范围。"""
 
-    def post(self, request, listing_id):
-        """校验留言表单并创建当前商品的顶层留言。"""
-
-        form = self.from_class(data=request.POST)
-        listing = get_object_or_404(
-            Listing.objects.select_related("category"),
-            pk=listing_id,
+        public_filter = Q(
+            status__in=[
+                Listing.Status.ACTIVE,
+                Listing.Status.RESERVED,
+                Listing.Status.SOLD,
+            ],
             category__is_active=True,
         )
+        queryset = Listing.objects.select_related(
+            "category",
+            "owner",
+            "owner__profile",
+        ).prefetch_related("images")
+        if user.is_authenticated:
+            # 卖家仍可查看自己已下架商品下的历史评论，普通访客不可见。
+            public_filter |= Q(owner=user, status=Listing.Status.WITHDRAWN)
+        return queryset.filter(public_filter)
 
-        if form.is_valid():
-            try:
-                create_comment(
-                    request.user, listing, form.cleaned_data.get("content", "")
-                )
-            except ValidationError as error:
-                messages.error(request, _first_error_message(error, "留言发布失败"))
-                return redirect("catalog:listing_detail", pk=listing_id)
-            except PermissionDenied:
-                messages.error(request, "无权发布留言")
-                return redirect("catalog:listing_detail", pk=listing_id)
-            messages.success(request, "留言已发布")
-            return redirect("catalog:listing_detail", pk=listing_id)
-        messages.error(request, _first_form_error_message(form, "留言发布失败"))
-        return redirect("catalog:listing_detail", pk=listing_id)
+    def get_visible_listing_or_404(self, request, listing_id):
+        queryset = self.get_visible_listing_queryset(request.user)
+        return get_object_or_404(queryset, pk=listing_id)
 
+    def get_visible_comment_or_404(self, request, comment_id):
+        """读取评论并复用商品可见性规则，避免通过评论 ID 绕过商品权限。"""
 
-class CommentDeleteView(LoginRequiredMixin, View):
-    """处理留言删除请求。"""
-
-    model = Comment
-    http_method_names = ["post"]
-
-    def post(self, request, pk):
-        """删除当前用户自己的留言并返回商品详情页。"""
-
-        comment = get_object_or_404(Comment, pk=pk)
-        listing_id = comment.listing_id
-        try:
-            delete_comment(request.user, comment)
-        except ValidationError as error:
-            messages.error(request, _first_error_message(error, "留言删除失败"))
-            return redirect("catalog:listing_detail", listing_id)
-        messages.success(request, "留言已删除")
-        return redirect("catalog:listing_detail", listing_id)
-
-
-def _first_form_error_message(form, fallback: str):
-    """处理表单校验未通过时的错误"""
-    for errors in form.errors.values():
-        if errors:
-            return errors[0]
-    return fallback
-
-
-def _first_error_message(error, fallback: str):
-    """校验服务层异常错误"""
-    messages_list = getattr(error, "messages", None)
-    if messages_list:
-        return messages_list[0]
-    if error.args:
-        return str(error.args[0])
-    return fallback
-
-
-class CommentReplyView(LoginRequiredMixin, View):
-    """处理二级留言回复创建。"""
-
-    http_method_names = ["post"]
-    form_class = CommentForm
-    model = Comment
-
-    def post(self, request, pk):
-        """校验回复表单并在目标留言下创建回复。"""
-
-        form = self.form_class(request.POST)
         comment = get_object_or_404(
             Comment.objects.select_related(
-                "listing", "listing__category", "listing__owner"
+                "listing",
+                "listing__category",
+                "listing__owner",
+                "listing__owner__profile",
+                "author",
+                "author__profile",
             ),
-            pk=pk,
+            pk=comment_id,
         )
+        self.get_visible_listing_or_404(request, comment.listing_id)
+        return comment
 
-        if form.is_valid():
-            content = form.cleaned_data.get("content", "")
-            try:
-                create_reply(request.user, comment, content)
-            except ValidationError as error:
-                messages.error(request, _first_error_message(error, "留言回复失败"))
-                return redirect("catalog:listing_detail", pk=comment.listing_id)
-            except PermissionDenied as error:
-                messages.error(request, _first_error_message(error, "无权回复留言"))
-                return redirect("catalog:listing_detail", pk=comment.listing_id)
-            messages.success(request, "留言回复成功")
-            return redirect("catalog:listing_detail", pk=comment.listing_id)
 
-        messages.error(request, _first_form_error_message(form, "留言回复失败"))
-        return redirect("catalog:listing_detail", pk=comment.listing_id)
+class ListingCommentApiView(ServiceErrorMixin, _VisibleListingMixin, APIView):
+    """商品评论列表和顶层评论创建。"""
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def get(self, request, listing_id):
+        listing = self.get_visible_listing_or_404(request, listing_id)
+        comments = get_listing_comments(listing)
+        serializer = CommentSerializer(comments, many=True, context={"request": request})
+        return Response(serializer.data)
+
+    def post(self, request, listing_id):
+        listing = self.get_visible_listing_or_404(request, listing_id)
+        serializer = CommentWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        comment = self.run_service(
+            create_comment,
+            request.user,
+            listing,
+            serializer.validated_data["content"],
+        )
+        response_serializer = CommentSerializer(comment, context={"request": request})
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class CommentReplyApiView(ServiceErrorMixin, _VisibleListingMixin, APIView):
+    """评论回复创建。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, comment_id):
+        parent_comment = self.get_visible_comment_or_404(request, comment_id)
+        serializer = CommentWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reply = self.run_service(
+            create_reply,
+            request.user,
+            parent_comment,
+            serializer.validated_data["content"],
+        )
+        response_serializer = CommentSerializer(reply, context={"request": request})
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class CommentDeleteApiView(ServiceErrorMixin, _VisibleListingMixin, APIView):
+    """删除自己的评论。"""
+
+    permission_classes = [IsAuthenticated, IsCommentAuthor]
+
+    def get_object(self, request, comment_id):
+        comment = self.get_visible_comment_or_404(request, comment_id)
+        self.check_object_permissions(request, comment)
+        return comment
+
+    def delete(self, request, comment_id):
+        comment = self.get_object(request, comment_id)
+        self.run_service(delete_comment, request.user, comment)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+

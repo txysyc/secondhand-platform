@@ -1,19 +1,11 @@
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.forms import BaseInlineFormSet
 from django.utils import timezone
 
-from catalog.forms import MAX_IMAGE_COUNT, ListingForm
+from catalog.constants import MAX_IMAGE_COUNT
 from catalog.models import Listing, ListingImage
 from users.models import User
 
-INTENT_SAVE_DRAFT = "save_draft"
-INTENT_PUBLISH = "publish"
-INTENT_SAVE_CHANGES = "save_changes"
-
-CREATE_ALLOWED_INTENTS = {INTENT_SAVE_DRAFT, INTENT_PUBLISH}
-DRAFT_UPDATE_ALLOWED_INTENTS = {INTENT_SAVE_DRAFT, INTENT_PUBLISH}
-ACTIVE_UPDATE_ALLOWED_INTENTS = {INTENT_SAVE_CHANGES}
 EDITABLE_STATUSES = {Listing.Status.DRAFT, Listing.Status.ACTIVE}
 
 # 卖家手动状态动作的白名单。reserved / sold 由订单流程控制，本故事拒绝任何指向这两个状态的卖家动作。
@@ -27,28 +19,6 @@ def ensure_listing_owner(user: User, listing: Listing):
 
     if listing.owner_id != user.id:
         raise PermissionDenied("该用户无权访问该对象")
-
-
-def _validate_intent(intent: str, allowed_intents: set[str]):
-    """校验提交意图，避免伪造值被静默当作普通保存。"""
-
-    if intent not in allowed_intents:
-        raise ValidationError("无效的提交操作")
-
-
-def _count_formset_images(formset: BaseInlineFormSet) -> int:
-    """统计实际上传且未标记删除的图片数量。"""
-
-    count = 0
-    for form in formset.forms:
-        # 防止绕过 view 直接调用服务时传入未校验 formset。
-        if not hasattr(form, "cleaned_data"):
-            continue
-        if form.cleaned_data.get("DELETE"):
-            continue
-        if form.cleaned_data.get("image"):
-            count += 1
-    return count
 
 
 def _delete_image_files_on_commit(file_fields):
@@ -69,132 +39,6 @@ def _delete_image_files_on_commit(file_fields):
             storage.delete(name)
 
     transaction.on_commit(cleanup)
-
-
-def _collect_replaced_or_deleted_files(formset: BaseInlineFormSet):
-    """找出编辑图片时被删除或被替换的旧文件。"""
-
-    files_to_delete = []
-    for image_form in formset.initial_forms:
-        if not hasattr(image_form, "cleaned_data"):
-            continue
-        if not image_form.instance.pk:
-            continue
-
-        old_image = ListingImage.objects.only("image").get(pk=image_form.instance.pk)
-        if image_form.cleaned_data.get("DELETE"):
-            files_to_delete.append(old_image.image)
-            continue
-        if "image" in image_form.changed_data:
-            files_to_delete.append(old_image.image)
-
-    return files_to_delete
-
-
-def _reorder_images_by_form_order(formset: BaseInlineFormSet):
-    """按表单顺序重排保留下来的图片。"""
-
-    sort_order = 0
-    for image_form in formset.forms:
-        if not hasattr(image_form, "cleaned_data"):
-            continue
-        if image_form.cleaned_data.get("DELETE"):
-            continue
-        if not image_form.instance.pk:
-            continue
-
-        if image_form.instance.sort_order != sort_order:
-            image_form.instance.sort_order = sort_order
-            image_form.instance.save(update_fields=["sort_order"])
-        sort_order += 1
-
-
-def create_listing(
-    user: User,
-    form: ListingForm,
-    formset: BaseInlineFormSet,
-    intent: str,
-):
-    """创建商品并按提交意图保存为草稿或直接发布。"""
-
-    _validate_intent(intent, CREATE_ALLOWED_INTENTS)
-
-    listing: Listing = form.save(commit=False)
-    listing.owner = user
-    listing.status = Listing.Status.DRAFT
-
-    if intent == INTENT_PUBLISH:
-        publish_listing(user, listing)
-
-    formset.instance = listing
-    if _count_formset_images(formset) > MAX_IMAGE_COUNT:
-        raise ValidationError(f"最多只能上传{MAX_IMAGE_COUNT}张图片")
-
-    with transaction.atomic():
-        listing.save()
-        images = formset.save(commit=False)
-
-        for sort_order, image in enumerate(images):
-            image.listing = listing
-            image.sort_order = sort_order
-            image.save()
-
-        for deleted_image in formset.deleted_objects:
-            deleted_image.delete()
-
-    return listing
-
-
-def update_listing(
-    user: User,
-    listing: Listing,
-    form: ListingForm,
-    formset: BaseInlineFormSet,
-    intent: str,
-):
-    """更新商品字段和图片，并按当前状态限制允许的提交意图。"""
-
-    ensure_listing_owner(user, listing)
-
-    if listing.status not in EDITABLE_STATUSES:
-        raise ValidationError("只有草稿和发布状态的商品可以更新")
-    if listing.status == Listing.Status.DRAFT:
-        _validate_intent(intent, DRAFT_UPDATE_ALLOWED_INTENTS)
-    if listing.status == Listing.Status.ACTIVE:
-        _validate_intent(intent, ACTIVE_UPDATE_ALLOWED_INTENTS)
-
-    if form.instance.pk != listing.pk:
-        raise ValidationError("表单对象与商品对象不一致")
-    # 保留原有的状态和发布时间
-    original_status = listing.status
-    original_published_at = listing.published_at
-
-    updated_listing: Listing = form.save(commit=False)
-    updated_listing.owner_id = listing.owner_id
-    updated_listing.status = original_status
-    updated_listing.published_at = original_published_at
-    formset.instance = updated_listing
-
-    files_to_delete = _collect_replaced_or_deleted_files(formset)
-    # 如果更新时是草稿转台并且提交为发布：执行发布流程
-    if original_status == Listing.Status.DRAFT and intent == INTENT_PUBLISH:
-        publish_listing(user, updated_listing)
-
-    with transaction.atomic():
-        updated_listing.save()
-        # formset.save(commit=False) 只返回新增对象和被修改对象，不包含所有保留图片。
-        images = formset.save(commit=False)
-        for image in images:
-            image.listing = updated_listing
-            image.save()
-
-        for deleted_object in formset.deleted_objects:
-            deleted_object.delete()
-
-        _reorder_images_by_form_order(formset)
-        _delete_image_files_on_commit(files_to_delete)
-
-    return updated_listing
 
 
 def publish_listing(user: User, listing: Listing):

@@ -2,7 +2,7 @@ from orders.models import Order
 
 
 def get_order_queryset():
-    """返回 API 和模板可复用的订单基础查询集。"""
+    """返回订单 API 可复用的基础查询集。"""
 
     return Order.objects.select_related(
         "buyer",

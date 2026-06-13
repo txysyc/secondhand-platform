@@ -84,7 +84,7 @@ class ApiBaseLayerTests(TestCase):
         self.assertIn("message", response.json())
         self.assertIn("errors", response.json())
 
-    def test_home_page_still_returns_template_response(self):
-        response = self.client.get(reverse("home"))
+    def test_legacy_home_page_is_not_exposed_by_api_only_backend(self):
+        response = self.client.get("/")
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 404)

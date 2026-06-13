@@ -1,23 +1,34 @@
+"""messaging 应用 API 路由。"""
+
 from django.urls import path
 
 from messaging.views import (
-    ConversationDetailView,
-    ConversationListView,
-    StartConversationView,
+    ConversationDetailApiView,
+    ConversationListCreateApiView,
+    ConversationMessageListCreateApiView,
+    ConversationReadApiView,
 )
 
-app_name = "messaging"
-
 urlpatterns = [
-    path("", ConversationListView.as_view(), name="conversation_list"),
     path(
-        "start/<int:user_id>/",
-        StartConversationView.as_view(),
-        name="start_conversation",
+        "conversations/",
+        ConversationListCreateApiView.as_view(),
+        name="messaging_conversations",
     ),
     path(
-        "<int:pk>/",
-        ConversationDetailView.as_view(),
-        name="conversation_detail",
+        "conversations/<int:pk>/",
+        ConversationDetailApiView.as_view(),
+        name="messaging_conversation_detail",
+    ),
+    path(
+        "conversations/<int:pk>/messages/",
+        ConversationMessageListCreateApiView.as_view(),
+        name="messaging_conversation_messages",
+    ),
+    path(
+        "conversations/<int:pk>/read/",
+        ConversationReadApiView.as_view(),
+        name="messaging_conversation_read",
     ),
 ]
+

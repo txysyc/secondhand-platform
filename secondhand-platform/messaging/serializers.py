@@ -4,7 +4,7 @@ from rest_framework import serializers
 
 from messaging.models import Conversation, PrivateMessage
 from messaging.services import MAX_PRIVATE_MESSAGE_LENGTH
-from users.api.serializers import ProfileSerializer
+from users.serializers import ProfileSerializer
 from users.models import User
 
 
@@ -102,3 +102,4 @@ class PrivateMessageCreateSerializer(serializers.Serializer):
         if value == "":
             raise serializers.ValidationError("消息内容不能为空")
         return value
+

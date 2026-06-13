@@ -93,7 +93,7 @@ class PrivateMessage(models.Model):
         related_name="sent_private_messages",
         verbose_name="发送者",
     )
-    # 内容长度同时由表单和服务层校验；模型层保留上限作为最终约束。
+    # 内容长度同时由 API 入参和服务层校验；模型层保留上限作为最终约束。
     content = models.TextField(verbose_name="内容", max_length=1000)
     read_at = models.DateTimeField(verbose_name="读取时间", null=True, blank=True)
     created_at = models.DateTimeField(verbose_name="创建时间", auto_now_add=True)
@@ -103,7 +103,7 @@ class PrivateMessage(models.Model):
         verbose_name_plural = "私信"
         ordering = ["created_at", "id"]
         indexes = [
-            # 会话详情页按时间顺序读取消息。
+            # 会话详情 API 按时间顺序读取消息。
             models.Index(fields=["conversation", "created_at", "id"]),
             # 后台或统计场景按发送者查询消息。
             models.Index(fields=["sender", "created_at"]),

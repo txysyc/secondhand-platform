@@ -57,7 +57,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],
+        "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -120,7 +120,6 @@ USE_TZ = True
 
 STATIC_URL = env("DJANGO_STATIC_URL")
 STATIC_ROOT = BASE_DIR / str(env("DJANGO_STATIC_ROOT"))
-STATICFILES_DIRS = [BASE_DIR / "static"]
 
 MEDIA_URL = env("DJANGO_MEDIA_URL")
 MEDIA_ROOT = BASE_DIR / str(env("DJANGO_MEDIA_ROOT"))
@@ -171,7 +170,7 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": (
         "rest_framework.renderers.JSONRenderer",
     ),
-    "EXCEPTION_HANDLER": "config.api.exceptions.api_exception_handler",
+    "EXCEPTION_HANDLER": "config.api_exceptions.api_exception_handler",
 }
 
 SIMPLE_JWT = {
@@ -184,11 +183,6 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = env.list(
     "CORS_ALLOWED_ORIGINS", default=["http://localhost:5173"]
 )
-
-# 认证成功和退出后的公开落点先指向最小首页，后续商品列表 story 可接管该路径。
-LOGIN_URL = "users:login"
-LOGIN_REDIRECT_URL = "/"
-LOGOUT_REDIRECT_URL = "/"
 
 # 默认主键类型
 

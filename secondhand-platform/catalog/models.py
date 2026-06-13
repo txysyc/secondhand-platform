@@ -22,13 +22,13 @@ class Category(models.Model):
     updated_at = models.DateTimeField(verbose_name="更新时间", auto_now=True)
 
     def __str__(self):
-        """返回后台和表单选项中展示的分类名称。"""
+        """返回后台、API 和调试输出中展示的分类名称。"""
 
         return f"{self.name}"
 
 
 def valid_virtual_until_time(value):
-    """模型层兜底校验虚拟商品有效期，表单层负责按商品类型决定是否必填。"""
+    """模型层兜底校验虚拟商品有效期，必填规则由 API serializer 处理。"""
 
     if value < timezone.localdate():
         raise ValidationError("过期时间不能早于当前日期")
@@ -135,7 +135,10 @@ class Listing(models.Model):
 
 
 def valid_imgae_size(value):
-    """限制单张商品图片大小。"""
+    """限制单张商品图片大小。
+
+    函数名保留历史拼写，避免在无模型行为变化时产生迁移 churn。
+    """
 
     if value.size > Max_IMAGE_SIZE:
         raise ValidationError("图片大小大于5MB")

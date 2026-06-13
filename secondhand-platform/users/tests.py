@@ -1,18 +1,21 @@
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 
 from django.conf import settings
 from django.contrib import admin
 from django.contrib.admin.sites import AdminSite
-from django.contrib.auth import SESSION_KEY, authenticate
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.test import RequestFactory, TestCase
 from django.utils import timezone
+from PIL import Image
+from rest_framework.test import APIClient, APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from catalog.models import Category, Listing
 from users.admin import MyUserAdmin, ProfileInline
@@ -271,67 +274,45 @@ class ProfileInlineAdminTest(TestCase):
         self.assertFalse(self.inline.can_delete)
 
 
-class AuthenticationFlowTest(TestCase):
-    """注册、登录和退出登录请求流程测试。
 
-    覆盖 story 1.3 的认证闭环，包含用户名登录、邮箱登录、注册成功、
-    表单错误恢复、next 保留和退出登录的 POST 约束。
-    """
+
+class UsersApiTests(APITestCase):
+    """P2 用户与认证 API 测试。"""
 
     def setUp(self):
-        """准备注册服务依赖的普通用户组。"""
+        self.client = APIClient()
+        Group.objects.create(name="普通用户组")
 
-        self.group = Group.objects.create(name="普通用户组")
+    def _auth_headers(self, user):
+        token = RefreshToken.for_user(user).access_token
+        return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
 
-    def test_home_and_auth_pages_render(self):
-        response = self.client.get(reverse("home"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "二手交易平台")
+    def _build_png_image(self, name="avatar.png"):
+        buffer = BytesIO()
+        image = Image.new("RGB", (1, 1), color="white")
+        image.save(buffer, format="PNG")
+        return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
 
-        response = self.client.get(reverse("users:register"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "创建账号")
-        self.assertContains(response, "用户名")
-        self.assertContains(response, "邮箱")
-
-        response = self.client.get(reverse("users:login"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "用户名/邮箱")
-
-    def test_authenticated_home_does_not_render_placeholder_link(self):
-        user = User.objects.create_user(
-            username="homeu",
-            email="homeu@example.com",
-            password="StrongPass123",
-        )
-        self.client.force_login(user)
-
-        response = self.client.get(reverse("home"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "账号已登录")
-        self.assertNotContains(response, 'href="#"')
-
-    def test_register_creates_user_hashes_password_and_profile(self):
+    def test_register_creates_user_profile_and_default_group(self):
         response = self.client.post(
-            reverse("users:register"),
+            reverse("api:auth_register"),
             data={
                 "username": "buyer",
                 "email": "Buyer@Example.com",
-                "password1": "StrongPass123",
-                "password2": "StrongPass123",
+                "password": "StrongPass123",
+                "password_confirm": "StrongPass123",
             },
+            format="json",
         )
 
-        self.assertRedirects(response, reverse("users:login"))
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["username"], "buyer")
         user = User.objects.get(username="buyer")
         self.assertEqual(user.email, "buyer@example.com")
-        self.assertNotEqual(user.password, "StrongPass123")
-        self.assertTrue(user.check_password("StrongPass123"))
-        self.assertTrue(Profile.objects.filter(user=user).exists())
+        self.assertTrue(user.profile)
         self.assertTrue(user.groups.filter(name="普通用户组").exists())
 
-    def test_register_errors_keep_non_password_input(self):
+    def test_register_rejects_duplicate_email_and_password_mismatch(self):
         User.objects.create_user(
             username="taken",
             email="taken@example.com",
@@ -339,313 +320,110 @@ class AuthenticationFlowTest(TestCase):
         )
 
         response = self.client.post(
-            reverse("users:register"),
-            data={
-                "username": "taken",
-                "email": "New@Example.com",
-                "password1": "StrongPass123",
-                "password2": "DifferentPass123",
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "该用户名已存在")
-        self.assertContains(response, 'value="taken"')
-        self.assertContains(response, 'value="New@Example.com"')
-        self.assertNotContains(response, "StrongPass123")
-
-    def test_register_rejects_duplicate_email(self):
-        User.objects.create_user(
-            username="old",
-            email="same@example.com",
-            password="StrongPass123",
-        )
-
-        response = self.client.post(
-            reverse("users:register"),
+            reverse("api:auth_register"),
             data={
                 "username": "fresh",
-                "email": "SAME@example.com",
-                "password1": "StrongPass123",
-                "password2": "StrongPass123",
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "该邮箱已存在")
-        self.assertFalse(User.objects.filter(username="fresh").exists())
-
-    def test_login_with_username_creates_session(self):
-        user = User.objects.create_user(
-            username="logu",
-            email="logu@example.com",
-            password="StrongPass123",
-        )
-
-        response = self.client.post(
-            reverse("users:login"),
-            data={"username": user.username, "password": "StrongPass123"},
-        )
-
-        self.assertRedirects(response, settings.LOGIN_REDIRECT_URL)
-        self.assertEqual(int(self.client.session[SESSION_KEY]), user.pk)
-
-    def test_login_with_email_is_case_insensitive(self):
-        user = User.objects.create_user(
-            username="mailu",
-            email="mailu@example.com",
-            password="StrongPass123",
-        )
-
-        response = self.client.post(
-            reverse("users:login"),
-            data={"username": "MAILU@EXAMPLE.COM", "password": "StrongPass123"},
-        )
-
-        self.assertRedirects(response, settings.LOGIN_REDIRECT_URL)
-        self.assertEqual(int(self.client.session[SESSION_KEY]), user.pk)
-
-    def test_inactive_user_cannot_login_by_username_or_email_until_restored(self):
-        user = User.objects.create_user(
-            username="inactiveu",
-            email="inactive@example.com",
-            password="StrongPass123",
-            is_active=False,
-        )
-
-        username_response = self.client.post(
-            reverse("users:login"),
-            data={"username": user.username, "password": "StrongPass123"},
-        )
-        email_response = self.client.post(
-            reverse("users:login"),
-            data={"username": user.email, "password": "StrongPass123"},
-        )
-
-        self.assertEqual(username_response.status_code, 200)
-        self.assertEqual(email_response.status_code, 200)
-        self.assertNotIn(SESSION_KEY, self.client.session)
-        self.assertIsNone(authenticate(username=user.username, password="StrongPass123"))
-        self.assertIsNone(authenticate(username=user.email, password="StrongPass123"))
-
-        user.is_active = True
-        user.save(update_fields=["is_active", "updated_at"])
-        restored_response = self.client.post(
-            reverse("users:login"),
-            data={"username": user.email, "password": "StrongPass123"},
-        )
-
-        self.assertRedirects(restored_response, settings.LOGIN_REDIRECT_URL)
-        self.assertEqual(int(self.client.session[SESSION_KEY]), user.pk)
-
-    def test_email_backend_rejects_inactive_user(self):
-        user = User.objects.create_user(
-            username="ineml",
-            email="inactive-email@example.com",
-            password="StrongPass123",
-            is_active=False,
-        )
-
-        self.assertIsNone(authenticate(username=user.email, password="StrongPass123"))
-
-    def test_email_login_fails_when_case_insensitive_match_is_ambiguous(self):
-        User.objects.create_user(
-            username="maila",
-            email="Case@example.com",
-            password="StrongPass123",
-        )
-        User.objects.create_user(
-            username="mailb",
-            email="case@example.com",
-            password="StrongPass123",
-        )
-
-        response = self.client.post(
-            reverse("users:login"),
-            data={"username": "CASE@example.com", "password": "StrongPass123"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "请输入正确的用户名或邮箱和密码")
-        self.assertNotIn(SESSION_KEY, self.client.session)
-
-    def test_invalid_login_shows_generic_error_and_keeps_next(self):
-        next_url = reverse("users:register")
-
-        response = self.client.post(
-            reverse("users:login"),
-            data={
-                "username": "missing@example.com",
-                "password": "bad-password",
-                "next": next_url,
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "请输入正确的用户名或邮箱和密码")
-        self.assertContains(response, f'name="next" value="{next_url}"')
-        self.assertNotIn(SESSION_KEY, self.client.session)
-
-    def test_login_redirects_to_safe_next(self):
-        user = User.objects.create_user(
-            username="nextu",
-            email="nextu@example.com",
-            password="StrongPass123",
-        )
-        next_url = reverse("users:register")
-
-        response = self.client.post(
-            reverse("users:login"),
-            data={
-                "username": user.username,
+                "email": "taken@example.com",
                 "password": "StrongPass123",
-                "next": next_url,
+                "password_confirm": "Mismatch123",
             },
+            format="json",
         )
 
-        self.assertRedirects(response, next_url)
+        self.assertEqual(response.status_code, 400)
+        body = response.json()
+        self.assertIn("message", body)
+        self.assertIn("errors", body)
 
-    def test_logout_requires_post_and_clears_session(self):
+    def test_token_uses_identifier_for_username_login(self):
         user = User.objects.create_user(
-            username="out",
-            email="out@example.com",
+            username="loginu",
+            email="loginu@example.com",
             password="StrongPass123",
         )
-        self.client.force_login(user)
 
-        response = self.client.get(reverse("users:logout"))
-        self.assertEqual(response.status_code, 405)
-        self.assertEqual(int(self.client.session[SESSION_KEY]), user.pk)
+        response = self.client.post(
+            reverse("api:auth_token"),
+            data={"identifier": user.username, "password": "StrongPass123"},
+            format="json",
+        )
 
-        response = self.client.post(reverse("users:logout"))
-        self.assertRedirects(response, settings.LOGOUT_REDIRECT_URL)
-        self.assertNotIn(SESSION_KEY, self.client.session)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.json())
+        self.assertIn("refresh", response.json())
 
+    def test_token_uses_identifier_for_email_login(self):
+        User.objects.create_user(
+            username="emaillogin",
+            email="email-login@example.com",
+            password="StrongPass123",
+        )
 
-class ProfileEditFlowTest(TestCase):
-    """公开资料编辑和受限区域访问流程测试。
+        response = self.client.post(
+            reverse("api:auth_token"),
+            data={"identifier": "EMAIL-LOGIN@example.com", "password": "StrongPass123"},
+            format="json",
+        )
 
-    覆盖 story 1.4 的资料编辑、头像上传、当前用户隔离、缺失资料补齐、
-    登录拦截和 `next` 返回路径。
-    """
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.json())
 
-    def setUp(self):
-        """准备资料编辑测试所需的两个普通用户。"""
+    def test_token_rejects_invalid_credentials_with_json_error(self):
+        response = self.client.post(
+            reverse("api:auth_token"),
+            data={"identifier": "missing", "password": "wrong"},
+            format="json",
+        )
 
-        self.user = User.objects.create_user(
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("message", response.json())
+        self.assertIn("errors", response.json())
+
+    def test_refresh_token_returns_new_access_token(self):
+        user = User.objects.create_user(
+            username="refreshu",
+            email="refreshu@example.com",
+            password="StrongPass123",
+        )
+        refresh = RefreshToken.for_user(user)
+
+        response = self.client.post(
+            reverse("api:auth_token_refresh"),
+            data={"refresh": str(refresh)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.json())
+
+    def test_me_get_returns_current_user_profile(self):
+        user = User.objects.create_user(
             username="profileu",
             email="profileu@example.com",
             password="StrongPass123",
         )
-        self.other_user = User.objects.create_user(
-            username="otheru",
-            email="otheru@example.com",
+        user.profile.nickname = "我的昵称"
+        user.profile.bio = "公开简介"
+        user.profile.save()
+
+        response = self.client.get(
+            reverse("api:users_me"),
+            **self._auth_headers(user),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["username"], "profileu")
+        self.assertEqual(body["profile"]["nickname"], "我的昵称")
+        self.assertEqual(body["profile"]["bio"], "公开简介")
+
+    def test_me_patch_updates_profile_and_avatar(self):
+        user = User.objects.create_user(
+            username="updateu",
+            email="updateu@example.com",
             password="StrongPass123",
         )
-        self.profile_url = reverse("users:profile")
-
-    def test_profile_page_requires_login_and_preserves_next(self):
-        response = self.client.get(self.profile_url)
-
-        self.assertRedirects(
-            response,
-            f"{reverse('users:login')}?next={self.profile_url}",
-        )
-
-    def test_login_page_with_next_shows_login_required_message(self):
-        response = self.client.get(reverse("users:login"), {"next": self.profile_url})
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "请先登录后继续访问该页面")
-        self.assertContains(response, f'name="next" value="{self.profile_url}"')
-
-    def test_login_with_next_returns_to_profile_page(self):
-        response = self.client.post(
-            reverse("users:login"),
-            data={
-                "username": self.user.username,
-                "password": "StrongPass123",
-                "next": self.profile_url,
-            },
-        )
-
-        self.assertRedirects(response, self.profile_url)
-
-    def test_authenticated_user_can_open_profile_form_with_current_values(self):
-        self.user.profile.nickname = "旧昵称"
-        self.user.profile.bio = "旧简介"
-        self.user.profile.save()
-        self.client.force_login(self.user)
-
-        response = self.client.get(self.profile_url)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "我的资料")
-        self.assertContains(response, "个人中心")
-        self.assertContains(response, "@profileu")
-        self.assertContains(response, "编辑资料")
-        self.assertContains(response, "旧昵称")
-        self.assertContains(response, "旧简介")
-        self.assertContains(response, 'enctype="multipart/form-data"')
-        self.assertContains(response, "保存资料")
-
-    def test_valid_profile_post_updates_current_user_and_redirects(self):
-        self.client.force_login(self.user)
-
-        response = self.client.post(
-            self.profile_url,
-            data={"nickname": "新昵称", "bio": "新的公开简介"},
-            follow=True,
-        )
-
-        self.assertRedirects(response, self.profile_url)
-        self.assertContains(response, "更新成功")
-        self.user.profile.refresh_from_db()
-        self.assertEqual(self.user.profile.nickname, "新昵称")
-        self.assertEqual(self.user.profile.bio, "新的公开简介")
-
-    def test_invalid_profile_post_keeps_existing_saved_values(self):
-        self.user.profile.nickname = "原昵称"
-        self.user.profile.bio = "原简介"
-        self.user.profile.save()
-        self.client.force_login(self.user)
-
-        response = self.client.post(
-            self.profile_url,
-            data={"nickname": "超过十个字符的用户昵称", "bio": "不会保存"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "不超过 10 字符")
-        self.user.profile.refresh_from_db()
-        self.assertEqual(self.user.profile.nickname, "原昵称")
-        self.assertEqual(self.user.profile.bio, "原简介")
-
-    def test_empty_nickname_returns_error_and_keeps_existing_saved_values(self):
-        self.user.profile.nickname = "原昵称"
-        self.user.profile.bio = "原简介"
-        self.user.profile.save()
-        self.client.force_login(self.user)
-
-        response = self.client.post(
-            self.profile_url,
-            data={"nickname": "", "bio": "不会保存"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "该字段是必填项。")
-        self.user.profile.refresh_from_db()
-        self.assertEqual(self.user.profile.nickname, "原昵称")
-        self.assertEqual(self.user.profile.bio, "原简介")
-
-    def test_avatar_upload_updates_profile_avatar_path(self):
-        self.client.force_login(self.user)
-        image = SimpleUploadedFile(
-            "Avatar.GIF",
-            b"GIF87a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00"
-            b"\xff\xff\xff,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;",
-            content_type="image/gif",
-        )
+        avatar = self._build_png_image()
 
         with self.settings(
             STORAGES={
@@ -653,158 +431,52 @@ class ProfileEditFlowTest(TestCase):
                     "BACKEND": "django.core.files.storage.InMemoryStorage",
                 },
                 "staticfiles": {
-                    "BACKEND": (
-                        "django.contrib.staticfiles.storage.StaticFilesStorage"
-                    ),
+                    "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
                 },
             }
         ):
-            response = self.client.post(
-                self.profile_url,
-                data={"nickname": "头像用户", "bio": "上传头像", "avatar": image},
+            response = self.client.patch(
+                reverse("api:users_me"),
+                data={"nickname": "新昵称", "bio": "新简介", "avatar": avatar},
+                format="multipart",
+                **self._auth_headers(user),
             )
 
-        self.assertRedirects(response, self.profile_url)
-        self.user.profile.refresh_from_db()
-        self.assertTrue(
-            self.user.profile.avatar.name.startswith(
-                f"avatars/users/{self.user.id}/"
-            )
-        )
-        self.assertTrue(self.user.profile.avatar.name.endswith(".gif"))
-
-    def test_profile_post_only_updates_current_user_profile(self):
-        self.other_user.profile.nickname = "他人昵称"
-        self.other_user.profile.bio = "他人简介"
-        self.other_user.profile.save()
-        self.client.force_login(self.user)
-
-        self.client.post(
-            self.profile_url,
-            data={"nickname": "本人昵称", "bio": "本人简介"},
-        )
-
-        self.user.profile.refresh_from_db()
-        self.other_user.profile.refresh_from_db()
-        self.assertEqual(self.user.profile.nickname, "本人昵称")
-        self.assertEqual(self.other_user.profile.nickname, "他人昵称")
-        self.assertEqual(self.other_user.profile.bio, "他人简介")
-
-    def test_missing_profile_is_recreated_for_authenticated_user(self):
-        self.user.profile.delete()
-        self.client.force_login(self.user)
-
-        response = self.client.get(self.profile_url)
-
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(Profile.objects.filter(user=self.user).exists())
+        user.profile.refresh_from_db()
+        self.assertEqual(user.profile.nickname, "新昵称")
+        self.assertEqual(user.profile.bio, "新简介")
 
-
-class PublicProfileViewTest(TestCase):
-    """卖家公开主页视图测试。"""
-
-    def setUp(self):
-        self.seller = User.objects.create_user(
-            username="pubseller",
-            email="public_seller@example.com",
+    def test_public_user_profile_includes_active_listings(self):
+        seller = User.objects.create_user(
+            username="seller",
+            email="seller@example.com",
             password="StrongPass123",
         )
-        self.other_user = User.objects.create_user(
-            username="pubother",
-            email="public_other@example.com",
-            password="StrongPass123",
+        category = Category.objects.create(name="公开分类")
+        Listing.objects.create(
+            owner=seller,
+            category=category,
+            title="公开商品",
+            item_type=Listing.ItemType.PHYSICAL,
+            status=Listing.Status.ACTIVE,
+            price=Decimal("99.00"),
+            description="商品描述",
+            condition=Listing.Condition.GOOD,
+            delivery_notes="面交",
+            physical_delivery_method=Listing.PhysicalDeliveryMethod.MEETUP,
+            published_at=timezone.now(),
         )
-        self.category = Category.objects.create(name="公开主页分类")
-        self.inactive_category = Category.objects.create(
-            name="公开停用分类", is_active=False
-        )
-        self.seller.profile.nickname = "主页卖家"
-        self.seller.profile.bio = "卖家公开简介"
-        self.seller.profile.save(update_fields=["nickname", "bio", "updated_at"])
-        self.url = reverse("public_profile", kwargs={"user_id": self.seller.pk})
 
-    def make_listing(self, **overrides):
-        data = {
-            "owner": self.seller,
-            "category": self.category,
-            "title": "主页公开商品",
-            "item_type": Listing.ItemType.PHYSICAL,
-            "status": Listing.Status.ACTIVE,
-            "price": Decimal("66.00"),
-            "condition": Listing.Condition.GOOD,
-            "description": "公开主页商品描述",
-            "delivery_notes": "面交",
-            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
-            "published_at": timezone.datetime(
-                2026, 5, 3, 11, 0, tzinfo=timezone.get_current_timezone()
-            ),
-        }
-        data.update(overrides)
-        return Listing.objects.create(**data)
+        response = self.client.get(reverse("api:users_public", kwargs={"user_id": seller.id}))
 
-    def test_public_profile_uses_users_route_and_renders_public_fields(self):
-        listing = self.make_listing()
-
-        response = self.client.get(self.url)
-
-        self.assertEqual(self.url, f"/users/{self.seller.pk}/")
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "users/public_profile.html")
-        self.assertContains(response, "主页卖家")
-        self.assertContains(response, "卖家公开简介")
-        self.assertContains(response, listing.title)
-        self.assertContains(response, "¥66.00")
-        self.assertContains(response, "公开主页分类")
-        self.assertNotContains(response, self.seller.email)
-        self.assertNotContains(response, "密码")
+        body = response.json()
+        self.assertEqual(body["username"], "seller")
+        self.assertEqual(body["listings"][0]["title"], "公开商品")
+        self.assertEqual(body["listings"][0]["category_name"], "公开分类")
 
-    def test_public_profile_return_link_uses_safe_detail_referrer(self):
-        listing = self.make_listing()
-        detail_url = reverse("catalog:listing_detail", kwargs={"pk": listing.pk})
-
-        response = self.client.get(self.url, HTTP_REFERER=detail_url)
-
-        self.assertContains(response, f'href="{detail_url}"')
-
-    def test_public_profile_ignores_external_referrer(self):
-        response = self.client.get(
-            self.url,
-            HTTP_REFERER="https://example.com/phishing",
-        )
-
-        self.assertContains(response, f'href="{reverse("catalog:listing_list")}"')
-        self.assertNotContains(response, "https://example.com/phishing")
-
-    def test_public_profile_shows_only_target_seller_active_public_listings(self):
-        visible = self.make_listing(title="目标卖家在售")
-        hidden_cases = [
-            {"title": "目标草稿", "status": Listing.Status.DRAFT},
-            {"title": "目标下架", "status": Listing.Status.WITHDRAWN},
-            {"title": "目标占用", "status": Listing.Status.RESERVED},
-            {"title": "目标已售", "status": Listing.Status.SOLD},
-            {
-                "title": "目标停用分类",
-                "status": Listing.Status.ACTIVE,
-                "category": self.inactive_category,
-            },
-            {
-                "title": "其他卖家在售",
-                "status": Listing.Status.ACTIVE,
-                "owner": self.other_user,
-            },
-        ]
-        for overrides in hidden_cases:
-            self.make_listing(**overrides)
-
-        response = self.client.get(self.url)
-
-        self.assertContains(response, visible.title)
-        for overrides in hidden_cases:
-            self.assertNotContains(response, overrides["title"])
-
-    def test_public_profile_returns_404_for_missing_user(self):
-        response = self.client.get(
-            reverse("public_profile", kwargs={"user_id": 99999})
-        )
+    def test_public_user_profile_returns_404_for_missing_user(self):
+        response = self.client.get(reverse("api:users_public", kwargs={"user_id": 99999}))
 
         self.assertEqual(response.status_code, 404)

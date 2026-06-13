@@ -1,13 +1,19 @@
-from django.contrib import messages
-from django.contrib.auth import get_user_model
-from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import Http404, HttpResponseNotAllowed
-from django.shortcuts import get_object_or_404, redirect, render
-from django.views import View
-from django.views.generic import ListView
+"""messaging 应用 API 类视图。"""
 
-from messaging.forms import PrivateMessageForm
+from django.shortcuts import get_object_or_404
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from config.api_mixins import PageNumberPaginationMixin, ServiceErrorMixin
+from messaging.permissions import IsConversationParticipant
+from messaging.serializers import (
+    ConversationCreateSerializer,
+    ConversationSerializer,
+    PrivateMessageCreateSerializer,
+    PrivateMessageSerializer,
+)
 from messaging.models import Conversation
 from messaging.selectors import (
     get_conversation_for_user,
@@ -16,113 +22,100 @@ from messaging.selectors import (
 )
 from messaging.services import (
     create_private_message,
-    first_error_message,
     get_or_create_conversation,
     mark_conversation_read,
+    serialize_private_message,
 )
 
 
-class ConversationListView(LoginRequiredMixin, ListView):
-    """私信入口页，有会话时直达最近一条会话。"""
+class ConversationListCreateApiView(
+    ServiceErrorMixin,
+    PageNumberPaginationMixin,
+    APIView,
+):
+    """当前用户会话列表与发起会话。"""
 
-    template_name = "messaging/conversation_list.html"
-    context_object_name = "conversations"
-    paginate_by = 20
+    permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        """返回当前登录用户参与的会话列表。"""
+    def get(self, request):
+        return self.paginate(
+            request,
+            get_user_conversations(request.user),
+            ConversationSerializer,
+        )
 
-        return get_user_conversations(self.request.user)
-
-    def get(self, request, *args, **kwargs):
-        """有最近会话时跳转详情页，否则渲染空会话列表。"""
-
-        latest_conversation = self.get_queryset().first()
-        if latest_conversation is not None:
-            return redirect(
-                "messaging:conversation_detail",
-                pk=latest_conversation.pk,
-            )
-        return super().get(request, *args, **kwargs)
-
-
-class StartConversationView(LoginRequiredMixin, View):
-    """从卖家入口发起或复用一对一私信会话。"""
-
-    http_method_names = ["post"]
-
-    def get(self, request, *args, **kwargs):
-        """拒绝通过 GET 发起私信会话。"""
-
-        return HttpResponseNotAllowed(["POST"])
-
-    def post(self, request, user_id):
-        """创建或复用与目标用户的会话并跳转到详情页。"""
-
-        target_user = get_object_or_404(get_user_model(), pk=user_id)
-        try:
-            conversation = get_or_create_conversation(request.user, target_user)
-        except ValidationError as error:
-            messages.error(request, first_error_message(error, "无法发起私信"))
-            return redirect("public_profile", user_id=user_id)
-        return redirect("messaging:conversation_detail", pk=conversation.pk)
+    def post(self, request):
+        serializer = ConversationCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        conversation = self.run_service(
+            get_or_create_conversation,
+            request.user,
+            serializer.validated_data["target_user"],
+        )
+        response_serializer = ConversationSerializer(
+            get_conversation_for_user(request.user, conversation.pk),
+            context={"request": request},
+        )
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class ConversationDetailView(LoginRequiredMixin, View):
-    """私信会话详情页，支持 HTTP 回退发送消息。"""
+class _ConversationParticipantApiView(ServiceErrorMixin, APIView):
+    """需要会话参与者身份的 API 基类。"""
 
-    template_name = "messaging/conversation_detail.html"
-    form_class = PrivateMessageForm
+    permission_classes = [IsAuthenticated, IsConversationParticipant]
 
-    def get_conversation(self, request, pk):
-        """读取当前用户有权限访问的会话，不存在时返回 404。"""
+    def get_object(self, request, pk):
+        conversation = get_object_or_404(
+            Conversation.objects.select_related(
+                "participant_a",
+                "participant_a__profile",
+                "participant_b",
+                "participant_b__profile",
+            ),
+            pk=pk,
+        )
+        self.check_object_permissions(request, conversation)
+        return conversation
 
-        try:
-            return get_conversation_for_user(request.user, pk)
-        except PermissionDenied:
-            raise
-        except Conversation.DoesNotExist:
-            raise Http404
+
+class ConversationDetailApiView(_ConversationParticipantApiView):
+    """会话详情。"""
 
     def get(self, request, pk):
-        """渲染会话详情并把收到的未读消息标记为已读。"""
+        conversation = self.get_object(request, pk)
+        serializer = ConversationSerializer(conversation, context={"request": request})
+        return Response(serializer.data)
 
-        conversation = self.get_conversation(request, pk)
-        mark_conversation_read(request.user, conversation)
-        context = self.get_context_data(request, conversation, form=self.form_class())
-        return render(request, self.template_name, context)
+
+class ConversationMessageListCreateApiView(
+    _ConversationParticipantApiView,
+    PageNumberPaginationMixin,
+):
+    """会话消息列表与 HTTP 发送消息。"""
+
+    def get(self, request, pk):
+        conversation = self.get_object(request, pk)
+        messages = get_conversation_messages(conversation)
+        return self.paginate(request, messages, PrivateMessageSerializer)
 
     def post(self, request, pk):
-        """通过普通 HTTP POST 发送私信。"""
+        conversation = self.get_object(request, pk)
+        serializer = PrivateMessageCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        message = self.run_service(
+            create_private_message,
+            request.user,
+            conversation,
+            serializer.validated_data["content"],
+        )
+        return Response(serialize_private_message(message), status=status.HTTP_201_CREATED)
 
-        conversation = self.get_conversation(request, pk)
-        form = self.form_class(request.POST)
-        if form.is_valid():
-            try:
-                create_private_message(
-                    request.user,
-                    conversation,
-                    form.cleaned_data["content"],
-                )
-            except ValidationError as error:
-                messages.error(request, first_error_message(error, "消息发送失败"))
-            except PermissionDenied:
-                raise
-            else:
-                messages.success(request, "消息已发送")
-            return redirect("messaging:conversation_detail", pk=conversation.pk)
 
-        context = self.get_context_data(request, conversation, form=form)
-        return render(request, self.template_name, context)
+class ConversationReadApiView(_ConversationParticipantApiView):
+    """标记会话已读。"""
 
-    def get_context_data(self, request, conversation, form):
-        """构造私信详情页和左侧会话列表所需上下文。"""
+    def post(self, request, pk):
+        conversation = self.get_object(request, pk)
+        updated_count = self.run_service(mark_conversation_read, request.user, conversation)
+        return Response({"updated_count": updated_count})
 
-        other_user = conversation.other_participant(request.user)
-        return {
-            "conversation": conversation,
-            "conversations": get_user_conversations(request.user),
-            "other_user": other_user,
-            "private_messages": get_conversation_messages(conversation),
-            "form": form,
-        }

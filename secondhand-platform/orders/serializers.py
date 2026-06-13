@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from catalog.api.serializers import CategorySerializer, ListingOwnerSerializer
+from catalog.serializers import CategorySerializer, ListingOwnerSerializer
 from catalog.models import Listing
 from orders.models import Order
 from orders.selectors import (
@@ -99,3 +99,4 @@ class OrderSerializer(serializers.ModelSerializer):
     def get_available_actions(self, obj):
         request = self.context.get("request")
         return get_order_available_actions(obj, getattr(request, "user", None))
+

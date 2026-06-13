@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from catalog.forms import MAX_IMAGE_SIZE
+from catalog.constants import MAX_IMAGE_SIZE
 from catalog.models import Category, Listing, ListingImage
 from catalog.selectors import get_active_categories
 
@@ -64,6 +64,7 @@ class ListingWriteSerializer(serializers.ModelSerializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # 分类下拉只允许选择启用分类，避免新建或编辑商品时挂到已停用分类。
         self.fields["category"].queryset = get_active_categories()
 
     def validate_price(self, value):
@@ -75,6 +76,7 @@ class ListingWriteSerializer(serializers.ModelSerializer):
         instance = getattr(self, "instance", None)
 
         def resolved(name):
+            # PATCH 场景需要合并实例原值与本次入参，才能正确校验实体/虚拟商品字段组合。
             if name in attrs:
                 return attrs[name]
             if instance is not None:
@@ -175,6 +177,7 @@ class ListingFilterSerializer(serializers.Serializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # 筛选参数中的分类也限定为启用分类，避免公开列表暴露停用分类商品。
         self.fields["category"].queryset = get_active_categories()
 
     def validate_q(self, value):

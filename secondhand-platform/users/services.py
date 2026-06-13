@@ -28,14 +28,3 @@ def register_user(*, username, email, password):
     user.groups.add(group)
 
     return user
-
-
-@transaction.atomic
-def register_add_group(form):
-    """兼容旧模板表单的注册入口，内部复用表单无关服务。"""
-
-    return register_user(
-        username=form.cleaned_data["username"],
-        email=form.cleaned_data["email"],
-        password=form.cleaned_data["password1"],
-    )

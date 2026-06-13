@@ -1,20 +1,17 @@
 from decimal import Decimal
 
 from django.contrib.admin.sites import site
-from django.contrib.messages import get_messages
 from django.contrib.auth import get_user_model
-from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import connection
 from django.test import TestCase
-from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
+from rest_framework.test import APIClient, APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from catalog.models import Category, Listing
 from interactions.admin import CommentAdmin, ReplyStatusFilter
 from interactions.models import Comment
 from interactions.selectors import get_listing_comments
-from interactions.services import create_comment, create_reply
 
 
 User = get_user_model()
@@ -342,734 +339,217 @@ class CommentAdminTest(CommentTestMixin, TestCase):
         self.assertIn(response.status_code, [302, 403])
 
 
-class ListingCommentThreadViewTest(CommentTestMixin, TestCase):
-    """商品详情页留言线程展示测试。"""
 
-    def detail_url(self, listing=None):
-        listing = listing or self.listing
-        return reverse("catalog:listing_detail", kwargs={"pk": listing.pk})
 
-    def test_detail_page_shows_comment_author_time_content_and_seller_badge(self):
-        buyer_comment = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="请问还能面交吗？",
+class InteractionsApiTests(APITestCase):
+    """P4 评论互动 API 测试。"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.seller = User.objects.create_user(
+            username="cmt_seller",
+            email="comment_seller@example.com",
+            password="StrongPass123",
         )
-        seller_comment = Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            content="可以，工作日晚上方便。",
+        self.buyer = User.objects.create_user(
+            username="cmt_buyer",
+            email="comment_buyer@example.com",
+            password="StrongPass123",
         )
-
-        response = self.client.get(self.detail_url())
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "interactions/comment_thread.html")
-        self.assertContains(response, "公开留言")
-        self.assertContains(response, "公开买家昵称")
-        self.assertContains(response, "请问还能面交吗？")
-        self.assertContains(response, "公开卖家昵称")
-        self.assertContains(response, "可以，工作日晚上方便。")
-        self.assertContains(response, "卖家")
-        self.assertContains(response, buyer_comment.created_at.strftime("%Y-%m-%d"))
-        self.assertContains(response, seller_comment.created_at.strftime("%Y-%m-%d"))
-
-    def test_detail_page_shows_replies_under_parent_and_seller_badge(self):
-        parent = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="请问支持快递吗？",
+        self.other = User.objects.create_user(
+            username="cmt_other",
+            email="comment_other@example.com",
+            password="StrongPass123",
         )
-        seller_reply = Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            parent=parent,
-            content="可以快递。",
+        self.category = Category.objects.create(name="评论分类")
+        self.inactive_category = Category.objects.create(
+            name="评论停用分类",
+            is_active=False,
         )
-        buyer_reply = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            parent=parent,
-            content="那我考虑一下。",
-        )
-
-        response = self.client.get(self.detail_url())
-
-        self.assertContains(response, "请问支持快递吗？")
-        self.assertContains(response, "可以快递。")
-        self.assertContains(response, "那我考虑一下。")
-        self.assertContains(
-            response,
-            '<span class="comment-seller-badge">卖家</span>',
-            count=1,
-            html=True,
-        )
-        self.assertContains(response, seller_reply.created_at.strftime("%Y-%m-%d"))
-        self.assertContains(response, buyer_reply.created_at.strftime("%Y-%m-%d"))
-
-    def test_detail_page_shows_empty_comment_state(self):
-        response = self.client.get(self.detail_url())
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "暂无留言，后续咨询会显示在这里。")
-
-    def test_detail_page_handles_deleted_author_and_missing_profile_fields(self):
-        self.buyer.profile.nickname = ""
-        self.buyer.profile.save(update_fields=["nickname", "updated_at"])
-        anonymous_comment = Comment.objects.create(
-            listing=self.listing,
-            author=self.other_user,
-            content="作者即将注销",
-        )
-        self.other_user.delete()
-        anonymous_comment.refresh_from_db()
-        Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="昵称为空时展示用户名",
-        )
-
-        response = self.client.get(self.detail_url())
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "已注销用户")
-        self.assertContains(response, self.buyer.username)
-
-    def test_detail_page_escapes_comment_html(self):
-        Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content='<script>alert("xss")</script>',
-        )
-
-        response = self.client.get(self.detail_url())
-
-        self.assertContains(response, "&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;")
-        self.assertNotContains(response, '<script>alert("xss")</script>', html=False)
-
-    def test_detail_page_escapes_reply_html_and_preserves_line_breaks(self):
-        parent = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="顶层留言",
-        )
-        Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            parent=parent,
-            content='<strong>回复</strong>\n<script>alert("xss")</script>',
-        )
-
-        response = self.client.get(self.detail_url())
-
-        self.assertContains(response, "&lt;strong&gt;回复&lt;/strong&gt;<br>")
-        self.assertContains(response, "&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;")
-        self.assertNotContains(response, "<strong>回复</strong>", html=False)
-
-    def test_guest_detail_page_shows_login_prompt_without_comment_form(self):
-        Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="只读留言",
-        )
-
-        response = self.client.get(self.detail_url())
-
-        self.assertContains(response, "登录后留言")
-        self.assertNotContains(response, 'class="comment-form"')
-        self.assertNotContains(response, "/comments/")
-        self.assertNotContains(response, "回复内容")
-
-    def test_logged_in_user_sees_comment_form_on_active_listing(self):
-        comment = Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            content="欢迎留言",
-        )
-        self.client.force_login(self.buyer)
-
-        response = self.client.get(self.detail_url())
-
-        self.assertContains(response, "留言内容")
-        self.assertContains(response, "发布留言")
-        self.assertContains(response, "data-reply-toggle")
-        self.assertContains(response, f'id="reply-form-{comment.pk}"')
-        self.assertContains(response, "hidden")
-        self.assertContains(response, reverse("interactions:reply", kwargs={"pk": comment.pk}))
-        self.assertContains(
-            response,
-            reverse("interactions:comment_create", kwargs={"listing_id": self.listing.pk}),
-        )
-
-    def test_non_active_listing_hides_comment_form_but_keeps_thread_visible(self):
-        reserved = self.create_listing(title="占用商品", status=Listing.Status.RESERVED)
-        Comment.objects.create(
-            listing=reserved,
-            author=self.buyer,
-            content="历史留言仍可见",
-        )
-        self.client.force_login(self.buyer)
-
-        response = self.client.get(self.detail_url(reserved))
-
-        self.assertContains(response, "当前商品暂不支持新增留言，历史留言仍可查看。")
-        self.assertContains(response, "历史留言仍可见")
-        self.assertNotContains(response, "comment_create")
-        self.assertNotContains(response, "回复内容")
-
-    def test_inactive_category_context_closes_interaction_when_owner_can_view(self):
-        inactive_category = Category.objects.create(name="前台停用分类", is_active=False)
-        hidden_listing = self.create_listing(
-            title="停用分类商品",
-            category=inactive_category,
-            status=Listing.Status.ACTIVE,
-        )
-        Comment.objects.create(
-            listing=hidden_listing,
-            author=self.buyer,
-            content="停用前历史留言",
-        )
-        self.client.force_login(self.seller)
-
-        response = self.client.get(self.detail_url(hidden_listing))
-
-        self.assertEqual(response.status_code, 404)
-
-    def test_detail_page_comment_thread_avoids_obvious_n_plus_one(self):
-        Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="第一条",
-        )
-        Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            content="第二条",
-        )
-        parent = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="第三条",
-        )
-        Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            parent=parent,
-            content="第三条回复",
-        )
-
-        with CaptureQueriesContext(connection) as captured:
-            response = self.client.get(self.detail_url())
-
-        self.assertEqual(response.status_code, 200)
-        self.assertLessEqual(len(captured), 13)
-        self.assertContains(response, "第一条")
-        self.assertContains(response, "第二条")
-        self.assertContains(response, "第三条回复")
-
-    def test_detail_page_keeps_purchase_entry_for_active_listing(self):
-        self.client.force_login(self.buyer)
-
-        response = self.client.get(self.detail_url())
-
-        self.assertContains(response, "购买确认")
-        self.assertContains(response, f"/listings/{self.listing.pk}/purchase/")
-
-    def test_detail_page_keeps_unavailable_message_for_reserved_sold_and_withdrawn(self):
-        reserved = self.create_listing(title="占用商品", status=Listing.Status.RESERVED)
-        sold = self.create_listing(title="售出商品", status=Listing.Status.SOLD)
-        withdrawn = self.create_listing(title="下架商品", status=Listing.Status.WITHDRAWN)
-
-        reserved_response = self.client.get(self.detail_url(reserved))
-        sold_response = self.client.get(self.detail_url(sold))
-        self.client.force_login(self.seller)
-        withdrawn_response = self.client.get(self.detail_url(withdrawn))
-
-        self.assertContains(reserved_response, "商品正在交易中，暂时无法购买")
-        self.assertContains(sold_response, "商品已售出")
-        self.assertContains(withdrawn_response, "商品已下架")
-
-
-class CommentInteractionViewTest(CommentTestMixin, TestCase):
-    """留言新增和作者自删视图测试。"""
-
-    def detail_url(self, listing=None):
-        listing = listing or self.listing
-        return reverse("catalog:listing_detail", kwargs={"pk": listing.pk})
-
-    def create_url(self, listing=None):
-        listing = listing or self.listing
-        return reverse("interactions:comment_create", kwargs={"listing_id": listing.pk})
-
-    def delete_url(self, comment):
-        return reverse("interactions:comment_delete", kwargs={"pk": comment.pk})
-
-    def reply_url(self, comment):
-        return reverse("interactions:reply", kwargs={"pk": comment.pk})
-
-    def test_logged_in_user_can_create_comment_for_active_listing(self):
-        self.client.force_login(self.buyer)
-
-        response = self.client.post(
-            self.create_url(),
-            {"content": "请问可以今天面交吗？"},
-        )
-
-        self.assertRedirects(response, self.detail_url())
-        comment = Comment.objects.get()
-        self.assertEqual(comment.listing, self.listing)
-        self.assertEqual(comment.author, self.buyer)
-        self.assertEqual(comment.content, "请问可以今天面交吗？")
-        messages = [str(message) for message in get_messages(response.wsgi_request)]
-        self.assertIn("留言已发布", messages)
-
-    def test_created_comment_is_visible_after_redirect(self):
-        self.client.force_login(self.buyer)
-
-        response = self.client.post(
-            self.create_url(),
-            {"content": "页面回跳后可见"},
-            follow=True,
-        )
-
-        self.assertContains(response, "页面回跳后可见")
-
-    def test_guest_create_comment_requires_login(self):
-        response = self.client.post(self.create_url(), {"content": "游客留言"})
-
-        self.assertRedirects(response, f"{reverse('users:login')}?next={self.create_url()}")
-        self.assertEqual(Comment.objects.count(), 0)
-
-    def test_blank_comment_is_rejected(self):
-        self.client.force_login(self.buyer)
-
-        response = self.client.post(self.create_url(), {"content": "   "})
-
-        self.assertRedirects(response, self.detail_url())
-        self.assertEqual(Comment.objects.count(), 0)
-        messages = [str(message) for message in get_messages(response.wsgi_request)]
-        self.assertIn("留言内容不能为空", messages)
-
-    def test_oversized_comment_is_rejected(self):
-        self.client.force_login(self.buyer)
-
-        response = self.client.post(self.create_url(), {"content": "x" * 1001})
-
-        self.assertRedirects(response, self.detail_url())
-        self.assertEqual(Comment.objects.count(), 0)
-        messages = [str(message) for message in get_messages(response.wsgi_request)]
-        self.assertIn("留言内容不能超过 1000 个字符", messages)
-
-    def test_non_active_listing_rejects_new_comment(self):
-        reserved = self.create_listing(title="不可互动", status=Listing.Status.RESERVED)
-        self.client.force_login(self.buyer)
-
-        response = self.client.post(self.create_url(reserved), {"content": "还能买吗"})
-
-        self.assertRedirects(response, self.detail_url(reserved))
-        self.assertEqual(Comment.objects.count(), 0)
-        messages = [str(message) for message in get_messages(response.wsgi_request)]
-        self.assertIn("该商品目前不能发表评论", messages)
-
-    def test_direct_comment_post_rejects_all_non_interactive_statuses(self):
-        statuses = [
-            Listing.Status.DRAFT,
-            Listing.Status.RESERVED,
-            Listing.Status.SOLD,
-            Listing.Status.WITHDRAWN,
-        ]
-        self.client.force_login(self.buyer)
-
-        for status in statuses:
-            with self.subTest(status=status):
-                listing = self.create_listing(title=f"留言关闭 {status}", status=status)
-
-                response = self.client.post(
-                    self.create_url(listing),
-                    {"content": "不能新增留言"},
-                )
-
-                self.assertRedirects(
-                    response,
-                    self.detail_url(listing),
-                    fetch_redirect_response=False,
-                )
-                self.assertFalse(
-                    Comment.objects.filter(
-                        listing=listing,
-                        content="不能新增留言",
-                    ).exists()
-                )
-                messages = [str(message) for message in get_messages(response.wsgi_request)]
-                self.assertIn("该商品目前不能发表评论", messages)
-
-    def test_logged_in_user_can_reply_to_top_level_comment(self):
-        parent = Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            content="欢迎提问",
-        )
-        self.client.force_login(self.buyer)
-
-        response = self.client.post(self.reply_url(parent), {"content": "请问还在吗？"})
-
-        self.assertRedirects(response, self.detail_url())
-        reply = Comment.objects.get(parent=parent)
-        self.assertEqual(reply.listing, self.listing)
-        self.assertEqual(reply.author, self.buyer)
-        self.assertEqual(reply.content, "请问还在吗？")
-        messages = [str(message) for message in get_messages(response.wsgi_request)]
-        self.assertIn("留言回复成功", messages)
-
-    def test_seller_can_reply_to_top_level_comment(self):
-        parent = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="买家提问",
-        )
-        self.client.force_login(self.seller)
-
-        response = self.client.post(self.reply_url(parent), {"content": "卖家答复"})
-
-        self.assertRedirects(response, self.detail_url())
-        reply = Comment.objects.get(parent=parent)
-        self.assertEqual(reply.author, self.seller)
-        self.assertEqual(reply.content, "卖家答复")
-
-    def test_reply_is_visible_after_redirect_under_parent(self):
-        parent = Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            content="顶层问题",
-        )
-        self.client.force_login(self.buyer)
-
-        response = self.client.post(
-            self.reply_url(parent),
-            {"content": "页面回跳后可见的回复"},
-            follow=True,
-        )
-
-        self.assertContains(response, "顶层问题")
-        self.assertContains(response, "页面回跳后可见的回复")
-
-    def test_guest_reply_requires_login(self):
-        parent = Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            content="顶层留言",
-        )
-
-        response = self.client.post(self.reply_url(parent), {"content": "游客回复"})
-
-        self.assertRedirects(response, f"{reverse('users:login')}?next={self.reply_url(parent)}")
-        self.assertEqual(Comment.objects.filter(parent__isnull=False).count(), 0)
-
-    def test_blank_and_oversized_reply_are_rejected(self):
-        parent = Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            content="顶层留言",
-        )
-        self.client.force_login(self.buyer)
-
-        blank_response = self.client.post(self.reply_url(parent), {"content": "   "})
-        oversized_response = self.client.post(
-            self.reply_url(parent),
-            {"content": "x" * 1001},
-        )
-
-        self.assertRedirects(blank_response, self.detail_url())
-        self.assertRedirects(oversized_response, self.detail_url())
-        self.assertEqual(Comment.objects.filter(parent__isnull=False).count(), 0)
-        blank_messages = [str(message) for message in get_messages(blank_response.wsgi_request)]
-        oversized_messages = [
-            str(message) for message in get_messages(oversized_response.wsgi_request)
-        ]
-        self.assertIn("留言内容不能为空", blank_messages)
-        self.assertIn("留言内容不能超过 1000 个字符", oversized_messages)
-
-    def test_direct_reply_post_rejects_non_interactive_listing(self):
-        reserved = self.create_listing(title="回复关闭商品", status=Listing.Status.RESERVED)
-        parent = Comment.objects.create(
-            listing=reserved,
-            author=self.seller,
-            content="历史留言",
-        )
-        self.client.force_login(self.buyer)
-
-        response = self.client.post(self.reply_url(parent), {"content": "不能新增回复"})
-
-        self.assertRedirects(response, self.detail_url(reserved))
-        self.assertEqual(Comment.objects.filter(parent=parent).count(), 0)
-        messages = [str(message) for message in get_messages(response.wsgi_request)]
-        self.assertIn("该商品目前不能发表评论", messages)
-
-    def test_direct_reply_post_rejects_all_non_interactive_statuses(self):
-        statuses = [
-            Listing.Status.DRAFT,
-            Listing.Status.RESERVED,
-            Listing.Status.SOLD,
-            Listing.Status.WITHDRAWN,
-        ]
-        self.client.force_login(self.buyer)
-
-        for status in statuses:
-            with self.subTest(status=status):
-                listing = self.create_listing(title=f"回复关闭 {status}", status=status)
-                parent = Comment.objects.create(
-                    listing=listing,
-                    author=self.seller,
-                    content="历史留言",
-                )
-
-                response = self.client.post(
-                    self.reply_url(parent),
-                    {"content": "不能新增回复"},
-                )
-
-                self.assertRedirects(
-                    response,
-                    self.detail_url(listing),
-                    fetch_redirect_response=False,
-                )
-                self.assertFalse(
-                    Comment.objects.filter(
-                        parent=parent,
-                        content="不能新增回复",
-                    ).exists()
-                )
-                messages = [str(message) for message in get_messages(response.wsgi_request)]
-                self.assertIn("该商品目前不能发表评论", messages)
-
-    def test_direct_reply_post_rejects_nested_reply(self):
-        parent = Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            content="顶层留言",
-        )
+        self.listing = self.create_listing()
+
+    def auth_headers(self, user):
+        token = RefreshToken.for_user(user).access_token
+        return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+    def create_listing(self, **overrides):
+        data = {
+            "owner": self.seller,
+            "category": self.category,
+            "title": "评论商品",
+            "item_type": Listing.ItemType.PHYSICAL,
+            "status": Listing.Status.ACTIVE,
+            "price": "99.00",
+            "condition": Listing.Condition.GOOD,
+            "description": "评论描述",
+            "delivery_notes": "面交",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "published_at": timezone.now(),
+        }
+        data.update(overrides)
+        return Listing.objects.create(**data)
+
+    def create_comment(self, **overrides):
+        data = {
+            "listing": self.listing,
+            "author": self.buyer,
+            "content": "顶层留言",
+        }
+        data.update(overrides)
+        return Comment.objects.create(**data)
+
+    def test_get_comments_returns_nested_replies(self):
+        parent = self.create_comment()
         reply = Comment.objects.create(
             listing=self.listing,
-            author=self.buyer,
+            author=self.seller,
             parent=parent,
-            content="二级回复",
+            content="卖家回复",
         )
-        self.client.force_login(self.other_user)
 
-        response = self.client.post(self.reply_url(reply), {"content": "三级回复"})
-
-        self.assertRedirects(response, self.detail_url())
-        self.assertEqual(Comment.objects.filter(parent=reply).count(), 0)
-        messages = [str(message) for message in get_messages(response.wsgi_request)]
-        self.assertIn("不得创建多级留言", messages)
-
-    def test_get_reply_does_not_create_reply(self):
-        parent = Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            content="顶层留言",
+        response = self.client.get(
+            reverse("api:listing_comments", kwargs={"listing_id": self.listing.id})
         )
-        self.client.force_login(self.buyer)
 
-        response = self.client.get(self.reply_url(parent))
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body[0]["id"], parent.id)
+        self.assertEqual(body[0]["replies"][0]["id"], reply.id)
+        self.assertEqual(body[0]["author"]["username"], self.buyer.username)
 
-        self.assertEqual(response.status_code, 405)
-        self.assertEqual(Comment.objects.filter(parent=parent).count(), 0)
+    def test_guest_can_view_comments_for_active_listing(self):
+        self.create_comment()
 
-    def test_inactive_category_listing_rejects_direct_comment_post(self):
-        inactive_category = Category.objects.create(name="停用留言分类", is_active=False)
-        hidden_listing = self.create_listing(
-            title="隐藏商品",
-            category=inactive_category,
-            status=Listing.Status.ACTIVE,
+        response = self.client.get(
+            reverse("api:listing_comments", kwargs={"listing_id": self.listing.id})
         )
-        self.client.force_login(self.buyer)
 
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["content"], "顶层留言")
+
+    def test_create_comment_requires_login(self):
         response = self.client.post(
-            self.create_url(hidden_listing),
-            {"content": "隐藏商品不应允许留言"},
+            reverse("api:listing_comments", kwargs={"listing_id": self.listing.id}),
+            data={"content": "游客留言"},
+            format="json",
         )
 
-        self.assertEqual(response.status_code, 404)
-        self.assertEqual(Comment.objects.count(), 0)
+        self.assertEqual(response.status_code, 401)
 
-    def test_create_comment_service_rejects_blank_and_oversized_content(self):
-        with self.assertRaisesMessage(ValidationError, "留言内容不能为空"):
-            create_comment(self.buyer, self.listing, "   ")
-        with self.assertRaisesMessage(ValidationError, "留言内容不能超过 1000 个字符"):
-            create_comment(self.buyer, self.listing, "x" * 1001)
-
-        self.assertEqual(Comment.objects.count(), 0)
-
-    def test_create_comment_service_rejects_inactive_category_listing(self):
-        inactive_category = Category.objects.create(name="服务层停用分类", is_active=False)
-        hidden_listing = self.create_listing(
-            title="服务层隐藏商品",
-            category=inactive_category,
-            status=Listing.Status.ACTIVE,
+    def test_create_comment_for_active_listing_succeeds(self):
+        response = self.client.post(
+            reverse("api:listing_comments", kwargs={"listing_id": self.listing.id}),
+            data={"content": "请问还在吗？"},
+            format="json",
+            **self.auth_headers(self.buyer),
         )
 
-        with self.assertRaisesMessage(ValidationError, "该商品目前不能发表评论"):
-            create_comment(self.buyer, hidden_listing, "不能写入")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["content"], "请问还在吗？")
+        self.assertEqual(Comment.objects.count(), 1)
 
-        self.assertEqual(Comment.objects.count(), 0)
+    def test_create_comment_rejects_blank_and_non_interactive_listing(self):
+        reserved = self.create_listing(status=Listing.Status.RESERVED)
 
-    def test_create_reply_service_creates_second_level_reply(self):
-        parent = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="顶层留言",
+        blank_response = self.client.post(
+            reverse("api:listing_comments", kwargs={"listing_id": self.listing.id}),
+            data={"content": "   "},
+            format="json",
+            **self.auth_headers(self.buyer),
+        )
+        reserved_response = self.client.post(
+            reverse("api:listing_comments", kwargs={"listing_id": reserved.id}),
+            data={"content": "还能留言吗"},
+            format="json",
+            **self.auth_headers(self.buyer),
         )
 
-        reply = create_reply(self.seller, parent, "卖家回复")
+        self.assertEqual(blank_response.status_code, 400)
+        self.assertEqual(blank_response.json()["message"], "留言内容不能为空")
+        self.assertEqual(reserved_response.status_code, 400)
+        self.assertEqual(reserved_response.json()["message"], "该商品目前不能发表评论")
 
-        self.assertEqual(reply.listing, self.listing)
-        self.assertEqual(reply.author, self.seller)
-        self.assertEqual(reply.parent, parent)
-        self.assertEqual(reply.content, "卖家回复")
-
-    def test_create_reply_service_allows_non_seller_user(self):
-        parent = Comment.objects.create(
-            listing=self.listing,
-            author=self.seller,
-            content="卖家顶层留言",
-        )
-
-        reply = create_reply(self.buyer, parent, "买家回复")
-
-        self.assertEqual(reply.author, self.buyer)
-        self.assertEqual(reply.parent, parent)
-
-    def test_create_reply_service_rejects_guest_blank_oversized_and_nested_reply(self):
-        parent = Comment.objects.create(
+    def test_reply_requires_login_and_rejects_nested_reply(self):
+        parent = self.create_comment()
+        nested = Comment.objects.create(
             listing=self.listing,
             author=self.seller,
-            content="顶层留言",
-        )
-        reply = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
             parent=parent,
             content="二级回复",
         )
 
-        with self.assertRaisesMessage(PermissionDenied, "无权创建评论"):
-            create_reply(None, parent, "游客回复")
-        with self.assertRaisesMessage(ValidationError, "留言内容不能为空"):
-            create_reply(self.buyer, parent, "   ")
-        with self.assertRaisesMessage(ValidationError, "留言内容不能超过 1000 个字符"):
-            create_reply(self.buyer, parent, "x" * 1001)
-        with self.assertRaisesMessage(ValidationError, "不得创建多级留言"):
-            create_reply(self.buyer, reply, "三级回复")
-
-        self.assertEqual(Comment.objects.count(), 2)
-
-    def test_create_reply_service_rejects_uninteractive_listing_statuses_and_category(self):
-        statuses = [
-            Listing.Status.DRAFT,
-            Listing.Status.RESERVED,
-            Listing.Status.SOLD,
-            Listing.Status.WITHDRAWN,
-        ]
-
-        for status in statuses:
-            with self.subTest(status=status):
-                listing = self.create_listing(title=f"不可互动 {status}", status=status)
-                parent = Comment.objects.create(
-                    listing=listing,
-                    author=self.seller,
-                    content="历史留言",
-                )
-
-                with self.assertRaisesMessage(ValidationError, "该商品目前不能发表评论"):
-                    create_reply(self.buyer, parent, "不能回复")
-
-        inactive_category = Category.objects.create(name="回复停用分类", is_active=False)
-        hidden_listing = self.create_listing(
-            title="停用分类回复商品",
-            category=inactive_category,
-            status=Listing.Status.ACTIVE,
+        guest_response = self.client.post(
+            reverse("api:comment_replies", kwargs={"comment_id": parent.id}),
+            data={"content": "游客回复"},
+            format="json",
         )
-        parent = Comment.objects.create(
-            listing=hidden_listing,
-            author=self.seller,
-            content="停用分类历史留言",
+        nested_response = self.client.post(
+            reverse("api:comment_replies", kwargs={"comment_id": nested.id}),
+            data={"content": "三级回复"},
+            format="json",
+            **self.auth_headers(self.other),
         )
 
-        with self.assertRaisesMessage(ValidationError, "该商品目前不能发表评论"):
-            create_reply(self.buyer, parent, "不能回复")
+        self.assertEqual(guest_response.status_code, 401)
+        self.assertEqual(nested_response.status_code, 400)
+        self.assertEqual(nested_response.json()["message"], "不得创建多级留言")
 
-    def test_author_can_delete_own_comment(self):
-        comment = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="我要删除的留言",
+    def test_reply_to_top_level_comment_succeeds(self):
+        parent = self.create_comment()
+
+        response = self.client.post(
+            reverse("api:comment_replies", kwargs={"comment_id": parent.id}),
+            data={"content": "可以面交吗？"},
+            format="json",
+            **self.auth_headers(self.seller),
         )
-        self.client.force_login(self.buyer)
 
-        response = self.client.post(self.delete_url(comment))
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["parent_id"], parent.id)
+        self.assertEqual(Comment.objects.filter(parent=parent).count(), 1)
 
-        self.assertRedirects(response, self.detail_url())
+    def test_delete_comment_requires_author_and_supports_owner_only(self):
+        comment = self.create_comment(author=self.buyer)
+
+        other_response = self.client.delete(
+            reverse("api:comment_detail", kwargs={"comment_id": comment.id}),
+            **self.auth_headers(self.other),
+        )
+        author_response = self.client.delete(
+            reverse("api:comment_detail", kwargs={"comment_id": comment.id}),
+            **self.auth_headers(self.buyer),
+        )
+
+        self.assertEqual(other_response.status_code, 403)
+        self.assertEqual(author_response.status_code, 204)
         self.assertFalse(Comment.objects.filter(pk=comment.pk).exists())
-        messages = [str(message) for message in get_messages(response.wsgi_request)]
-        self.assertIn("留言已删除", messages)
 
-    def test_deleting_top_level_comment_cascades_its_replies_by_design(self):
-        comment = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="带回复的顶层留言",
-        )
+    def test_delete_top_level_comment_cascades_reply(self):
+        parent = self.create_comment(author=self.buyer)
         reply = Comment.objects.create(
             listing=self.listing,
             author=self.seller,
-            parent=comment,
-            content="依附于顶层留言的回复",
+            parent=parent,
+            content="回复内容",
         )
-        self.client.force_login(self.buyer)
 
-        response = self.client.post(self.delete_url(comment))
+        response = self.client.delete(
+            reverse("api:comment_detail", kwargs={"comment_id": parent.id}),
+            **self.auth_headers(self.buyer),
+        )
 
-        self.assertRedirects(response, self.detail_url())
-        self.assertFalse(Comment.objects.filter(pk=comment.pk).exists())
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Comment.objects.filter(pk=parent.pk).exists())
         self.assertFalse(Comment.objects.filter(pk=reply.pk).exists())
 
-    def test_non_author_cannot_see_or_delete_comment(self):
-        comment = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="不能被别人删除",
-        )
-        self.client.force_login(self.other_user)
-
-        detail_response = self.client.get(self.detail_url())
-        delete_response = self.client.post(self.delete_url(comment))
-
-        self.assertNotContains(detail_response, self.delete_url(comment))
-        self.assertEqual(delete_response.status_code, 403)
-        self.assertTrue(Comment.objects.filter(pk=comment.pk).exists())
-
-    def test_guest_delete_comment_requires_login(self):
-        comment = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="游客不能删",
+    def test_inactive_category_listing_comments_are_hidden(self):
+        hidden = self.create_listing(
+            category=self.inactive_category,
+            status=Listing.Status.ACTIVE,
         )
 
-        response = self.client.post(self.delete_url(comment))
-
-        self.assertRedirects(response, f"{reverse('users:login')}?next={self.delete_url(comment)}")
-        self.assertTrue(Comment.objects.filter(pk=comment.pk).exists())
-
-    def test_get_delete_does_not_delete_comment(self):
-        comment = Comment.objects.create(
-            listing=self.listing,
-            author=self.buyer,
-            content="GET 不能删",
+        response = self.client.get(
+            reverse("api:listing_comments", kwargs={"listing_id": hidden.id})
         )
-        self.client.force_login(self.buyer)
 
-        response = self.client.get(self.delete_url(comment))
-
-        self.assertEqual(response.status_code, 405)
-        self.assertTrue(Comment.objects.filter(pk=comment.pk).exists())
+        self.assertEqual(response.status_code, 404)

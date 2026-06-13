@@ -18,8 +18,8 @@ class EmailBackend(ModelBackend):
 
         Args:
             request: 当前请求对象，保持与 Django 认证后端接口一致。
-            username: 登录表单中的账号输入；在本后端中按邮箱处理。
-            password: 登录表单中的明文密码。
+            username: 登录账号输入；在本后端中按邮箱处理。
+            password: 明文密码。
             **kwargs: Django 认证系统传入的额外参数。
 
         Returns:

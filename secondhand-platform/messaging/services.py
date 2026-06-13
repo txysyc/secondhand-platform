@@ -78,7 +78,7 @@ def serialize_private_message(message):
                 "bio": getattr(profile, "bio", ""),
             },
         },
-        # 保留扁平字段，兼容旧模板 WebSocket 追加消息逻辑。
+        # 保留扁平字段，供 WebSocket 与 HTTP API 使用同一份消息载荷。
         "sender_id": sender.pk,
         "sender_display_name": sender_display_name,
         "content": message.content,

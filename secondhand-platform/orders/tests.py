@@ -4,11 +4,13 @@ from unittest.mock import patch
 
 from django.contrib import admin
 from django.contrib.auth import get_user_model
-from django.core.exceptions import PermissionDenied, ValidationError
 from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
+from rest_framework.test import APIClient, APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from catalog.models import Category, Listing
 from orders.admin import OrderAdmin
@@ -278,565 +280,6 @@ class CreateOrderServiceTest(TestCase):
 
         self.assertEqual(order.buyer_display_name, "买家昵称")
         self.assertEqual(order.seller_display_name, "卖家昵称")
-
-
-class PurchaseConfirmViewTest(TestCase):
-    """购买确认视图测试。"""
-
-    @classmethod
-    def setUpTestData(cls):
-        cls.buyer = User.objects.create_user(
-            username="买家A", email="buyer@test.com", password="testpass123"
-        )
-        cls.seller = User.objects.create_user(
-            username="卖家B", email="seller@test.com", password="testpass123"
-        )
-        cls.category = Category.objects.create(name="数码产品")
-        cls.listing = Listing.objects.create(
-            owner=cls.seller,
-            category=cls.category,
-            title="可购买商品",
-            item_type=Listing.ItemType.PHYSICAL,
-            status=Listing.Status.ACTIVE,
-            price=Decimal("88.00"),
-            description="测试描述",
-        )
-
-    def test_guest_redirected_to_login(self):
-        url = reverse("catalog:listing_purchase", kwargs={"pk": self.listing.pk})
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("/accounts/login/", response.url)
-
-    def test_get_shows_purchase_confirm_page(self):
-        self.client.login(username="买家A", password="testpass123")
-        url = reverse("catalog:listing_purchase", kwargs={"pk": self.listing.pk})
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "可购买商品")
-        self.assertContains(response, "88.00")
-        self.assertContains(response, "模拟支付，不会真实扣款")
-
-    def test_post_creates_order_and_redirects(self):
-        self.client.login(username="买家A", password="testpass123")
-        url = reverse("catalog:listing_purchase", kwargs={"pk": self.listing.pk})
-        before_count = Order.objects.count()
-        response = self.client.post(url)
-
-        self.assertEqual(Order.objects.count(), before_count + 1)
-        order = Order.objects.get(listing=self.listing, buyer=self.buyer)
-        self.assertEqual(order.buyer, self.buyer)
-        self.assertEqual(order.seller, self.seller)
-        self.assertRedirects(
-            response,
-            reverse("orders:order_detail", kwargs={"pk": order.pk}),
-        )
-
-    def test_post_self_purchase_redirects_with_error(self):
-        self.client.login(username="卖家B", password="testpass123")
-        url = reverse("catalog:listing_purchase", kwargs={"pk": self.listing.pk})
-        before_count = Order.objects.count()
-        response = self.client.post(url)
-
-        self.assertEqual(Order.objects.count(), before_count)
-        self.assertRedirects(
-            response,
-            reverse("catalog:listing_detail", kwargs={"pk": self.listing.pk}),
-        )
-
-    def test_post_non_active_listing_redirects_with_error(self):
-        self.client.login(username="买家A", password="testpass123")
-        withdrawn_listing = Listing.objects.create(
-            owner=self.seller,
-            category=self.category,
-            title="已下架商品",
-            item_type=Listing.ItemType.PHYSICAL,
-            status=Listing.Status.WITHDRAWN,
-            price=Decimal("50.00"),
-            description="测试",
-        )
-        url = reverse("catalog:listing_purchase", kwargs={"pk": withdrawn_listing.pk})
-        before_count = Order.objects.count()
-        response = self.client.post(url)
-
-        self.assertEqual(Order.objects.count(), before_count)
-        self.assertRedirects(
-            response,
-            reverse("catalog:listing_detail", kwargs={"pk": withdrawn_listing.pk}),
-            fetch_redirect_response=False,
-        )
-
-
-class OrderDetailViewTest(TestCase):
-    """订单详情视图测试。"""
-
-    @classmethod
-    def setUpTestData(cls):
-        cls.buyer = User.objects.create_user(
-            username="买家A", email="buyer@test.com", password="testpass123"
-        )
-        cls.seller = User.objects.create_user(
-            username="卖家B", email="seller@test.com", password="testpass123"
-        )
-        cls.other_user = User.objects.create_user(
-            username="路人C", email="other@test.com", password="testpass123"
-        )
-        cls.category = Category.objects.create(name="数码产品")
-        cls.listing = Listing.objects.create(
-            owner=cls.seller,
-            category=cls.category,
-            title="测试商品",
-            item_type=Listing.ItemType.PHYSICAL,
-            status=Listing.Status.ACTIVE,
-            price=Decimal("120.00"),
-            description="测试描述",
-        )
-        cls.order = Order.objects.create(
-            buyer=cls.buyer,
-            seller=cls.seller,
-            listing=cls.listing,
-            buyer_display_name="买家A",
-            seller_display_name="卖家B",
-            listing_title_snapshot="测试商品",
-            order_price=Decimal("120.00"),
-            payment_deadline=timezone.now() + timedelta(minutes=15),
-        )
-
-    def test_buyer_can_access_order_detail(self):
-        self.client.login(username="买家A", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "测试商品")
-        self.assertContains(response, "120.00")
-
-    def test_seller_can_access_order_detail(self):
-        self.client.login(username="卖家B", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "测试商品")
-
-    def test_unrelated_user_gets_404(self):
-        self.client.login(username="路人C", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 404)
-
-    def test_guest_redirected_to_login(self):
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("/accounts/login/", response.url)
-
-    def test_nonexistent_order_returns_404(self):
-        self.client.login(username="买家A", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": 99999})
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 404)
-
-    def test_pending_payment_shows_mock_payment_button(self):
-        self.client.login(username="买家A", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertContains(response, "模拟支付")
-        self.assertContains(response, "模拟支付，不会真实扣款")
-
-    def test_expired_pending_order_shows_server_side_expiry(self):
-        self.order.payment_deadline = timezone.now() - timedelta(minutes=1)
-        self.order.save()
-        self.client.login(username="买家A", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertContains(response, "订单已超时")
-        self.assertNotContains(response, "确认模拟支付")
-
-    def test_expired_pending_order_tells_seller_not_to_wait_for_payment(self):
-        self.order.payment_deadline = timezone.now() - timedelta(minutes=1)
-        self.order.save()
-        self.client.login(username="卖家B", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertContains(response, "支付已超时")
-        self.assertContains(response, "不需要卖家处理")
-        self.assertNotContains(response, "等待买家支付")
-
-    def test_cancelled_order_detail_says_payment_cannot_continue(self):
-        self.order.status = Order.OrderStatus.CANCELLED
-        self.order.cancelled_at = timezone.now()
-        self.order.save()
-        self.client.login(username="买家A", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertContains(response, "该订单已取消，不可继续支付")
-
-    def test_order_detail_has_long_title_wrapping_style(self):
-        self.client.login(username="买家A", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertContains(response, ".order-layout h1")
-        self.assertContains(response, "overflow-wrap: anywhere")
-
-    def test_order_detail_shows_snapshot_after_listing_deleted(self):
-        temp_listing = Listing.objects.create(
-            owner=self.seller,
-            category=self.category,
-            title="即将删除的商品",
-            item_type=Listing.ItemType.VIRTUAL,
-            status=Listing.Status.ACTIVE,
-            price=Decimal("30.00"),
-            description="测试",
-        )
-        order = Order.objects.create(
-            buyer=self.buyer,
-            seller=self.seller,
-            listing=temp_listing,
-            buyer_display_name="买家A",
-            seller_display_name="卖家B",
-            listing_title_snapshot="即将删除的商品",
-            order_price=Decimal("30.00"),
-            payment_deadline=timezone.now() + timedelta(minutes=15),
-        )
-        temp_listing.delete()
-        order.refresh_from_db()
-        self.assertIsNone(order.listing)
-
-        self.client.login(username="买家A", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": order.pk})
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "即将删除的商品")
-
-    def test_buyer_detail_shows_buyer_view_and_back_link(self):
-        self.client.login(username="买家A", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertContains(response, "买家视角")
-        self.assertContains(response, reverse("orders:buyer_order_list"))
-
-    def test_seller_detail_shows_seller_view_and_back_link(self):
-        self.client.login(username="卖家B", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertContains(response, "卖家视角")
-        self.assertContains(response, reverse("orders:seller_order_list"))
-
-    def test_awaiting_shipment_tells_seller_next_step(self):
-        self.order.status = Order.OrderStatus.AWAITING_SHIPMENT
-        self.order.paid_at = timezone.now()
-        self.order.listing.status = Listing.Status.RESERVED
-        self.order.listing.save()
-        self.order.save()
-        self.client.login(username="卖家B", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertContains(response, "需要卖家继续处理")
-        self.assertContains(response, "确认发货")
-        self.assertContains(
-            response,
-            reverse("orders:confirm_delivery", kwargs={"pk": self.order.pk}),
-        )
-
-    def test_virtual_awaiting_shipment_tells_seller_to_confirm_delivery(self):
-        virtual_listing = Listing.objects.create(
-            owner=self.seller,
-            category=self.category,
-            title="虚拟资料",
-            item_type=Listing.ItemType.VIRTUAL,
-            status=Listing.Status.RESERVED,
-            price=Decimal("66.00"),
-            description="测试描述",
-        )
-        order = Order.objects.create(
-            buyer=self.buyer,
-            seller=self.seller,
-            listing=virtual_listing,
-            buyer_display_name="买家A",
-            seller_display_name="卖家B",
-            listing_title_snapshot="虚拟资料",
-            order_price=Decimal("66.00"),
-            status=Order.OrderStatus.AWAITING_SHIPMENT,
-            payment_deadline=timezone.now() + timedelta(minutes=15),
-            paid_at=timezone.now(),
-        )
-        self.client.login(username="卖家B", password="testpass123")
-        response = self.client.get(reverse("orders:order_detail", kwargs={"pk": order.pk}))
-        self.assertContains(response, "确认交付")
-        self.assertNotContains(response, "确认发货或交付")
-
-    def test_awaiting_shipment_buyer_cannot_see_confirm_delivery_action(self):
-        self.order.status = Order.OrderStatus.AWAITING_SHIPMENT
-        self.order.paid_at = timezone.now()
-        self.order.save()
-        self.client.login(username="买家A", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertNotContains(response, reverse("orders:confirm_delivery", kwargs={"pk": self.order.pk}))
-
-    def test_awaiting_receipt_tells_seller_waiting_for_buyer(self):
-        self.order.status = Order.OrderStatus.AWAITING_RECEIPT
-        self.order.shipped_at = timezone.now()
-        self.order.save()
-        self.client.login(username="卖家B", password="testpass123")
-        url = reverse("orders:order_detail", kwargs={"pk": self.order.pk})
-        response = self.client.get(url)
-        self.assertContains(response, "等待买家确认收货")
-
-    def test_buyer_detail_shows_confirm_receipt_for_awaiting_receipt_order(self):
-        self.order.status = Order.OrderStatus.AWAITING_RECEIPT
-        self.order.shipped_at = timezone.now()
-        self.order.logistics_signed_due_at = timezone.now() + timedelta(days=2)
-        self.order.save()
-        self.client.login(username="买家A", password="testpass123")
-        response = self.client.get(reverse("orders:order_detail", kwargs={"pk": self.order.pk}))
-        self.assertContains(response, "确认收货")
-        self.assertContains(response, "模拟物流预计签收时间")
-        self.assertContains(
-            response,
-            reverse("orders:order_confirm_receipt", kwargs={"pk": self.order.pk}),
-        )
-
-    def test_buyer_detail_shows_confirm_receipt_for_signed_order(self):
-        self.order.status = Order.OrderStatus.SIGNED
-        self.order.shipped_at = timezone.now() - timedelta(days=2)
-        self.order.signed_at = timezone.now()
-        self.order.save()
-        self.client.login(username="买家A", password="testpass123")
-        response = self.client.get(reverse("orders:order_detail", kwargs={"pk": self.order.pk}))
-        self.assertContains(response, "已签收")
-        self.assertContains(response, "签收后 3 天未确认")
-        self.assertContains(response, "确认收货")
-
-    def test_seller_detail_does_not_show_confirm_receipt_form(self):
-        self.order.status = Order.OrderStatus.AWAITING_RECEIPT
-        self.order.shipped_at = timezone.now()
-        self.order.save()
-        self.client.login(username="卖家B", password="testpass123")
-        response = self.client.get(reverse("orders:order_detail", kwargs={"pk": self.order.pk}))
-        self.assertContains(response, "等待买家确认收货")
-        self.assertNotContains(response, reverse("orders:order_confirm_receipt", kwargs={"pk": self.order.pk}))
-
-    def test_order_detail_has_no_story_placeholder_copy(self):
-        self.order.status = Order.OrderStatus.AWAITING_RECEIPT
-        self.order.shipped_at = timezone.now()
-        self.order.save()
-        self.client.login(username="买家A", password="testpass123")
-        response = self.client.get(reverse("orders:order_detail", kwargs={"pk": self.order.pk}))
-        self.assertNotContains(response, "Story 5.1")
-        self.assertNotContains(response, "Story 5.2")
-        self.assertNotContains(response, "后续")
-
-
-class OrderListViewTest(TestCase):
-    """买家和卖家的订单列表视图测试。"""
-
-    @classmethod
-    def setUpTestData(cls):
-        cls.buyer = User.objects.create_user(
-            username="买家A", email="buyer-list@test.com", password="testpass123"
-        )
-        cls.second_buyer = User.objects.create_user(
-            username="买家B", email="buyer2-list@test.com", password="testpass123"
-        )
-        cls.seller = User.objects.create_user(
-            username="卖家A", email="seller-list@test.com", password="testpass123"
-        )
-        cls.other_seller = User.objects.create_user(
-            username="卖家B", email="seller2-list@test.com", password="testpass123"
-        )
-        cls.category = Category.objects.create(name="订单列表分类")
-        cls.seller_listing = Listing.objects.create(
-            owner=cls.seller,
-            category=cls.category,
-            title="卖家A商品",
-            item_type=Listing.ItemType.PHYSICAL,
-            status=Listing.Status.ACTIVE,
-            price=Decimal("120.00"),
-            description="测试描述",
-        )
-        cls.other_listing = Listing.objects.create(
-            owner=cls.other_seller,
-            category=cls.category,
-            title="其他卖家商品",
-            item_type=Listing.ItemType.VIRTUAL,
-            status=Listing.Status.ACTIVE,
-            price=Decimal("88.00"),
-            description="测试描述",
-        )
-        cls.buyer_order = Order.objects.create(
-            buyer=cls.buyer,
-            seller=cls.seller,
-            listing=cls.seller_listing,
-            buyer_display_name="买家A",
-            seller_display_name="卖家A",
-            listing_title_snapshot="买家订单商品",
-            order_price=Decimal("120.00"),
-            status=Order.OrderStatus.PENDING_PAYMENT,
-            payment_deadline=timezone.now() + timedelta(minutes=15),
-        )
-        cls.seller_action_order = Order.objects.create(
-            buyer=cls.second_buyer,
-            seller=cls.seller,
-            listing=cls.seller_listing,
-            buyer_display_name="买家B",
-            seller_display_name="卖家A",
-            listing_title_snapshot="卖家待处理商品",
-            order_price=Decimal("130.00"),
-            status=Order.OrderStatus.AWAITING_SHIPMENT,
-            payment_deadline=timezone.now() + timedelta(minutes=15),
-            paid_at=timezone.now(),
-        )
-        cls.other_buyer_order = Order.objects.create(
-            buyer=cls.second_buyer,
-            seller=cls.other_seller,
-            listing=cls.other_listing,
-            buyer_display_name="买家B",
-            seller_display_name="卖家B",
-            listing_title_snapshot="其他买家订单商品",
-            order_price=Decimal("88.00"),
-            status=Order.OrderStatus.COMPLETED,
-            payment_deadline=timezone.now() + timedelta(minutes=15),
-            paid_at=timezone.now(),
-            completed_at=timezone.now(),
-        )
-
-    def test_guest_redirected_from_buyer_order_list(self):
-        response = self.client.get(reverse("orders:buyer_order_list"))
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("/accounts/login/", response.url)
-
-    def test_guest_redirected_from_seller_order_list(self):
-        response = self.client.get(reverse("orders:seller_order_list"))
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("/accounts/login/", response.url)
-
-    def test_buyer_order_list_url_names(self):
-        self.assertEqual(reverse("orders:buyer_order_list"), "/orders/buying/")
-        self.assertEqual(reverse("orders:seller_order_list"), "/orders/selling/")
-
-    def test_buyer_order_list_shows_only_current_buyer_orders(self):
-        self.client.login(username="买家A", password="testpass123")
-        response = self.client.get(reverse("orders:buyer_order_list"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "买家订单商品")
-        self.assertContains(response, "卖家A")
-        self.assertContains(response, "120.00")
-        self.assertContains(response, "待支付")
-        self.assertContains(response, "支付截止")
-        self.assertNotContains(response, "卖家待处理商品")
-        self.assertNotContains(response, "其他买家订单商品")
-
-    def test_buyer_order_list_marks_expired_pending_order_unpayable(self):
-        self.buyer_order.payment_deadline = timezone.now() - timedelta(minutes=1)
-        self.buyer_order.save()
-        self.client.login(username="买家A", password="testpass123")
-        response = self.client.get(reverse("orders:buyer_order_list"))
-        self.assertContains(response, "订单已超时，不可继续支付")
-        self.assertNotContains(response, "在订单详情页完成模拟支付")
-
-    def test_seller_order_list_shows_only_current_seller_orders(self):
-        self.client.login(username="卖家A", password="testpass123")
-        response = self.client.get(reverse("orders:seller_order_list"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "买家订单商品")
-        self.assertContains(response, "卖家待处理商品")
-        self.assertContains(response, "需要卖家继续处理")
-        self.assertContains(response, "进入详情页确认发货或交付")
-        self.assertContains(response, "买家B")
-        self.assertNotContains(response, "其他买家订单商品")
-        self.assertNotContains(response, "Story 5.1")
-
-    def test_seller_order_list_marks_expired_pending_order_as_no_action_needed(self):
-        self.buyer_order.payment_deadline = timezone.now() - timedelta(minutes=1)
-        self.buyer_order.save()
-        self.client.login(username="卖家A", password="testpass123")
-        response = self.client.get(reverse("orders:seller_order_list"))
-        self.assertContains(response, "支付已超时，等待系统取消")
-        self.assertContains(response, "不需要卖家处理")
-
-    def test_order_lists_link_to_order_detail(self):
-        self.client.login(username="买家A", password="testpass123")
-        response = self.client.get(reverse("orders:buyer_order_list"))
-        detail_url = reverse("orders:order_detail", kwargs={"pk": self.buyer_order.pk})
-        self.assertContains(response, detail_url)
-
-    def test_order_list_shows_snapshot_after_listing_deleted(self):
-        order = Order.objects.create(
-            buyer=self.buyer,
-            seller=self.other_seller,
-            listing=self.other_listing,
-            buyer_display_name="买家A",
-            seller_display_name="卖家B",
-            listing_title_snapshot="快照商品标题",
-            order_price=Decimal("66.00"),
-            status=Order.OrderStatus.CANCELLED,
-            payment_deadline=timezone.now() + timedelta(minutes=15),
-            cancelled_at=timezone.now(),
-        )
-        self.other_listing.delete()
-        order.refresh_from_db()
-        self.assertIsNone(order.listing)
-
-        self.client.login(username="买家A", password="testpass123")
-        response = self.client.get(reverse("orders:buyer_order_list"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "快照商品标题")
-        self.assertContains(response, "66.00")
-        self.assertContains(response, "已取消")
-
-    def test_nav_contains_order_list_links_for_authenticated_user(self):
-        self.client.login(username="买家A", password="testpass123")
-        response = self.client.get(reverse("catalog:listing_list"))
-        self.assertContains(response, reverse("orders:buyer_order_list"))
-        self.assertContains(response, reverse("orders:seller_order_list"))
-
-    def test_selectors_return_none_for_anonymous_user(self):
-        anonymous = AnonymousUser()
-        self.assertEqual(get_buyer_orders(anonymous).count(), 0)
-        self.assertEqual(get_seller_orders(anonymous).count(), 0)
-
-    def test_buyer_order_list_shows_awaiting_receipt_guidance(self):
-        self.buyer_order.status = Order.OrderStatus.AWAITING_RECEIPT
-        self.buyer_order.shipped_at = timezone.now()
-        self.buyer_order.logistics_signed_due_at = timezone.now() + timedelta(days=2)
-        self.buyer_order.save()
-        self.client.login(username="买家A", password="testpass123")
-        response = self.client.get(reverse("orders:buyer_order_list"))
-        self.assertContains(response, "运输中，等待模拟物流签收")
-        self.assertNotContains(response, "Story 5.2")
-
-    def test_buyer_order_list_shows_signed_guidance(self):
-        self.buyer_order.status = Order.OrderStatus.SIGNED
-        self.buyer_order.shipped_at = timezone.now() - timedelta(days=2)
-        self.buyer_order.signed_at = timezone.now()
-        self.buyer_order.save()
-        self.client.login(username="买家A", password="testpass123")
-        response = self.client.get(reverse("orders:buyer_order_list"))
-        self.assertContains(response, "已签收，进入详情页确认收货")
-        self.assertContains(response, "签收后 3 天将自动确认")
-
-    def test_seller_order_list_shows_awaiting_receipt_guidance(self):
-        self.seller_action_order.status = Order.OrderStatus.AWAITING_RECEIPT
-        self.seller_action_order.shipped_at = timezone.now()
-        self.seller_action_order.logistics_signed_due_at = timezone.now() + timedelta(days=2)
-        self.seller_action_order.save()
-        self.client.login(username="卖家A", password="testpass123")
-        response = self.client.get(reverse("orders:seller_order_list"))
-        self.assertContains(response, "已发货，运输中")
-        self.assertContains(response, "等待模拟物流签收")
-        self.assertNotContains(response, "Story 5.2")
-
-    def test_order_lists_have_no_story_placeholder_copy(self):
-        self.client.login(username="买家A", password="testpass123")
-        buyer_response = self.client.get(reverse("orders:buyer_order_list"))
-        self.assertNotContains(buyer_response, "Story 5.1")
-        self.assertNotContains(buyer_response, "Story 5.2")
-        self.client.logout()
-
-        self.client.login(username="卖家A", password="testpass123")
-        seller_response = self.client.get(reverse("orders:seller_order_list"))
-        self.assertNotContains(seller_response, "Story 5.1")
-        self.assertNotContains(seller_response, "Story 5.2")
 
 
 class PayOrderServiceTest(TransactionTestCase):
@@ -1438,269 +881,294 @@ class CancelExpiredOrdersTest(TestCase):
         self.assertEqual(self.listing.status, Listing.Status.ACTIVE)
 
 
-class OrderPayViewTest(TestCase):
-    """OrderPayView 视图层测试。"""
 
-    @classmethod
-    def setUpTestData(cls):
-        cls.buyer = User.objects.create_user(
-            username="买家A", email="buyer@test.com", password="testpass123"
+
+class OrdersApiTests(APITestCase):
+    """P5 订单 API 测试。"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.buyer = User.objects.create_user(
+            username="obuyer",
+            email="order_buyer@example.com",
+            password="StrongPass123",
         )
-        cls.seller = User.objects.create_user(
-            username="卖家B", email="seller@test.com", password="testpass123"
+        self.seller = User.objects.create_user(
+            username="oseller",
+            email="order_seller@example.com",
+            password="StrongPass123",
         )
-        cls.other_user = User.objects.create_user(
-            username="路人C", email="other@test.com", password="testpass123"
+        self.other = User.objects.create_user(
+            username="oother",
+            email="order_other@example.com",
+            password="StrongPass123",
         )
-        cls.category = Category.objects.create(name="数码产品")
-        cls.listing = Listing.objects.create(
-            owner=cls.seller,
-            category=cls.category,
-            title="测试商品",
-            item_type=Listing.ItemType.PHYSICAL,
-            status=Listing.Status.ACTIVE,
-            price=Decimal("99.00"),
-            description="测试描述",
+        self.category = Category.objects.create(name="订单分类")
+        self.listing = self.create_listing()
+
+    def auth_headers(self, user):
+        token = RefreshToken.for_user(user).access_token
+        return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+    def create_listing(self, **overrides):
+        data = {
+            "owner": self.seller,
+            "category": self.category,
+            "title": "订单商品",
+            "item_type": Listing.ItemType.PHYSICAL,
+            "status": Listing.Status.ACTIVE,
+            "price": Decimal("199.00"),
+            "condition": Listing.Condition.GOOD,
+            "description": "订单商品描述",
+            "delivery_notes": "面交",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "published_at": timezone.now(),
+        }
+        data.update(overrides)
+        return Listing.objects.create(**data)
+
+    def create_order(self, **overrides):
+        data = {
+            "buyer": self.buyer,
+            "seller": self.seller,
+            "listing": self.listing,
+            "buyer_display_name": self.buyer.username,
+            "seller_display_name": self.seller.username,
+            "listing_title_snapshot": self.listing.title,
+            "order_price": self.listing.price,
+            "status": Order.OrderStatus.PENDING_PAYMENT,
+            "payment_deadline": timezone.now() + timedelta(minutes=15),
+        }
+        data.update(overrides)
+        return Order.objects.create(**data)
+
+    def test_create_order_requires_login(self):
+        response = self.client.post(
+            reverse("api:orders_create", kwargs={"listing_id": self.listing.id}),
+            format="json",
         )
 
-    def _create_pending_order(self):
-        return Order.objects.create(
-            buyer=self.buyer,
-            seller=self.seller,
-            listing=self.listing,
-            buyer_display_name="买家A",
-            seller_display_name="卖家B",
-            listing_title_snapshot="测试商品",
-            order_price=Decimal("99.00"),
-            status=Order.OrderStatus.PENDING_PAYMENT,
-            payment_deadline=timezone.now() + timedelta(minutes=15),
+        self.assertEqual(response.status_code, 401)
+
+    def test_buyer_can_create_order_for_active_listing(self):
+        response = self.client.post(
+            reverse("api:orders_create", kwargs={"listing_id": self.listing.id}),
+            format="json",
+            **self.auth_headers(self.buyer),
         )
 
-    def test_get_not_allowed(self):
-        self.client.login(username="买家A", password="testpass123")
-        order = self._create_pending_order()
-        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 405)
-
-    def test_guest_redirected_to_login(self):
-        order = self._create_pending_order()
-        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("/accounts/login/", response.url)
-
-    def test_buyer_can_pay_via_post(self):
-        self.client.login(username="买家A", password="testpass123")
-        order = self._create_pending_order()
-        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
-        response = self.client.post(url)
-        self.assertRedirects(
-            response,
-            reverse("orders:order_detail", kwargs={"pk": order.pk}),
-            fetch_redirect_response=False,
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["status"], Order.OrderStatus.PENDING_PAYMENT)
+        self.assertEqual(body["viewer_role"], "buyer")
+        self.assertEqual(body["available_actions"], ["pay"])
+        self.assertTrue(
+            Order.objects.filter(
+                pk=body["id"],
+                buyer=self.buyer,
+                seller=self.seller,
+                listing=self.listing,
+            ).exists()
         )
-        order.refresh_from_db()
-        self.assertEqual(order.status, Order.OrderStatus.AWAITING_SHIPMENT)
 
-    def test_seller_cannot_pay(self):
-        self.client.login(username="卖家B", password="testpass123")
-        order = self._create_pending_order()
-        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
-        response = self.client.post(url)
-        self.assertRedirects(
-            response,
-            reverse("orders:order_detail", kwargs={"pk": order.pk}),
-            fetch_redirect_response=False,
+    def test_create_order_rejects_self_purchase_and_non_active_listing(self):
+        self_purchase_response = self.client.post(
+            reverse("api:orders_create", kwargs={"listing_id": self.listing.id}),
+            format="json",
+            **self.auth_headers(self.seller),
         )
-        order.refresh_from_db()
-        self.assertEqual(order.status, Order.OrderStatus.PENDING_PAYMENT)
-
-    def test_other_user_cannot_pay(self):
-        self.client.login(username="路人C", password="testpass123")
-        order = self._create_pending_order()
-        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
-        response = self.client.post(url)
-        self.assertRedirects(
-            response,
-            reverse("orders:order_detail", kwargs={"pk": order.pk}),
-            fetch_redirect_response=False,
+        withdrawn = self.create_listing(status=Listing.Status.WITHDRAWN)
+        withdrawn_response = self.client.post(
+            reverse("api:orders_create", kwargs={"listing_id": withdrawn.id}),
+            format="json",
+            **self.auth_headers(self.buyer),
         )
-        order.refresh_from_db()
-        self.assertEqual(order.status, Order.OrderStatus.PENDING_PAYMENT)
 
-    def test_expired_order_shows_error_message(self):
-        self.client.login(username="买家A", password="testpass123")
-        order = self._create_pending_order()
-        order.payment_deadline = timezone.now() - timedelta(minutes=1)
-        order.save()
-        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
-        response = self.client.post(url, follow=True)
-        self.assertContains(response, "超时")
+        self.assertEqual(self_purchase_response.status_code, 403)
+        self.assertEqual(self_purchase_response.json()["message"], "用户不能购买自己发布的商品")
+        self.assertEqual(withdrawn_response.status_code, 400)
+        self.assertEqual(withdrawn_response.json()["message"], "该商品不能购买")
 
-    def test_success_shows_success_message(self):
-        self.client.login(username="买家A", password="testpass123")
-        order = self._create_pending_order()
-        url = reverse("orders:order_pay", kwargs={"pk": order.pk})
-        response = self.client.post(url, follow=True)
-        self.assertContains(response, "完成支付")
-
-    def test_nonexistent_order_returns_404(self):
-        self.client.login(username="买家A", password="testpass123")
-        url = reverse("orders:order_pay", kwargs={"pk": 99999})
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, 404)
-
-
-class OrderConfirmDeliveryViewTest(TestCase):
-    """卖家确认交付视图测试。"""
-
-    @classmethod
-    def setUpTestData(cls):
-        cls.buyer = User.objects.create_user(
-            username="交付视图买家", email="delivery-view-buyer@test.com", password="testpass123"
+    def test_buyer_and_seller_lists_only_return_related_orders(self):
+        buyer_order = self.create_order()
+        seller_order = self.create_order(
+            buyer=self.other,
+            buyer_display_name=self.other.username,
         )
-        cls.seller = User.objects.create_user(
-            username="交付视图卖家", email="delivery-view-seller@test.com", password="testpass123"
+        unrelated_seller = User.objects.create_user(
+            username="other_sell",
+            email="unrelated_seller@example.com",
+            password="StrongPass123",
         )
-        cls.other_user = User.objects.create_user(
-            username="交付视图路人", email="delivery-view-other@test.com", password="testpass123"
+        unrelated_listing = self.create_listing(owner=unrelated_seller)
+        self.create_order(
+            buyer=self.other,
+            seller=unrelated_seller,
+            listing=unrelated_listing,
+            seller_display_name=unrelated_seller.username,
         )
-        cls.category = Category.objects.create(name="交付视图分类")
 
-    def _create_order(self):
-        listing = Listing.objects.create(
-            owner=self.seller,
-            category=self.category,
-            title="交付视图商品",
-            item_type=Listing.ItemType.PHYSICAL,
-            status=Listing.Status.RESERVED,
-            price=Decimal("99.00"),
-            description="测试描述",
+        buyer_response = self.client.get(
+            reverse("api:orders_buyer"),
+            **self.auth_headers(self.buyer),
         )
-        return Order.objects.create(
-            buyer=self.buyer,
-            seller=self.seller,
-            listing=listing,
-            buyer_display_name=self.buyer.username,
-            seller_display_name=self.seller.username,
-            listing_title_snapshot=listing.title,
-            order_price=listing.price,
+        seller_response = self.client.get(
+            reverse("api:orders_seller"),
+            **self.auth_headers(self.seller),
+        )
+
+        self.assertEqual(buyer_response.status_code, 200)
+        self.assertEqual(
+            [item["id"] for item in buyer_response.json()["results"]],
+            [buyer_order.id],
+        )
+        self.assertEqual(seller_response.status_code, 200)
+        self.assertEqual(
+            sorted(item["id"] for item in seller_response.json()["results"]),
+            sorted([buyer_order.id, seller_order.id]),
+        )
+
+    def test_order_detail_requires_participant_and_exposes_display_fields(self):
+        order = self.create_order()
+
+        other_response = self.client.get(
+            reverse("api:orders_detail", kwargs={"pk": order.id}),
+            **self.auth_headers(self.other),
+        )
+        buyer_response = self.client.get(
+            reverse("api:orders_detail", kwargs={"pk": order.id}),
+            **self.auth_headers(self.buyer),
+        )
+
+        self.assertEqual(other_response.status_code, 403)
+        self.assertEqual(buyer_response.status_code, 200)
+        body = buyer_response.json()
+        self.assertEqual(body["viewer_role"], "buyer")
+        self.assertFalse(body["is_expired"])
+        self.assertEqual(body["available_actions"], ["pay"])
+        self.assertEqual(body["listing_title_snapshot"], "订单商品")
+
+    def test_expired_order_detail_hides_pay_action(self):
+        order = self.create_order(payment_deadline=timezone.now() - timedelta(minutes=1))
+
+        response = self.client.get(
+            reverse("api:orders_detail", kwargs={"pk": order.id}),
+            **self.auth_headers(self.buyer),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["is_expired"])
+        self.assertEqual(response.json()["available_actions"], [])
+
+    def test_buyer_can_pay_and_repeat_or_expired_payment_fail(self):
+        order = self.create_order()
+
+        paid_response = self.client.post(
+            reverse("api:orders_pay", kwargs={"pk": order.id}),
+            **self.auth_headers(self.buyer),
+        )
+        repeat_response = self.client.post(
+            reverse("api:orders_pay", kwargs={"pk": order.id}),
+            **self.auth_headers(self.buyer),
+        )
+        expired_listing = self.create_listing(title="过期支付商品")
+        expired_order = self.create_order(
+            listing=expired_listing,
+            listing_title_snapshot=expired_listing.title,
+            payment_deadline=timezone.now() - timedelta(minutes=1),
+        )
+        expired_response = self.client.post(
+            reverse("api:orders_pay", kwargs={"pk": expired_order.id}),
+            **self.auth_headers(self.buyer),
+        )
+
+        self.assertEqual(paid_response.status_code, 200)
+        self.assertEqual(paid_response.json()["status"], Order.OrderStatus.AWAITING_SHIPMENT)
+        self.assertEqual(paid_response.json()["available_actions"], [])
+        self.assertEqual(repeat_response.status_code, 400)
+        self.assertEqual(repeat_response.json()["message"], "该订单已支付或已取消，请勿重复购买")
+        self.assertEqual(expired_response.status_code, 400)
+        self.assertEqual(expired_response.json()["message"], "订单已超时，系统已自动取消")
+
+    def test_seller_can_confirm_delivery_once(self):
+        order = self.create_order(
             status=Order.OrderStatus.AWAITING_SHIPMENT,
-            payment_deadline=timezone.now() + timedelta(minutes=15),
             paid_at=timezone.now(),
         )
+        self.listing.status = Listing.Status.RESERVED
+        self.listing.save(update_fields=["status"])
 
-    def test_get_not_allowed(self):
-        order = self._create_order()
-        self.client.login(username="交付视图卖家", password="testpass123")
-        response = self.client.get(reverse("orders:confirm_delivery", kwargs={"pk": order.pk}))
-        self.assertEqual(response.status_code, 405)
-
-    def test_guest_redirected_to_login(self):
-        order = self._create_order()
-        response = self.client.post(reverse("orders:confirm_delivery", kwargs={"pk": order.pk}))
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("/accounts/login/", response.url)
-
-    def test_seller_can_confirm_delivery_via_post(self):
-        order = self._create_order()
-        self.client.login(username="交付视图卖家", password="testpass123")
-        response = self.client.post(reverse("orders:confirm_delivery", kwargs={"pk": order.pk}), follow=True)
-        order.refresh_from_db()
-        self.assertRedirects(
-            response,
-            reverse("orders:order_detail", kwargs={"pk": order.pk}),
-            fetch_redirect_response=False,
+        response = self.client.post(
+            reverse("api:orders_confirm_delivery", kwargs={"pk": order.id}),
+            **self.auth_headers(self.seller),
         )
-        self.assertEqual(order.status, Order.OrderStatus.AWAITING_RECEIPT)
-        self.assertContains(response, "已确认发货")
-
-    def test_buyer_or_other_user_cannot_confirm_delivery(self):
-        for username in ["交付视图买家", "交付视图路人"]:
-            order = self._create_order()
-            self.client.login(username=username, password="testpass123")
-            response = self.client.post(reverse("orders:confirm_delivery", kwargs={"pk": order.pk}))
-            order.refresh_from_db()
-            self.assertIn(response.status_code, [302, 404])
-            self.assertEqual(order.status, Order.OrderStatus.AWAITING_SHIPMENT)
-            self.client.logout()
-
-
-class OrderConfirmReceiptViewTest(TestCase):
-    """买家确认收货视图测试。"""
-
-    @classmethod
-    def setUpTestData(cls):
-        cls.buyer = User.objects.create_user(
-            username="收货视图买家", email="receipt-view-buyer@test.com", password="testpass123"
+        repeat_response = self.client.post(
+            reverse("api:orders_confirm_delivery", kwargs={"pk": order.id}),
+            **self.auth_headers(self.seller),
         )
-        cls.seller = User.objects.create_user(
-            username="收货视图卖家", email="receipt-view-seller@test.com", password="testpass123"
-        )
-        cls.other_user = User.objects.create_user(
-            username="收货视图路人", email="receipt-view-other@test.com", password="testpass123"
-        )
-        cls.category = Category.objects.create(name="收货视图分类")
 
-    def _create_order(self, item_type=Listing.ItemType.VIRTUAL):
-        listing = Listing.objects.create(
-            owner=self.seller,
-            category=self.category,
-            title="收货视图商品",
-            item_type=item_type,
-            status=Listing.Status.RESERVED,
-            price=Decimal("99.00"),
-            description="测试描述",
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], Order.OrderStatus.AWAITING_RECEIPT)
+        self.assertEqual(response.json()["viewer_role"], "seller")
+        self.assertEqual(response.json()["available_actions"], [])
+        self.assertEqual(repeat_response.status_code, 400)
+        self.assertEqual(repeat_response.json()["message"], "订单不是待发货状态")
+
+    def test_wrong_user_cannot_confirm_delivery_or_receipt(self):
+        order = self.create_order(
+            status=Order.OrderStatus.AWAITING_SHIPMENT,
+            paid_at=timezone.now(),
         )
-        return Order.objects.create(
-            buyer=self.buyer,
-            seller=self.seller,
-            listing=listing,
-            buyer_display_name=self.buyer.username,
-            seller_display_name=self.seller.username,
-            listing_title_snapshot=listing.title,
-            order_price=listing.price,
+        self.listing.status = Listing.Status.RESERVED
+        self.listing.save(update_fields=["status"])
+
+        buyer_delivery_response = self.client.post(
+            reverse("api:orders_confirm_delivery", kwargs={"pk": order.id}),
+            **self.auth_headers(self.buyer),
+        )
+        seller_receipt_response = self.client.post(
+            reverse("api:orders_confirm_receipt", kwargs={"pk": order.id}),
+            **self.auth_headers(self.seller),
+        )
+
+        self.assertEqual(buyer_delivery_response.status_code, 403)
+        self.assertEqual(seller_receipt_response.status_code, 403)
+
+    def test_buyer_can_confirm_receipt_and_invalid_status_fails(self):
+        order = self.create_order(
             status=Order.OrderStatus.AWAITING_RECEIPT,
-            payment_deadline=timezone.now() + timedelta(minutes=15),
             paid_at=timezone.now() - timedelta(days=1),
             shipped_at=timezone.now(),
         )
+        self.listing.status = Listing.Status.RESERVED
+        self.listing.save(update_fields=["status"])
+        pending_order = self.create_order()
 
-    def test_get_not_allowed(self):
-        order = self._create_order()
-        self.client.login(username="收货视图买家", password="testpass123")
-        response = self.client.get(reverse("orders:order_confirm_receipt", kwargs={"pk": order.pk}))
-        self.assertEqual(response.status_code, 405)
-
-    def test_guest_redirected_to_login(self):
-        order = self._create_order()
-        response = self.client.post(reverse("orders:order_confirm_receipt", kwargs={"pk": order.pk}))
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("/accounts/login/", response.url)
-
-    def test_buyer_can_confirm_receipt_via_post(self):
-        order = self._create_order()
-        self.client.login(username="收货视图买家", password="testpass123")
         response = self.client.post(
-            reverse("orders:order_confirm_receipt", kwargs={"pk": order.pk}),
-            follow=True,
+            reverse("api:orders_confirm_receipt", kwargs={"pk": order.id}),
+            **self.auth_headers(self.buyer),
         )
-        order.refresh_from_db()
-        self.assertRedirects(
-            response,
-            reverse("orders:order_detail", kwargs={"pk": order.pk}),
-            fetch_redirect_response=False,
+        invalid_response = self.client.post(
+            reverse("api:orders_confirm_receipt", kwargs={"pk": pending_order.id}),
+            **self.auth_headers(self.buyer),
         )
-        self.assertEqual(order.status, Order.OrderStatus.COMPLETED)
-        self.assertContains(response, "已确认收货，交易完成")
 
-    def test_seller_or_other_user_cannot_confirm_receipt(self):
-        for username in ["收货视图卖家", "收货视图路人"]:
-            order = self._create_order()
-            self.client.login(username=username, password="testpass123")
-            response = self.client.post(reverse("orders:order_confirm_receipt", kwargs={"pk": order.pk}))
-            order.refresh_from_db()
-            self.assertIn(response.status_code, [302, 404])
-            self.assertEqual(order.status, Order.OrderStatus.AWAITING_RECEIPT)
-            self.client.logout()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], Order.OrderStatus.COMPLETED)
+        self.assertEqual(response.json()["available_actions"], [])
+        self.listing.refresh_from_db()
+        self.assertEqual(self.listing.status, Listing.Status.SOLD)
+        self.assertEqual(invalid_response.status_code, 400)
+        self.assertEqual(invalid_response.json()["message"], "实体商品订单不能确认收货")
+
+    def test_api_does_not_change_celery_task_behavior(self):
+        with patch.object(order_tasks, "cancel_expired_pending_orders", return_value=2):
+            self.assertEqual(order_tasks.cancel_expired_pending_orders_task(), 2)
+        with patch.object(order_tasks, "mark_due_physical_orders_signed", return_value=1):
+            self.assertEqual(order_tasks.mark_due_physical_orders_signed_task(), 1)
+        with patch.object(order_tasks, "auto_complete_eligible_physical_order", return_value=3), patch.object(
+            order_tasks,
+            "auto_complete_eligible_virtual_order",
+            return_value=4,
+        ):
+            self.assertEqual(order_tasks.auto_complete_eligible_orders_task(), 7)

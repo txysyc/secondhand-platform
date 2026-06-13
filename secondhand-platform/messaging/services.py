@@ -59,17 +59,30 @@ def mark_conversation_read(user, conversation):
 
 
 def serialize_private_message(message):
-    """生成 WebSocket 广播使用的安全消息载荷。"""
+    """生成 WebSocket 广播和 HTTP API 使用的安全消息载荷。"""
 
     sender = message.sender
     profile = getattr(sender, "profile", None)
     sender_display_name = getattr(profile, "nickname", "") or sender.username
+    avatar = getattr(profile, "avatar", None)
     return {
         "id": message.pk,
         "conversation_id": message.conversation_id,
+        "sender": {
+            "id": sender.pk,
+            "username": sender.username,
+            "profile": {
+                "nickname": getattr(profile, "nickname", ""),
+                "avatar": str(avatar) if avatar else None,
+                "avatar_url": avatar.url if avatar else None,
+                "bio": getattr(profile, "bio", ""),
+            },
+        },
+        # 保留扁平字段，兼容旧模板 WebSocket 追加消息逻辑。
         "sender_id": sender.pk,
         "sender_display_name": sender_display_name,
         "content": message.content,
+        "read_at": message.read_at.isoformat() if message.read_at else None,
         "created_at": message.created_at.isoformat(),
     }
 

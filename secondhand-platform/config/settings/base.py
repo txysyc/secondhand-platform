@@ -1,5 +1,6 @@
 """secondhand-platform 的 Django 基础配置。"""
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -28,6 +29,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
+    "rest_framework",
+    "django_filters",
     "users.apps.UsersConfig",
     "catalog.apps.CatalogConfig",
     "orders.apps.OrdersConfig",
@@ -37,6 +41,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     # WhiteNoise 用于在 Django 进程中托管静态文件。
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -149,6 +154,36 @@ CHANNEL_LAYERS = {
         },
     },
 }
+
+# DRF API 基础配置；业务阶段只在各 app 中补充 serializer、view 和权限。
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+    "DEFAULT_FILTER_BACKENDS": (
+        "django_filters.rest_framework.DjangoFilterBackend",
+    ),
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
+    "DEFAULT_RENDERER_CLASSES": (
+        "rest_framework.renderers.JSONRenderer",
+    ),
+    "EXCEPTION_HANDLER": "config.api.exceptions.api_exception_handler",
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+# 开发期允许 Vite 前端访问 API；生产环境可通过环境变量覆盖。
+CORS_ALLOWED_ORIGINS = env.list(
+    "CORS_ALLOWED_ORIGINS", default=["http://localhost:5173"]
+)
 
 # 认证成功和退出后的公开落点先指向最小首页，后续商品列表 story 可接管该路径。
 LOGIN_URL = "users:login"

@@ -10,6 +10,7 @@ from users.views import PublicProfileView
 urlpatterns = [
     path("", TemplateView.as_view(template_name="home.html"), name="home"),
     path("admin/", admin.site.urls),
+    path("api/v1/", include("config.api_urls", namespace="api")),
     path("accounts/", include("users.urls", namespace="users")),
     path("users/<int:user_id>/", PublicProfileView.as_view(), name="public_profile"),
     path("listings/", include("catalog.urls", namespace="catalog")),

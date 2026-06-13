@@ -633,7 +633,7 @@ class ProfileEditFlowTest(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "这个字段是必填项。")
+        self.assertContains(response, "该字段是必填项。")
         self.user.profile.refresh_from_db()
         self.assertEqual(self.user.profile.nickname, "原昵称")
         self.assertEqual(self.user.profile.bio, "原简介")

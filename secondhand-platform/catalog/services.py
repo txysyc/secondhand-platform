@@ -257,3 +257,130 @@ def change_listing_status(user: User, listing: Listing, action: str):
     listing.status = Listing.Status.ACTIVE
     listing.save(update_fields=update_fields)
     return listing
+
+
+def create_listing_from_payload(user: User, data: dict):
+    """使用字典载荷创建商品草稿，供 API 层调用。"""
+
+    listing = Listing(**data)
+    listing.owner = user
+    listing.status = Listing.Status.DRAFT
+    listing.full_clean()
+    listing.save()
+    return listing
+
+
+def update_listing_from_payload(user: User, listing: Listing, data: dict, *, publish: bool = False):
+    """使用字典载荷更新商品，供 API 层调用。"""
+
+    ensure_listing_owner(user, listing)
+
+    if listing.status not in EDITABLE_STATUSES:
+        raise ValidationError("只有草稿和发布状态的商品可以更新")
+
+    original_status = listing.status
+    original_published_at = listing.published_at
+
+    for field_name, value in data.items():
+        setattr(listing, field_name, value)
+
+    listing.owner_id = user.id
+    listing.status = original_status
+    listing.published_at = original_published_at
+
+    if original_status == Listing.Status.DRAFT and publish:
+        publish_listing(user, listing)
+
+    listing.full_clean()
+    listing.save()
+    return listing
+
+
+def publish_listing_for_user(user: User, listing: Listing):
+    """发布当前用户自己的草稿商品。"""
+
+    publish_listing(user, listing)
+    listing.save(update_fields=["status", "published_at", "updated_at"])
+    return listing
+
+
+def change_listing_status_for_user(user: User, listing: Listing, action: str):
+    """切换当前用户自己的商品状态，并保存到数据库。"""
+
+    listing = change_listing_status(user, listing, action)
+    return listing
+
+
+def delete_listing_for_user(user: User, listing: Listing):
+    """删除当前用户自己的商品。"""
+
+    delete_listing(user, listing)
+
+
+def add_listing_images(user: User, listing: Listing, uploaded_images):
+    """为商品新增图片，供 API 层一次上传一张或多张图片。"""
+
+    ensure_listing_owner(user, listing)
+
+    if listing.status not in EDITABLE_STATUSES:
+        raise ValidationError("只有草稿和发布状态的商品可以管理图片")
+
+    new_images = [image for image in uploaded_images if image]
+    if not new_images:
+        raise ValidationError("请至少上传一张图片")
+
+    current_count = listing.images.count()
+    if current_count + len(new_images) > MAX_IMAGE_COUNT:
+        raise ValidationError(f"最多只能上传{MAX_IMAGE_COUNT}张图片")
+
+    created_images = []
+    with transaction.atomic():
+        start_order = current_count
+        for offset, uploaded_image in enumerate(new_images):
+            image = ListingImage.objects.create(
+                listing=listing,
+                image=uploaded_image,
+                sort_order=start_order + offset,
+            )
+            created_images.append(image)
+    return created_images
+
+
+def delete_listing_image(user: User, listing: Listing, image_id: int):
+    """删除商品图片并在事务提交后清理物理文件。"""
+
+    ensure_listing_owner(user, listing)
+
+    if listing.status not in EDITABLE_STATUSES:
+        raise ValidationError("只有草稿和发布状态的商品可以管理图片")
+
+    image = listing.images.filter(pk=image_id).first()
+    if image is None:
+        raise ValidationError("图片不存在")
+
+    file_field = image.image
+    with transaction.atomic():
+        image.delete()
+        _delete_image_files_on_commit([file_field])
+
+
+def reorder_listing_images(user: User, listing: Listing, image_ids: list[int]):
+    """按图片 ID 列表重排商品图片顺序。"""
+
+    ensure_listing_owner(user, listing)
+
+    if listing.status not in EDITABLE_STATUSES:
+        raise ValidationError("只有草稿和发布状态的商品可以管理图片")
+
+    current_images = list(listing.images.order_by("sort_order", "id"))
+    current_ids = [image.id for image in current_images]
+    if sorted(current_ids) != sorted(image_ids):
+        raise ValidationError("重排图片必须包含当前商品全部图片")
+
+    image_map = {image.id: image for image in current_images}
+    with transaction.atomic():
+        for sort_order, image_id in enumerate(image_ids):
+            image = image_map[image_id]
+            if image.sort_order != sort_order:
+                image.sort_order = sort_order
+                image.save(update_fields=["sort_order"])

@@ -18,7 +18,9 @@ from catalog.models import Category, Listing, ListingImage
 from catalog.selectors import (
     get_active_categories,
     get_public_listing_queryset,
+    get_visible_listing_detail_queryset,
 )
+from orders.models import Order
 from catalog.services import (
     ACTION_RESTORE_ACTIVE,
     ACTION_WITHDRAW,
@@ -340,6 +342,83 @@ class PublicListingSelectorTest(TestCase):
         self.assertNotIn(cheap, results)
         self.assertIn(mid, results)
         self.assertNotIn(expensive, results)
+
+    def test_min_price_filter_can_work_alone(self):
+        cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
+        mid = self.make_listing(title="中等", price=Decimal("50.00"))
+
+        results = list(get_public_listing_queryset({"min_price": Decimal("20")}))
+
+        self.assertNotIn(cheap, results)
+        self.assertIn(mid, results)
+
+    def test_max_price_filter_can_work_alone(self):
+        cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
+        mid = self.make_listing(title="中等", price=Decimal("50.00"))
+
+        results = list(get_public_listing_queryset({"max_price": Decimal("20")}))
+
+        self.assertIn(cheap, results)
+        self.assertNotIn(mid, results)
+
+    def test_paid_buyer_can_view_reserved_or_sold_listing_detail_queryset(self):
+        buyer = get_user_model().objects.create_user(
+            username="paidbuy",
+            email="paidbuyer@example.com",
+            password="StrongPass123",
+        )
+        reserved = self.make_listing(title="交易中", status=Listing.Status.RESERVED)
+        sold = self.make_listing(title="已完成", status=Listing.Status.SOLD)
+        Order.objects.create(
+            buyer=buyer,
+            seller=self.user,
+            listing=reserved,
+            buyer_display_name=buyer.username,
+            seller_display_name=self.user.username,
+            listing_title_snapshot=reserved.title,
+            order_price=reserved.price,
+            status=Order.OrderStatus.AWAITING_SHIPMENT,
+            payment_deadline=timezone.now(),
+        )
+        Order.objects.create(
+            buyer=buyer,
+            seller=self.user,
+            listing=sold,
+            buyer_display_name=buyer.username,
+            seller_display_name=self.user.username,
+            listing_title_snapshot=sold.title,
+            order_price=sold.price,
+            status=Order.OrderStatus.COMPLETED,
+            payment_deadline=timezone.now(),
+        )
+
+        listings = list(get_visible_listing_detail_queryset(buyer))
+
+        self.assertIn(reserved, listings)
+        self.assertIn(sold, listings)
+
+    def test_unpaid_buyer_cannot_view_reserved_listing_detail_queryset(self):
+        buyer = get_user_model().objects.create_user(
+            username="unpaidbuy",
+            email="unpaidbuyer@example.com",
+            password="StrongPass123",
+        )
+        reserved = self.make_listing(title="未支付占用", status=Listing.Status.RESERVED)
+        Order.objects.create(
+            buyer=buyer,
+            seller=self.user,
+            listing=reserved,
+            buyer_display_name=buyer.username,
+            seller_display_name=self.user.username,
+            listing_title_snapshot=reserved.title,
+            order_price=reserved.price,
+            status=Order.OrderStatus.PENDING_PAYMENT,
+            payment_deadline=timezone.now(),
+        )
+
+        listings = list(get_visible_listing_detail_queryset(buyer))
+
+        self.assertNotIn(reserved, listings)
 
     def test_sort_price_asc(self):
         expensive = self.make_listing(title="贵", price=Decimal("200.00"))
@@ -668,6 +747,74 @@ class CatalogApiTests(APITestCase):
         self.assertEqual(ok_response.status_code, 200)
         self.assertEqual(ok_response.json()["title"], "详情商品")
         self.assertEqual(hidden_response.status_code, 404)
+
+    def test_paid_buyer_and_seller_can_view_reserved_or_sold_detail(self):
+        buyer = User.objects.create_user(
+            username="detailbuy",
+            email="detail_buyer@example.com",
+            password="StrongPass123",
+        )
+        reserved = self.create_listing(
+            title="交易中详情",
+            status=Listing.Status.RESERVED,
+        )
+        sold = self.create_listing(
+            title="已售详情",
+            status=Listing.Status.SOLD,
+        )
+        Order.objects.create(
+            buyer=buyer,
+            seller=self.seller,
+            listing=reserved,
+            buyer_display_name=buyer.username,
+            seller_display_name=self.seller.username,
+            listing_title_snapshot=reserved.title,
+            order_price=reserved.price,
+            status=Order.OrderStatus.AWAITING_SHIPMENT,
+            payment_deadline=timezone.now(),
+        )
+        Order.objects.create(
+            buyer=buyer,
+            seller=self.seller,
+            listing=sold,
+            buyer_display_name=buyer.username,
+            seller_display_name=self.seller.username,
+            listing_title_snapshot=sold.title,
+            order_price=sold.price,
+            status=Order.OrderStatus.COMPLETED,
+            payment_deadline=timezone.now(),
+        )
+
+        buyer_reserved_response = self.client.get(
+            reverse("api:catalog_listing_detail", kwargs={"pk": reserved.id}),
+            **self.auth_headers(buyer),
+        )
+        seller_sold_response = self.client.get(
+            reverse("api:catalog_listing_detail", kwargs={"pk": sold.id}),
+            **self.auth_headers(self.seller),
+        )
+
+        self.assertEqual(buyer_reserved_response.status_code, 200)
+        self.assertEqual(buyer_reserved_response.json()["title"], "交易中详情")
+        self.assertEqual(seller_sold_response.status_code, 200)
+        self.assertEqual(seller_sold_response.json()["title"], "已售详情")
+
+    def test_non_participant_cannot_view_reserved_or_sold_detail(self):
+        reserved = self.create_listing(
+            title="路人不可见",
+            status=Listing.Status.RESERVED,
+        )
+
+        guest_response = self.client.get(
+            reverse("api:catalog_listing_detail", kwargs={"pk": reserved.id})
+        )
+        other_response = self.client.get(
+            reverse("api:catalog_listing_detail", kwargs={"pk": reserved.id}),
+            **self.auth_headers(self.other_user),
+        )
+
+        self.assertEqual(guest_response.status_code, 404)
+        self.assertEqual(other_response.status_code, 404)
 
     def test_owner_can_view_own_draft_listing_detail(self):
         draft = self.create_listing(

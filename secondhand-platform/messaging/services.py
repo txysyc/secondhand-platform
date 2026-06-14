@@ -4,6 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from messaging.models import Conversation, PrivateMessage
+from messaging.selectors import invalidate_conversation_message_cache
 
 MAX_PRIVATE_MESSAGE_LENGTH = 1000
 
@@ -43,6 +44,7 @@ def create_private_message(user, conversation, content):
             content=content,
         )
         locked_conversation.save(update_fields=["updated_at"])
+    invalidate_conversation_message_cache(conversation.pk)
     return message
 
 

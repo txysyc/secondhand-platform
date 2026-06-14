@@ -117,12 +117,12 @@ def get_public_listing_queryset(filters: dict[str, Any] | None = None):
     if item_type:
         listing_queryset = listing_queryset.filter(item_type=item_type)
 
-    max_price = filters.get("max_price")
     min_price = filters.get("min_price")
-    if max_price is not None and min_price is not None:
-        listing_queryset = listing_queryset.filter(
-            price__lte=max_price, price__gte=min_price
-        )
+    max_price = filters.get("max_price")
+    if min_price is not None:
+        listing_queryset = listing_queryset.filter(price__gte=min_price)
+    if max_price is not None:
+        listing_queryset = listing_queryset.filter(price__lte=max_price)
 
     sort = filters.get("sort")
     if sort:
@@ -148,6 +148,39 @@ def get_public_listing_detail_queryset():
         .prefetch_related("images")
         .filter(status=Listing.Status.ACTIVE, category__is_active=True)
     )
+
+
+def get_visible_listing_detail_queryset(user):
+    """构建商品详情 API 对当前访问者可见的商品查询。
+
+    公开访客只能访问在售商品；登录后，卖家可查看自己发布的商品，已支付交易的
+    买家可继续查看交易中的或已售出的商品详情。
+    """
+
+    queryset = Listing.objects.select_related(
+        "category",
+        "owner",
+        "owner__profile",
+    ).prefetch_related("images")
+    public_filter = Q(status=Listing.Status.ACTIVE, category__is_active=True)
+
+    if user is None or not user.is_authenticated:
+        return queryset.filter(public_filter)
+
+    from orders.models import Order
+
+    paid_order_statuses = [
+        Order.OrderStatus.AWAITING_SHIPMENT,
+        Order.OrderStatus.AWAITING_RECEIPT,
+        Order.OrderStatus.SIGNED,
+        Order.OrderStatus.COMPLETED,
+    ]
+    participant_filter = Q(owner=user) | Q(
+        status__in=[Listing.Status.RESERVED, Listing.Status.SOLD],
+        orders__buyer=user,
+        orders__status__in=paid_order_statuses,
+    )
+    return queryset.filter(public_filter | participant_filter).distinct()
 
 
 def get_owner_listing_queryset(user):

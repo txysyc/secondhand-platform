@@ -2,7 +2,11 @@
 
 from rest_framework import serializers
 
-from catalog.serializers import CategorySerializer, ListingOwnerSerializer
+from catalog.serializers import (
+    CategorySerializer,
+    ListingImageSerializer,
+    ListingOwnerSerializer,
+)
 from catalog.models import Listing
 from orders.models import Order
 from orders.selectors import (
@@ -17,6 +21,7 @@ class OrderListingSerializer(serializers.ModelSerializer):
 
     category = CategorySerializer(read_only=True)
     owner = ListingOwnerSerializer(read_only=True)
+    images = ListingImageSerializer(many=True, read_only=True)
     item_type_display = serializers.CharField(source="get_item_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
 
@@ -27,6 +32,7 @@ class OrderListingSerializer(serializers.ModelSerializer):
             "title",
             "category",
             "owner",
+            "images",
             "item_type",
             "item_type_display",
             "status",
@@ -62,6 +68,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "buyer_display_name",
             "seller_display_name",
             "listing_title_snapshot",
+            "listing_image_snapshot",
             "status",
             "status_display",
             "order_price",

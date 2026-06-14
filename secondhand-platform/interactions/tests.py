@@ -461,7 +461,7 @@ class InteractionsApiTests(APITestCase):
             reverse("api:listing_comments", kwargs={"listing_id": reserved.id}),
             data={"content": "还能留言吗"},
             format="json",
-            **self.auth_headers(self.buyer),
+            **self.auth_headers(self.seller),
         )
 
         self.assertEqual(blank_response.status_code, 400)

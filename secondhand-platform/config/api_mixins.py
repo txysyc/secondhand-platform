@@ -27,6 +27,7 @@ class PageNumberPaginationMixin:
     """为不需要完整 DRF 分页类的轻量列表 API 提供统一分页响应。"""
 
     page_size = 20
+    max_page_size = 100
     serializer_class = None
 
     def paginate(self, request, queryset, serializer_class=None):
@@ -37,9 +38,10 @@ class PageNumberPaginationMixin:
             raise AssertionError("必须提供 serializer_class 或定义 self.serializer_class")
 
         page_number = self._parse_page_number(request)
+        page_size = self._parse_page_size(request)
         total = queryset.count()
-        start = (page_number - 1) * self.page_size
-        end = start + self.page_size
+        start = (page_number - 1) * page_size
+        end = start + page_size
         items = list(queryset[start:end])
         next_page = page_number + 1 if end < total else None
         previous_page = page_number - 1 if page_number > 1 else None
@@ -53,6 +55,7 @@ class PageNumberPaginationMixin:
                     if previous_page is None
                     else self._page_url(request, previous_page)
                 ),
+                "page_size": page_size,
                 "results": serializer_class(
                     items,
                     many=True,
@@ -70,6 +73,16 @@ class PageNumberPaginationMixin:
         except (TypeError, ValueError):
             page_number = 1
         return max(page_number, 1)
+
+    def _parse_page_size(self, request):
+        """读取可选 page_size 参数，并限制在安全范围内。"""
+
+        page_size = request.query_params.get("page_size", self.page_size)
+        try:
+            page_size = int(page_size)
+        except (TypeError, ValueError):
+            page_size = self.page_size
+        return min(max(page_size, 1), self.max_page_size)
 
     def _page_url(self, request, page_number):
         """基于当前请求构造保留筛选参数的分页链接。"""

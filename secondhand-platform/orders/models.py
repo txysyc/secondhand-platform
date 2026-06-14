@@ -51,6 +51,11 @@ class Order(models.Model):
     buyer_display_name = models.CharField(max_length=20, verbose_name="买家名称")
     seller_display_name = models.CharField(max_length=20, verbose_name="卖家名称")
     listing_title_snapshot = models.CharField(max_length=50, verbose_name="商品名称")
+    listing_image_snapshot = models.URLField(
+        verbose_name="商品首图快照",
+        null=True,
+        blank=True,
+    )
     status = models.CharField(
         max_length=20,
         choices=OrderStatus.choices,

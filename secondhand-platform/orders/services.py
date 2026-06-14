@@ -11,26 +11,49 @@ from orders.models import Order
 
 
 def create_order(buyer: User, listing: Listing) -> Order:
-    """为买家创建待支付订单；待支付阶段不占用商品库存状态。"""
-    seller: User = listing.owner
+    """为买家创建待支付订单；同一商品只允许一个未过期待支付订单。"""
+    now = timezone.now()
 
-    if buyer == seller:
-        raise PermissionDenied("用户不能购买自己发布的商品")
-    if listing.status != Listing.Status.ACTIVE:
-        raise ValidationError("该商品不能购买")
-
-    kwargs = {
-        "buyer": buyer,
-        "seller": seller,
-        "listing": listing,
-        "buyer_display_name": buyer.profile.nickname or buyer.username,
-        "seller_display_name": seller.profile.nickname or seller.username,
-        "listing_title_snapshot": listing.title,
-        "status": Order.OrderStatus.PENDING_PAYMENT,
-        "order_price": listing.price,
-        "payment_deadline": timezone.now() + timedelta(minutes=15),
-    }
     with transaction.atomic():
+        try:
+            listing = (
+                Listing.objects.select_for_update(of=("self",))
+                .select_related("owner")
+                .get(pk=listing.pk)
+            )
+        except Listing.DoesNotExist:
+            raise ValidationError("该商品不存在")
+
+        seller: User = listing.owner
+
+        if buyer == seller:
+            raise PermissionDenied("用户不能购买自己发布的商品")
+        if listing.status != Listing.Status.ACTIVE:
+            raise ValidationError("该商品不能购买")
+
+        has_active_pending_order = Order.objects.filter(
+            listing=listing,
+            status=Order.OrderStatus.PENDING_PAYMENT,
+            payment_deadline__gte=now,
+        ).exists()
+        if has_active_pending_order:
+            raise ValidationError("该商品已有待支付订单，请稍后再试")
+
+        first_image = listing.images.order_by("sort_order", "id").first()
+        listing_image_snapshot = first_image.image.url if first_image else ""
+
+        kwargs = {
+            "buyer": buyer,
+            "seller": seller,
+            "listing": listing,
+            "buyer_display_name": buyer.profile.nickname or buyer.username,
+            "seller_display_name": seller.profile.nickname or seller.username,
+            "listing_title_snapshot": listing.title,
+            "listing_image_snapshot": listing_image_snapshot,
+            "status": Order.OrderStatus.PENDING_PAYMENT,
+            "order_price": listing.price,
+            "payment_deadline": now + timedelta(minutes=15),
+        }
         order = Order.objects.create(**kwargs)
 
     return order

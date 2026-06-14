@@ -24,6 +24,10 @@ from messaging.auth import JwtAuthMiddlewareStack
 from messaging.models import Conversation, PrivateMessage
 from messaging.routing import websocket_urlpatterns
 from messaging.selectors import get_conversation_for_user, get_user_conversations
+from messaging.selectors import (
+    _latest_message_window_cache_key,
+    get_conversation_message_window,
+)
 from messaging.services import (
     create_private_message,
     get_or_create_conversation,
@@ -178,6 +182,30 @@ class RedisCacheSelectorTest(TestCase):
         self.assertIsNone(cache.get(second_cache_key))
         self.assertEqual(get_active_category_ids(), [first.pk, second.pk])
         self.assertEqual(cache.get(second_cache_key), [first.pk, second.pk])
+
+    def test_latest_private_message_window_is_cached_and_invalidated_on_create(self):
+        buyer = User.objects.create_user(
+            username="cachebuyer",
+            email="cachebuyer@example.com",
+            password="StrongPass123",
+        )
+        seller = User.objects.create_user(
+            username="cacheseller",
+            email="cacheseller@example.com",
+            password="StrongPass123",
+        )
+        conversation = get_or_create_conversation(buyer, seller)
+        create_private_message(seller, conversation, "缓存前消息")
+
+        messages = get_conversation_message_window(conversation, latest=True)
+        cache_key = _latest_message_window_cache_key(conversation.pk)
+
+        self.assertEqual([message.content for message in messages], ["缓存前消息"])
+        self.assertEqual(cache.get(cache_key), [messages[0].pk])
+
+        create_private_message(buyer, conversation, "缓存失效消息")
+
+        self.assertIsNone(cache.get(cache_key))
 
 
 @override_settings(
@@ -367,13 +395,77 @@ class MessagingApiTests(APITestCase):
         )
 
         self.assertEqual(list_response.status_code, 200)
-        self.assertEqual(list_response.json()["results"][0]["content"], "历史消息")
+        self.assertEqual(list_response.json()[0]["content"], "历史消息")
         self.assertEqual(send_response.status_code, 201)
         body = send_response.json()
         self.assertEqual(body["content"], "HTTP API 私信")
         self.assertEqual(body["sender"]["id"], self.buyer.id)
         self.assertEqual(body["sender_id"], self.buyer.id)
         self.assertEqual(PrivateMessage.objects.filter(content="HTTP API 私信").count(), 1)
+
+    def test_messages_api_defaults_to_latest_window_for_chat_entry(self):
+        conversation = get_or_create_conversation(self.buyer, self.seller)
+        for index in range(25):
+            create_private_message(self.seller, conversation, f"历史消息 {index:02d}")
+
+        response = self.client.get(
+            reverse("api:messaging_conversation_messages", kwargs={"pk": conversation.id}),
+            **self.auth_headers(self.buyer),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        contents = [item["content"] for item in response.json()]
+        self.assertEqual(len(contents), 20)
+        self.assertEqual(contents[0], "历史消息 05")
+        self.assertEqual(contents[-1], "历史消息 24")
+
+    def test_messages_api_returns_previous_window_before_id(self):
+        conversation = get_or_create_conversation(self.buyer, self.seller)
+        messages = [
+            create_private_message(self.seller, conversation, f"翻页消息 {index}")
+            for index in range(5)
+        ]
+
+        response = self.client.get(
+            reverse("api:messaging_conversation_messages", kwargs={"pk": conversation.id}),
+            data={"before_id": messages[3].pk, "limit": 2},
+            **self.auth_headers(self.buyer),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [item["content"] for item in response.json()],
+            ["翻页消息 1", "翻页消息 2"],
+        )
+
+    def test_messages_api_returns_incremental_window_after_id(self):
+        conversation = get_or_create_conversation(self.buyer, self.seller)
+        first = create_private_message(self.seller, conversation, "已有消息")
+        create_private_message(self.buyer, conversation, "新增消息一")
+        create_private_message(self.seller, conversation, "新增消息二")
+
+        response = self.client.get(
+            reverse("api:messaging_conversation_messages", kwargs={"pk": conversation.id}),
+            data={"after_id": first.pk},
+            **self.auth_headers(self.buyer),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [item["content"] for item in response.json()],
+            ["新增消息一", "新增消息二"],
+        )
+
+    def test_messages_api_rejects_conflicting_window_params(self):
+        conversation = get_or_create_conversation(self.buyer, self.seller)
+
+        response = self.client.get(
+            reverse("api:messaging_conversation_messages", kwargs={"pk": conversation.id}),
+            data={"before_id": 1, "after_id": 2},
+            **self.auth_headers(self.buyer),
+        )
+
+        self.assertEqual(response.status_code, 400)
 
     def test_send_message_rejects_blank_and_overlong_content(self):
         conversation = get_or_create_conversation(self.buyer, self.seller)

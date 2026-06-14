@@ -12,7 +12,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from catalog.models import Category, Listing
+from catalog.models import Category, Listing, ListingImage
 from orders.admin import OrderAdmin
 from orders.models import Order
 from orders.selectors import get_buyer_orders, get_seller_orders
@@ -205,6 +205,23 @@ class CreateOrderServiceTest(TestCase):
         self.assertEqual(order.order_price, Decimal("199.00"))
         self.assertEqual(order.listing_title_snapshot, "测试商品")
 
+    def test_create_order_captures_first_listing_image_snapshot(self):
+        listing = self._create_active_listing()
+        ListingImage.objects.create(
+            listing=listing,
+            image="listings/later.png",
+            sort_order=2,
+        )
+        first_image = ListingImage.objects.create(
+            listing=listing,
+            image="listings/first.png",
+            sort_order=1,
+        )
+
+        order = create_order(self.buyer, listing)
+
+        self.assertEqual(order.listing_image_snapshot, first_image.image.url)
+
     def test_create_order_listing_status_unchanged(self):
         listing = self._create_active_listing()
         create_order(self.buyer, listing)
@@ -240,22 +257,44 @@ class CreateOrderServiceTest(TestCase):
             with self.assertRaises(ValidationError):
                 create_order(self.buyer, listing)
 
-    def test_multiple_pending_orders_for_same_listing(self):
+    def test_rejects_duplicate_unexpired_pending_order_for_same_listing(self):
         listing = self._create_active_listing()
         another_buyer = User.objects.create_user(
             username="买家C", email="buyerc@test.com", password="testpass123"
         )
         order1 = create_order(self.buyer, listing)
-        order2 = create_order(another_buyer, listing)
+
+        with self.assertRaises(ValidationError):
+            create_order(another_buyer, listing)
 
         self.assertEqual(order1.status, Order.OrderStatus.PENDING_PAYMENT)
-        self.assertEqual(order2.status, Order.OrderStatus.PENDING_PAYMENT)
         self.assertEqual(
             Order.objects.filter(
                 listing=listing, status=Order.OrderStatus.PENDING_PAYMENT
             ).count(),
-            2,
+            1,
         )
+
+    def test_expired_pending_order_does_not_block_new_order(self):
+        listing = self._create_active_listing()
+        Order.objects.create(
+            buyer=self.buyer,
+            seller=self.seller,
+            listing=listing,
+            buyer_display_name=self.buyer.username,
+            seller_display_name=self.seller.username,
+            listing_title_snapshot=listing.title,
+            order_price=listing.price,
+            status=Order.OrderStatus.PENDING_PAYMENT,
+            payment_deadline=timezone.now() - timedelta(minutes=1),
+        )
+        another_buyer = User.objects.create_user(
+            username="买家C", email="buyerc@test.com", password="testpass123"
+        )
+
+        order = create_order(another_buyer, listing)
+
+        self.assertEqual(order.status, Order.OrderStatus.PENDING_PAYMENT)
 
     def test_snapshot_fields_captured_at_creation(self):
         listing = self._create_active_listing(title="原始标题", price=Decimal("50.00"))
@@ -962,6 +1001,7 @@ class OrdersApiTests(APITestCase):
         self.assertEqual(body["status"], Order.OrderStatus.PENDING_PAYMENT)
         self.assertEqual(body["viewer_role"], "buyer")
         self.assertEqual(body["available_actions"], ["pay"])
+        self.assertIn("listing_image_snapshot", body)
         self.assertTrue(
             Order.objects.filter(
                 pk=body["id"],
@@ -988,6 +1028,18 @@ class OrdersApiTests(APITestCase):
         self.assertEqual(self_purchase_response.json()["message"], "用户不能购买自己发布的商品")
         self.assertEqual(withdrawn_response.status_code, 400)
         self.assertEqual(withdrawn_response.json()["message"], "该商品不能购买")
+
+    def test_create_order_rejects_duplicate_unexpired_pending_order(self):
+        self.create_order()
+
+        response = self.client.post(
+            reverse("api:orders_create", kwargs={"listing_id": self.listing.id}),
+            format="json",
+            **self.auth_headers(self.other),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["message"], "该商品已有待支付订单，请稍后再试")
 
     def test_buyer_and_seller_lists_only_return_related_orders(self):
         buyer_order = self.create_order()
@@ -1047,6 +1099,7 @@ class OrdersApiTests(APITestCase):
         self.assertFalse(body["is_expired"])
         self.assertEqual(body["available_actions"], ["pay"])
         self.assertEqual(body["listing_title_snapshot"], "订单商品")
+        self.assertIn("images", body["listing"])
 
     def test_expired_order_detail_hides_pay_action(self):
         order = self.create_order(payment_deadline=timezone.now() - timedelta(minutes=1))

@@ -11,7 +11,7 @@ def get_order_queryset():
         "listing__category",
         "listing__owner",
         "listing__owner__profile",
-    )
+    ).prefetch_related("listing__images")
 
 
 def get_buyer_orders(user):

@@ -20,8 +20,8 @@ from catalog.models import Listing
 from catalog.selectors import (
     get_active_categories,
     get_owner_listing_queryset,
-    get_public_listing_detail_queryset,
     get_public_listing_queryset,
+    get_visible_listing_detail_queryset,
 )
 from catalog.services import (
     add_listing_images,
@@ -58,15 +58,21 @@ class ListingListApiView(PageNumberPaginationMixin, APIView):
 
 
 class ListingDetailApiView(APIView):
-    """公开商品详情。"""
+    """商品详情。
+
+    在售商品公开可见；支付后只有交易买家和卖家能继续查看详情。
+    """
 
     permission_classes = [AllowAny]
 
-    def get_object(self, pk):
-        return get_object_or_404(get_public_listing_detail_queryset(), pk=pk)
+    def get_object(self, request, pk):
+        return get_object_or_404(
+            get_visible_listing_detail_queryset(request.user),
+            pk=pk,
+        )
 
     def get(self, request, pk):
-        listing = self.get_object(pk)
+        listing = self.get_object(request, pk)
         serializer = ListingDetailSerializer(listing, context={"request": request})
         return Response(serializer.data)
 

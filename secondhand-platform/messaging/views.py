@@ -2,6 +2,7 @@
 
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -16,8 +17,9 @@ from messaging.serializers import (
 )
 from messaging.models import Conversation
 from messaging.selectors import (
+    DEFAULT_MESSAGE_WINDOW_SIZE,
     get_conversation_for_user,
-    get_conversation_messages,
+    get_conversation_message_window,
     get_user_conversations,
 )
 from messaging.services import (
@@ -89,14 +91,28 @@ class ConversationDetailApiView(_ConversationParticipantApiView):
 
 class ConversationMessageListCreateApiView(
     _ConversationParticipantApiView,
-    PageNumberPaginationMixin,
 ):
     """会话消息列表与 HTTP 发送消息。"""
 
     def get(self, request, pk):
         conversation = self.get_object(request, pk)
-        messages = get_conversation_messages(conversation)
-        return self.paginate(request, messages, PrivateMessageSerializer)
+        try:
+            messages = get_conversation_message_window(
+                conversation,
+                before_id=request.query_params.get("before_id"),
+                after_id=request.query_params.get("after_id"),
+                latest=True,
+                limit=request.query_params.get("limit", DEFAULT_MESSAGE_WINDOW_SIZE),
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc))
+        return Response(
+            PrivateMessageSerializer(
+                messages,
+                many=True,
+                context={"request": request},
+            ).data
+        )
 
     def post(self, request, pk):
         conversation = self.get_object(request, pk)

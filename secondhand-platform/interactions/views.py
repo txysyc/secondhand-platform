@@ -1,6 +1,5 @@
 """interactions 应用 API 类视图。"""
 
-from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -8,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from config.api_mixins import ServiceErrorMixin
-from catalog.models import Listing
+from catalog.selectors import get_visible_listing_detail_queryset
 from interactions.permissions import IsCommentAuthor
 from interactions.serializers import CommentSerializer, CommentWriteSerializer
 from interactions.models import Comment
@@ -22,23 +21,7 @@ class _VisibleListingMixin:
     def get_visible_listing_queryset(self, user):
         """构建评论接口可访问的商品范围。"""
 
-        public_filter = Q(
-            status__in=[
-                Listing.Status.ACTIVE,
-                Listing.Status.RESERVED,
-                Listing.Status.SOLD,
-            ],
-            category__is_active=True,
-        )
-        queryset = Listing.objects.select_related(
-            "category",
-            "owner",
-            "owner__profile",
-        ).prefetch_related("images")
-        if user.is_authenticated:
-            # 卖家仍可查看自己已下架商品下的历史评论，普通访客不可见。
-            public_filter |= Q(owner=user, status=Listing.Status.WITHDRAWN)
-        return queryset.filter(public_filter)
+        return get_visible_listing_detail_queryset(user)
 
     def get_visible_listing_or_404(self, request, listing_id):
         queryset = self.get_visible_listing_queryset(request.user)

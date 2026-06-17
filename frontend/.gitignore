@@ -1,26 +1,52 @@
-# Logs
-logs
+# dependencies
+node_modules/
+
+# build outputs
+dist/
+build/
+out/
+
+# Vite cache
+.vite/
+frontend/.vite/
+
+# framework caches
+.next/
+.nuxt/
+.svelte-kit/
+.angular/
+.cache/
+
+# test / coverage
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# env files
+.env
+.env.local
+.env.*.local
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# package manager caches
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# editor / OS
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+Thumbs.db
+.vscode/
+.idea/
 
-.vite/
+# TypeScript
+*.tsbuildinfo

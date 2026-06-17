@@ -1,10 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { Search, AlertCircle, ImageIcon } from 'lucide-react';
 import { getCategories, getListings } from '../../api/endpoints/listings';
 import { resolveAvatarUrl, resolveMediaUrl } from '../../utils/media';
+import { Button, Input, Select, EmptyState } from '../../components/ui';
 import type { Category, Listing } from '../../types/listings';
 
 const CATEGORIES_CACHE_KEY = 'secondhand:categories';
+
+const SORT_OPTIONS = [
+  { value: 'newest', label: '最新发布' },
+  { value: 'oldest', label: '时间最久' },
+  { value: 'price_asc', label: '价格从低到高' },
+  { value: 'price_desc', label: '价格从高到低' },
+];
+
+const getErrorMessage = (err: unknown, fallback: string): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return fallback;
+};
 
 export const ListingList: React.FC = () => {
   const navigate = useNavigate();
@@ -74,11 +89,13 @@ export const ListingList: React.FC = () => {
   );
 
   // 同步 URL 参数变化至临时搜索文本
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setSearchText(query);
     setTempMinPrice(minPrice);
     setTempMaxPrice(maxPrice);
   }, [query, minPrice, maxPrice]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // 加载分类列表
   useEffect(() => {
@@ -119,22 +136,24 @@ export const ListingList: React.FC = () => {
       const response = await getListings(apiParams);
       setListings(response.results);
       setTotalCount(response.count);
-    } catch (err: any) {
+    } catch (err) {
       console.error('获取商品列表失败', err);
-      setErrorMsg(err.message || '获取商品列表失败，请稍后重试');
+      setErrorMsg(getErrorMessage(err, '获取商品列表失败，请稍后重试'));
     } finally {
       setLoading(false);
     }
   };
 
+  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
     fetchListings();
   }, [query, currentCategory, itemType, minPrice, maxPrice, currentSort, currentPage]);
+  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   // 修改单个 URL 查询参数
   const updateQueryParam = (newParams: Record<string, string | number | null>) => {
     const nextParams = new URLSearchParams(searchParams);
-    
+
     // 如果修改了检索参数，默认重置页码回第 1 页
     if (!('page' in newParams)) {
       nextParams.set('page', '1');
@@ -182,31 +201,28 @@ export const ListingList: React.FC = () => {
 
   return (
     <div className="catalog-container fade-in">
-      <div className="catalog-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700 }}>商品浏览</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>发现优质闲置二手好物</p>
-        </div>
+      <div className="page-header">
+        <h1>商品浏览</h1>
+        <p>发现优质闲置二手好物</p>
       </div>
 
       <div className="catalog-layout">
-        {/* 侧边栏筛选面板 */}
+        {/* 侧边栏筛选面板：小屏幕下会随 catalog-layout 自动堆叠 */}
         <aside className="filter-panel">
           {/* 搜索 */}
           <div className="filter-section">
             <h3 className="filter-section-title">搜索</h3>
-            <form onSubmit={handleSearchSubmit}>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  className="form-control"
-                  style={{ padding: '8px 12px', fontSize: '0.9rem' }}
-                  placeholder="搜索商品..."
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                />
-                <button type="submit" className="btn btn-primary btn-sm" style={{ padding: '0 12px' }}>🔍</button>
-              </div>
+            <form onSubmit={handleSearchSubmit} className="filter-search-form">
+              <Input
+                id="search"
+                icon={<Search size={18} />}
+                placeholder="搜索商品..."
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+              />
+              <Button type="submit" variant="primary" size="sm" aria-label="搜索">
+                <Search size={16} />
+              </Button>
             </form>
           </div>
 
@@ -270,7 +286,6 @@ export const ListingList: React.FC = () => {
                   <input
                     type="number"
                     className="form-control price-control"
-                    style={{ padding: '8px 8px 8px 20px', fontSize: '0.85rem' }}
                     placeholder="最低"
                     value={tempMinPrice}
                     onChange={(e) => setTempMinPrice(e.target.value)}
@@ -282,58 +297,57 @@ export const ListingList: React.FC = () => {
                   <input
                     type="number"
                     className="form-control price-control"
-                    style={{ padding: '8px 8px 8px 20px', fontSize: '0.85rem' }}
                     placeholder="最高"
                     value={tempMaxPrice}
                     onChange={(e) => setTempMaxPrice(e.target.value)}
                   />
                 </div>
               </div>
-              <button type="submit" className="btn btn-outline btn-sm btn-block" style={{ marginTop: '12px' }}>
+              <Button type="submit" variant="outline" size="sm" fullWidth className="price-apply-btn">
                 应用区间
-              </button>
+              </Button>
             </form>
           </div>
 
           {/* 排序 */}
           <div className="filter-section">
             <h3 className="filter-section-title">排序方式</h3>
-            <select
-              className="form-control"
-              style={{ padding: '8px 12px', fontSize: '0.9rem', cursor: 'pointer' }}
-              value={currentSort}
-              onChange={(e) => updateQueryParam({ sort: e.target.value })}
-            >
-              <option value="newest">最新发布</option>
-              <option value="oldest">时间最久</option>
-              <option value="price_asc">价格从低到高</option>
-              <option value="price_desc">价格从高到低</option>
-            </select>
+            <div className="filter-sort-select">
+              <Select
+                id="sort"
+                options={SORT_OPTIONS}
+                value={currentSort}
+                onChange={(e) => updateQueryParam({ sort: e.target.value })}
+              />
+            </div>
           </div>
         </aside>
 
         {/* 右侧商品网格 */}
-        <main className="catalog-main" style={{ display: 'flex', flexDirection: 'column', minHeight: '400px' }}>
+        <main className="catalog-main">
           {errorMsg && (
-            <div className="alert alert-error" style={{ marginBottom: '24px' }}>
-              <span>⚠️ {errorMsg}</span>
-              <button onClick={fetchListings} className="btn btn-outline btn-sm" style={{ marginLeft: '16px' }}>重试连接</button>
+            <div className="alert alert-error" role="alert">
+              <AlertCircle size={18} />
+              <span>{errorMsg}</span>
+              <Button variant="outline" size="sm" onClick={fetchListings}>
+                重试连接
+              </Button>
             </div>
           )}
 
           {loading ? (
             renderListingSkeletons()
           ) : listings.length === 0 ? (
-            <div className="placeholder-card" style={{ margin: 'auto', width: '100%' }}>
-              <h2>🔍 未搜索到相关商品</h2>
-              <p>尝试清除过滤条件或换个搜索关键词试试吧。</p>
-              <button
-                onClick={() => setSearchParams(new URLSearchParams())}
-                className="btn btn-primary btn-sm"
-              >
-                重置所有筛选
-              </button>
-            </div>
+            <EmptyState
+              icon={<Search size={48} />}
+              title="未搜索到相关商品"
+              description="尝试清除过滤条件或换个搜索关键词试试吧。"
+              action={{
+                label: '重置所有筛选',
+                onClick: () => setSearchParams(new URLSearchParams()),
+                variant: 'primary',
+              }}
+            />
           ) : (
             <>
               <div className="listings-grid">
@@ -344,22 +358,32 @@ export const ListingList: React.FC = () => {
                       key={item.id}
                       className="listing-card"
                       onClick={() => navigate(`/listings/${item.id}`)}
-                      style={{ cursor: 'pointer' }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          navigate(`/listings/${item.id}`);
+                        }
+                      }}
+                      aria-label={`查看商品：${item.title}`}
                     >
                       <div className="listing-card-image-wrapper">
                         {cover ? (
                           <img src={cover} alt={item.title} className="listing-card-image" loading="lazy" />
                         ) : (
                           <div className="listing-card-placeholder">
-                            <span className="listing-card-placeholder-icon">
-                              {item.category.id === 1 ? '💻' : item.category.id === 2 ? '📚' : item.category.id === 3 ? '👕' : '🏀'}
-                            </span>
+                            <ImageIcon className="listing-card-placeholder-icon" size={48} strokeWidth={1.5} />
                             <span>{item.category.name}</span>
                           </div>
                         )}
 
                         <div className="listing-card-badges">
-                          <span className={`card-badge ${item.item_type === 'physical' ? 'card-badge-physical' : 'card-badge-virtual'}`}>
+                          <span
+                            className={`card-badge ${
+                              item.item_type === 'physical' ? 'card-badge-physical' : 'card-badge-virtual'
+                            }`}
+                          >
                             {item.item_type_display}
                           </span>
                         </div>
@@ -372,7 +396,7 @@ export const ListingList: React.FC = () => {
                       <div className="listing-card-content">
                         <span className="listing-card-category">{item.category.name}</span>
                         <h2 className="listing-card-title">{item.title}</h2>
-                        
+
                         <div className="listing-card-price-row">
                           <span className="listing-card-price">{item.price}</span>
                           {item.item_type === 'physical' && item.condition_display && (
@@ -401,11 +425,12 @@ export const ListingList: React.FC = () => {
 
               {/* 分页 */}
               {totalPages > 1 && (
-                <div className="pagination">
+                <nav className="pagination" aria-label="商品分页">
                   <button
                     disabled={currentPage === 1}
                     onClick={() => updateQueryParam({ page: currentPage - 1 })}
                     className="page-btn"
+                    aria-label="上一页"
                   >
                     上页
                   </button>
@@ -415,6 +440,8 @@ export const ListingList: React.FC = () => {
                       key={num}
                       onClick={() => updateQueryParam({ page: num })}
                       className={`page-btn ${currentPage === num ? 'active' : ''}`}
+                      aria-label={`第 ${num} 页`}
+                      aria-current={currentPage === num ? 'page' : undefined}
                     >
                       {num}
                     </button>
@@ -424,10 +451,11 @@ export const ListingList: React.FC = () => {
                     disabled={currentPage === totalPages}
                     onClick={() => updateQueryParam({ page: currentPage + 1 })}
                     className="page-btn"
+                    aria-label="下一页"
                   >
                     下页
                   </button>
-                </div>
+                </nav>
               )}
             </>
           )}

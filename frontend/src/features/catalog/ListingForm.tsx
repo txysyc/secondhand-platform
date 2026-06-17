@@ -1,9 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getCategories, createListing, updateListing, getMyListingDetail, uploadListingImage, deleteListingImage, reorderListingImages, publishListing } from '../../api/endpoints/listings';
+import { Camera, Trash2, ArrowLeft, ArrowRight, AlertCircle } from 'lucide-react';
+import {
+  getCategories,
+  createListing,
+  updateListing,
+  getMyListingDetail,
+  uploadListingImage,
+  deleteListingImage,
+  reorderListingImages,
+  publishListing,
+} from '../../api/endpoints/listings';
 import { useAuth } from '../../app/providers';
 import { resolveMediaUrl } from '../../utils/media';
-import type { Category, Listing, ListingImage, ListingStatus, ItemType, ItemCondition, PhysicalDeliveryMethod } from '../../types/listings';
+import { Button, Card, Input, TextArea, Select, ErrorState, Loading } from '../../components/ui';
+import type {
+  Category,
+  Listing,
+  ListingImage,
+  ListingStatus,
+  ItemType,
+  ItemCondition,
+  PhysicalDeliveryMethod,
+} from '../../types/listings';
 
 interface PendingListingImage {
   id: string;
@@ -11,6 +30,42 @@ interface PendingListingImage {
   previewUrl: string;
   sort_order: number;
 }
+
+interface ListingPayload {
+  title: string;
+  category: number;
+  item_type: ItemType;
+  price: string;
+  description: string;
+  delivery_notes: string;
+  condition?: ItemCondition | null;
+  physical_delivery_method?: PhysicalDeliveryMethod | null;
+  virtual_valid_until?: string | null;
+}
+
+const CONDITION_OPTIONS = [
+  { value: 'new', label: '全新 (未拆封/未使用)' },
+  { value: 'like_new', label: '九五新 (几乎无使用痕迹)' },
+  { value: 'good', label: '九成新 (轻微使用痕迹)' },
+  { value: 'fair', label: '八成新及以下 (有明显瑕疵/使用痕迹)' },
+];
+
+const DELIVERY_METHOD_OPTIONS = [
+  { value: 'meetup', label: '同城当面面交' },
+  { value: 'shipping', label: '邮寄顺丰包邮' },
+  { value: 'both', label: '均可' },
+];
+
+const ITEM_TYPE_OPTIONS = [
+  { value: 'physical', label: '实体商品' },
+  { value: 'virtual', label: '虚拟商品 (卡券/兑换码等)' },
+];
+
+const getErrorMessage = (err: unknown, fallback: string): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return fallback;
+};
 
 const readImagePreview = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -67,6 +122,8 @@ export const ListingForm: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  const categoryOptions = categories.map((c) => ({ value: c.id, label: c.name }));
+
   // 1. 加载分类
   useEffect(() => {
     const fetchCategories = async () => {
@@ -74,7 +131,7 @@ export const ListingForm: React.FC = () => {
         const data = await getCategories();
         setCategories(data);
         if (data.length > 0) setCategory(String(data[0].id));
-      } catch (err: any) {
+      } catch {
         setErrorMsg('加载分类失败，请检查网络连接');
       }
     };
@@ -91,7 +148,7 @@ export const ListingForm: React.FC = () => {
       try {
         const data = await getMyListingDetail(id);
         fillForm(data);
-      } catch (err: any) {
+      } catch {
         setErrorMsg('获取商品详情失败，请检查网络连接');
       } finally {
         setLoading(false);
@@ -106,7 +163,7 @@ export const ListingForm: React.FC = () => {
       setDescription(data.description);
       setDeliveryNotes(data.delivery_notes);
       setCurrentStatus(data.status);
-      
+
       if (data.item_type === 'physical') {
         setCondition(data.condition || 'good');
         setPhysicalDeliveryMethod(data.physical_delivery_method || 'meetup');
@@ -130,7 +187,7 @@ export const ListingForm: React.FC = () => {
     const currentImageCount = isEditMode ? uploadedImages.length : pendingImages.length;
 
     if (currentImageCount + selectedFiles.length > 6) {
-      alert('最多只能上传 6 张商品图片！');
+      setErrorMsg('最多只能上传 6 张商品图片！');
       e.target.value = '';
       return;
     }
@@ -138,7 +195,7 @@ export const ListingForm: React.FC = () => {
     // 单个文件大小限制 5MB 的前端防线
     for (const file of selectedFiles) {
       if (file.size > 5 * 1024 * 1024) {
-        alert(`图片 ${file.name} 超过 5MB 限制，请重新选择较小的图片。`);
+        setErrorMsg(`图片 ${file.name} 超过 5MB 限制，请重新选择较小的图片。`);
         e.target.value = '';
         return;
       }
@@ -146,9 +203,7 @@ export const ListingForm: React.FC = () => {
 
     if (!isEditMode) {
       try {
-        const previews = await Promise.all(
-          selectedFiles.map((file) => readImagePreview(file))
-        );
+        const previews = await Promise.all(selectedFiles.map((file) => readImagePreview(file)));
         const startOrder = pendingImages.length;
         setPendingImages((prev) => [
           ...prev,
@@ -159,8 +214,9 @@ export const ListingForm: React.FC = () => {
             sort_order: startOrder + index,
           })),
         ]);
-      } catch (err: any) {
-        alert(err.message || '图片预览生成失败，请重新选择图片');
+        setErrorMsg('');
+      } catch (err) {
+        setErrorMsg(getErrorMessage(err, '图片预览生成失败，请重新选择图片'));
       }
       e.target.value = '';
       return;
@@ -176,9 +232,12 @@ export const ListingForm: React.FC = () => {
         formData.append('images', file);
       }
       const updatedListing = await uploadListingImage(id, formData);
-      setUploadedImages(updatedListing.images ? [...updatedListing.images].sort((a, b) => a.sort_order - b.sort_order) : []);
-    } catch (err: any) {
-      alert(err.message || '图片上传失败，请重试');
+      setUploadedImages(
+        updatedListing.images ? [...updatedListing.images].sort((a, b) => a.sort_order - b.sort_order) : []
+      );
+      setErrorMsg('');
+    } catch (err) {
+      setErrorMsg(getErrorMessage(err, '图片上传失败，请重试'));
     } finally {
       setSaving(false);
       e.target.value = '';
@@ -192,10 +251,13 @@ export const ListingForm: React.FC = () => {
     try {
       // 调用后端删除
       await deleteListingImage(id, imgId);
-      const next = uploadedImages.filter((x) => x.id !== imgId).map((x, idx) => ({ ...x, sort_order: idx + 1 }));
+      const next = uploadedImages
+        .filter((x) => x.id !== imgId)
+        .map((x, idx) => ({ ...x, sort_order: idx + 1 }));
       setUploadedImages(next);
-    } catch (err: any) {
-      alert(err.message || '删除图片失败');
+      setErrorMsg('');
+    } catch (err) {
+      setErrorMsg(getErrorMessage(err, '删除图片失败'));
     } finally {
       setSaving(false);
     }
@@ -217,7 +279,7 @@ export const ListingForm: React.FC = () => {
 
     const nextIndex = direction === 'left' ? index - 1 : index + 1;
     const nextImages = [...uploadedImages];
-    
+
     // 互换位置
     const temp = nextImages[index];
     nextImages[index] = nextImages[nextIndex];
@@ -233,7 +295,7 @@ export const ListingForm: React.FC = () => {
 
     try {
       await reorderListingImages(id, reordered.map((x) => x.id));
-    } catch (err: any) {
+    } catch (err) {
       console.error('排序接口调用失败，但保持前端排序。', err);
     }
   };
@@ -272,7 +334,7 @@ export const ListingForm: React.FC = () => {
     setErrorMsg('');
 
     // 动态字段组装
-    const payload: any = {
+    const payload: ListingPayload = {
       title,
       category: parseInt(category, 10),
       item_type: itemType,
@@ -298,9 +360,9 @@ export const ListingForm: React.FC = () => {
 
     try {
       if (isEditMode) {
-        const updatedListing = await updateListing(id, payload);
+        const updatedListing = await updateListing(id!, payload);
         if (shouldPublish && updatedListing.status === 'draft') {
-          await publishListing(id);
+          await publishListing(id!);
         }
       } else {
         // 后端以草稿作为创建入口；图片上传和发布动作在草稿创建成功后顺序执行。
@@ -311,10 +373,9 @@ export const ListingForm: React.FC = () => {
         }
       }
 
-      alert(shouldPublish ? '商品已发布！' : isEditMode ? '商品信息保存成功！' : '草稿创建成功！');
       navigate('/me/listings');
-    } catch (err: any) {
-      setErrorMsg(err.message || (isEditMode ? '保存修改失败，请重试' : '创建商品失败，请重试'));
+    } catch (err) {
+      setErrorMsg(getErrorMessage(err, isEditMode ? '保存修改失败，请重试' : '创建商品失败，请重试'));
     } finally {
       setSaving(false);
     }
@@ -322,102 +383,82 @@ export const ListingForm: React.FC = () => {
 
   if (!user) {
     return (
-      <div className="placeholder-card error-card">
-        <h2>⚠️ 您尚未登录</h2>
-        <p>必须登录后才能发布或修改商品。</p>
-      </div>
+      <ErrorState
+        title="您尚未登录"
+        message="必须登录后才能发布或修改商品。"
+        onBack={() => navigate('/login')}
+      />
     );
   }
 
   if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="spinner"></div>
-        <p>正在获取商品详情...</p>
-      </div>
-    );
+    return <Loading text="正在获取商品详情..." />;
   }
 
   return (
     <div className="listing-form-container fade-in">
-      <div className="form-card">
-        <h2 className="auth-title" style={{ marginBottom: '8px' }}>
-          {isEditMode ? '修改商品信息' : '发布闲置商品'}
-        </h2>
-        <p className="auth-subtitle" style={{ marginBottom: '32px' }}>
+      <Card padding="lg" shadow="md" className="form-card">
+        <h2 className="auth-title">{isEditMode ? '修改商品信息' : '发布闲置商品'}</h2>
+        <p className="auth-subtitle">
           {isEditMode ? '更新您的商品详情及图片管理' : '创建一个商品草稿，稍后可以发布上架销售'}
         </p>
 
         {errorMsg && (
-          <div className="alert alert-error">
-            <span>⚠️ {errorMsg}</span>
+          <div className="alert alert-error" role="alert">
+            <AlertCircle size={18} />
+            <span>{errorMsg}</span>
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
           {/* 商品标题 */}
-          <div className="form-group">
-            <label htmlFor="title">商品标题</label>
-            <input
-              id="title"
-              type="text"
-              className="form-control"
-              placeholder="请输入商品标题 (例如：品牌、型号、关键规格)"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              disabled={saving}
-              required
-            />
-          </div>
+          <Input
+            id="title"
+            label="商品标题"
+            required
+            type="text"
+            placeholder="请输入商品标题 (例如：品牌、型号、关键规格)"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            disabled={saving}
+          />
 
           {/* 分类与交付类别 */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-            <div className="form-group">
-              <label htmlFor="category">商品分类</label>
-              <select
-                id="category"
-                className="form-control"
-                style={{ cursor: 'pointer' }}
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                disabled={saving}
-              >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="form-row">
+            <Select
+              id="category"
+              label="商品分类"
+              required
+              options={categoryOptions}
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              disabled={saving}
+            />
 
-            <div className="form-group">
-              <label htmlFor="itemType">交付类别</label>
-              <select
-                id="itemType"
-                className="form-control"
-                style={{ cursor: 'pointer' }}
-                value={itemType}
-                onChange={(e) => setItemType(e.target.value as ItemType)}
-                disabled={saving || isEditMode} // 编辑模式通常不允许修改商品的大交付类别
-              >
-                <option value="physical">实体商品</option>
-                <option value="virtual">虚拟商品 (卡券/兑换码等)</option>
-              </select>
-            </div>
+            <Select
+              id="itemType"
+              label="交付类别"
+              required
+              options={ITEM_TYPE_OPTIONS}
+              value={itemType}
+              onChange={(e) => setItemType(e.target.value as ItemType)}
+              disabled={saving || isEditMode}
+            />
           </div>
 
           {/* 价格 */}
           <div className="form-group">
-            <label htmlFor="price">转让价格 (元)</label>
+            <label htmlFor="price" className="form-label-required">
+              转让价格 (元)
+            </label>
             <div className="price-input-wrapper">
-              <span className="price-currency" style={{ fontSize: '1rem', left: '16px' }}>¥</span>
+              <span className="price-currency">¥</span>
               <input
                 id="price"
                 type="number"
                 step="0.01"
                 min="0"
-                className="form-control"
-                style={{ paddingLeft: '32px' }}
+                className="form-control price-control"
                 placeholder="请输入转让价格"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
@@ -430,111 +471,83 @@ export const ListingForm: React.FC = () => {
           {/* 动态属性表单配置 */}
           <div className="form-specs-section">
             {itemType === 'physical' ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label htmlFor="condition">商品成色</label>
-                  <select
-                    id="condition"
-                    className="form-control"
-                    style={{ cursor: 'pointer' }}
-                    value={condition}
-                    onChange={(e) => setCondition(e.target.value as ItemCondition)}
-                    disabled={saving}
-                  >
-                    <option value="new">全新 (未拆封/未使用)</option>
-                    <option value="like_new">九五新 (几乎无使用痕迹)</option>
-                    <option value="good">九成新 (轻微使用痕迹)</option>
-                    <option value="fair">八成新及以下 (有明显瑕疵/使用痕迹)</option>
-                  </select>
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label htmlFor="deliveryMethod">建议交付方式</label>
-                  <select
-                    id="deliveryMethod"
-                    className="form-control"
-                    style={{ cursor: 'pointer' }}
-                    value={physicalDeliveryMethod}
-                    onChange={(e) => setPhysicalDeliveryMethod(e.target.value as PhysicalDeliveryMethod)}
-                    disabled={saving}
-                  >
-                    <option value="meetup">同城当面面交</option>
-                    <option value="shipping">邮寄顺丰包邮</option>
-                    <option value="both">均可</option>
-                  </select>
-                </div>
-              </div>
-            ) : (
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label htmlFor="validUntil">虚拟兑换码有效期</label>
-                <input
-                  id="validUntil"
-                  type="datetime-local"
-                  className={`form-control ${fieldErrors.virtual_valid_until ? 'is-invalid' : ''}`}
-                  value={virtualValidUntil}
-                  onChange={(e) => setVirtualValidUntil(e.target.value)}
+              <div className="form-row">
+                <Select
+                  id="condition"
+                  label="商品成色"
+                  required
+                  options={CONDITION_OPTIONS}
+                  value={condition}
+                  onChange={(e) => setCondition(e.target.value as ItemCondition)}
                   disabled={saving}
                 />
-                {fieldErrors.virtual_valid_until && (
-                  <span className="invalid-feedback">{fieldErrors.virtual_valid_until}</span>
-                )}
+
+                <Select
+                  id="deliveryMethod"
+                  label="建议交付方式"
+                  required
+                  options={DELIVERY_METHOD_OPTIONS}
+                  value={physicalDeliveryMethod}
+                  onChange={(e) => setPhysicalDeliveryMethod(e.target.value as PhysicalDeliveryMethod)}
+                  disabled={saving}
+                />
               </div>
+            ) : (
+              <Input
+                id="validUntil"
+                label="虚拟兑换码有效期"
+                required={itemType === 'virtual'}
+                type="datetime-local"
+                error={fieldErrors.virtual_valid_until}
+                value={virtualValidUntil}
+                onChange={(e) => setVirtualValidUntil(e.target.value)}
+                disabled={saving}
+              />
             )}
           </div>
 
           {/* 商品详细描述 */}
-          <div className="form-group">
-            <label htmlFor="description">商品描述</label>
-            <textarea
-              id="description"
-              className="form-control"
-              style={{ minHeight: '140px', resize: 'vertical' }}
-              placeholder="请详细说明商品的规格参数、购买途径、使用痕迹、功能瑕疵等，有利于更快卖出"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={saving}
-              required
-            />
-          </div>
+          <TextArea
+            id="description"
+            label="商品描述"
+            required
+            rows={5}
+            placeholder="请详细说明商品的规格参数、购买途径、使用痕迹、功能瑕疵等，有利于更快卖出"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            disabled={saving}
+          />
 
-          {/* 交易交易说明 */}
-          <div className="form-group">
-            <label htmlFor="deliveryNotes">补充交易说明 (可选)</label>
-            <input
-              id="deliveryNotes"
-              type="text"
-              className="form-control"
-              placeholder="例：同城可约地铁站面交；谢绝砍价；不退换"
-              value={deliveryNotes}
-              onChange={(e) => setDeliveryNotes(e.target.value)}
-              disabled={saving}
-            />
-          </div>
+          {/* 交易说明 */}
+          <Input
+            id="deliveryNotes"
+            label="补充交易说明 (可选)"
+            type="text"
+            placeholder="例：同城可约地铁站面交；谢绝砍价；不退换"
+            value={deliveryNotes}
+            onChange={(e) => setDeliveryNotes(e.target.value)}
+            disabled={saving}
+          />
 
           {/* 多图上传及重排区域 */}
           {isEditMode ? (
             <div className="image-manager-section">
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-main)' }}>
+              <div className="image-manager-section-title">
                 商品图片管理 ({uploadedImages.length}/6)
-              </label>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '12px' }}>
+              </div>
+              <p className="image-manager-hint">
                 支持最多上传 6 张高清大图，首图将被用作搜索封面。支持左右方向键进行排序。
               </p>
 
               <div className="image-manager-grid">
                 {uploadedImages.map((img, idx) => (
                   <div key={img.id} className="image-manager-item">
-                    <div
+                    <img
+                      src={resolveMediaUrl(img.image_url) || undefined}
+                      alt={`商品图 ${idx + 1}`}
                       className="image-manager-img"
-                      aria-label="商品图预览"
-                      style={{
-                        backgroundImage: `url("${resolveMediaUrl(img.image_url) || ''}")`,
-                        backgroundPosition: 'center',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundSize: 'cover',
-                      }}
                     />
-                    
+
                     {/* 删除图片 */}
                     <button
                       type="button"
@@ -543,7 +556,7 @@ export const ListingForm: React.FC = () => {
                       disabled={saving}
                       title="删除"
                     >
-                      ×
+                      <Trash2 size={14} />
                     </button>
 
                     {/* 左右移动控制 */}
@@ -555,7 +568,7 @@ export const ListingForm: React.FC = () => {
                         className="image-control-btn"
                         title="前移"
                       >
-                        ←
+                        <ArrowLeft size={16} />
                       </button>
                       <button
                         type="button"
@@ -564,7 +577,7 @@ export const ListingForm: React.FC = () => {
                         className="image-control-btn"
                         title="后移"
                       >
-                        →
+                        <ArrowRight size={16} />
                       </button>
                     </div>
                   </div>
@@ -573,13 +586,13 @@ export const ListingForm: React.FC = () => {
                 {/* 上传卡片 */}
                 {uploadedImages.length < 6 && (
                   <div className="image-manager-upload-card">
-                    <span className="image-manager-upload-icon">📷</span>
+                    <Camera className="image-manager-upload-icon" size={32} />
                     <span>添加图片</span>
                     <input
                       type="file"
                       multiple
                       accept="image/*"
-                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
+                      className="image-manager-file-input"
                       onChange={handleImageUpload}
                       disabled={saving}
                     />
@@ -589,26 +602,17 @@ export const ListingForm: React.FC = () => {
             </div>
           ) : (
             <div className="image-manager-section">
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-main)' }}>
+              <div className="image-manager-section-title">
                 商品图片 ({pendingImages.length}/6)
-              </label>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '12px' }}>
+              </div>
+              <p className="image-manager-hint">
                 可先选择图片，提交后会自动创建草稿、上传图片，并按您的选择保存或发布。
               </p>
 
               <div className="image-manager-grid">
                 {pendingImages.map((img, idx) => (
                   <div key={img.id} className="image-manager-item">
-                    <div
-                      className="image-manager-img"
-                      aria-label="商品图预览"
-                      style={{
-                        backgroundImage: `url("${img.previewUrl}")`,
-                        backgroundPosition: 'center',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundSize: 'cover',
-                      }}
-                    />
+                    <img src={img.previewUrl} alt={`商品图预览 ${idx + 1}`} className="image-manager-img" />
 
                     <button
                       type="button"
@@ -617,7 +621,7 @@ export const ListingForm: React.FC = () => {
                       disabled={saving}
                       title="删除"
                     >
-                      ×
+                      <Trash2 size={14} />
                     </button>
 
                     <div className="image-manager-controls">
@@ -628,7 +632,7 @@ export const ListingForm: React.FC = () => {
                         className="image-control-btn"
                         title="前移"
                       >
-                        ←
+                        <ArrowLeft size={16} />
                       </button>
                       <button
                         type="button"
@@ -637,7 +641,7 @@ export const ListingForm: React.FC = () => {
                         className="image-control-btn"
                         title="后移"
                       >
-                        →
+                        <ArrowRight size={16} />
                       </button>
                     </div>
                   </div>
@@ -645,13 +649,13 @@ export const ListingForm: React.FC = () => {
 
                 {pendingImages.length < 6 && (
                   <div className="image-manager-upload-card">
-                    <span className="image-manager-upload-icon">📷</span>
+                    <Camera className="image-manager-upload-icon" size={32} />
                     <span>添加图片</span>
                     <input
                       type="file"
                       multiple
                       accept="image/*"
-                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
+                      className="image-manager-file-input"
                       onChange={handleImageUpload}
                       disabled={saving}
                     />
@@ -659,47 +663,32 @@ export const ListingForm: React.FC = () => {
                 )}
               </div>
 
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>
-                💡 提示：至少填写完整商品信息后，可以保存为草稿，也可以直接发布上架。
+              <p className="image-manager-tip">
+                提示：至少填写完整商品信息后，可以保存为草稿，也可以直接发布上架。
               </p>
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '16px', marginTop: '32px' }}>
-            <button
+          <div className="form-actions-bar">
+            <Button
               type="button"
+              variant="outline"
               onClick={() => navigate('/me/listings')}
-              className="btn btn-outline"
-              style={{ flex: 1 }}
               disabled={saving}
             >
               取消并返回
-            </button>
-            <button
-              type="submit"
-              name="intent"
-              value="draft"
-              className="btn btn-primary"
-              style={{ flex: 2 }}
-              disabled={saving}
-            >
-              {saving ? '正在保存...' : isEditMode ? '保存修改信息' : '保存商品草稿'}
-            </button>
+            </Button>
+            <Button type="submit" name="intent" value="draft" variant="secondary" disabled={saving} loading={saving}>
+              {isEditMode ? '保存修改信息' : '保存商品草稿'}
+            </Button>
             {(!isEditMode || currentStatus === 'draft') && (
-              <button
-                type="submit"
-                name="intent"
-                value="publish"
-                className="btn btn-primary"
-                style={{ flex: 2 }}
-                disabled={saving}
-              >
-                {saving ? '正在发布...' : isEditMode ? '保存并发布' : '直接发布商品'}
-              </button>
+              <Button type="submit" name="intent" value="publish" variant="primary" disabled={saving} loading={saving}>
+                {isEditMode ? '保存并发布' : '直接发布商品'}
+              </Button>
             )}
           </div>
         </form>
-      </div>
+      </Card>
     </div>
   );
 };

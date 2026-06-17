@@ -1,21 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { ArrowLeft, AlertCircle, ImageIcon, MessageCircle } from 'lucide-react';
 import { getListingDetail } from '../../api/endpoints/listings';
 import {
   getListingComments,
   createListingComment,
   createCommentReply,
-  deleteComment
+  deleteComment,
 } from '../../api/endpoints/comments';
 import { createOrder } from '../../api/endpoints/orders';
 import { createConversation } from '../../api/endpoints/messages';
-
 import { useAuth } from '../../app/providers';
 import { resolveAvatarUrl, resolveMediaUrl } from '../../utils/media';
+import { Button, Card, TextArea, ErrorState, Loading } from '../../components/ui';
 import type { Listing } from '../../types/listings';
 import type { Comment } from '../../types/comments';
 
-// --- 与列表页共享的 Mock 数据集 (做降级展示用) ---
+const getErrorMessage = (err: unknown, fallback: string): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return fallback;
+};
+
 export const ListingDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -36,6 +42,10 @@ export const ListingDetail: React.FC = () => {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [submittingReply, setSubmittingReply] = useState(false);
 
+  // 操作反馈（替代 alert）
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
   // 获取商品详情
   useEffect(() => {
     const fetchDetail = async () => {
@@ -46,9 +56,9 @@ export const ListingDetail: React.FC = () => {
       try {
         const data = await getListingDetail(id);
         setListing(data);
-      } catch (err: any) {
+      } catch (err) {
         console.error(`加载商品详情失败 (ID: ${id})`, err);
-        setErrorMsg(err.message || '加载商品详情失败，请检查网络连接。');
+        setErrorMsg(getErrorMessage(err, '加载商品详情失败，请检查网络连接。'));
       } finally {
         setLoading(false);
       }
@@ -71,18 +81,31 @@ export const ListingDetail: React.FC = () => {
     }
   };
 
+  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
     fetchComments();
   }, [id]);
+  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
+
+  const clearActionFeedback = () => {
+    setActionError(null);
+    setShowLoginPrompt(false);
+  };
+
+  // 检查登录状态并在未登录时给出友好的 inline 提示
+  const ensureLoggedIn = () => {
+    if (!user) {
+      setShowLoginPrompt(true);
+      return false;
+    }
+    clearActionFeedback();
+    return true;
+  };
 
   // 发表留言
   const handleCreateComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) {
-      alert('请先登录后再发表留言！');
-      navigate('/login', { state: { from: { pathname: `/listings/${id}` } } });
-      return;
-    }
+    if (!ensureLoggedIn()) return;
     if (!newCommentContent.trim()) return;
 
     setSubmittingComment(true);
@@ -90,8 +113,8 @@ export const ListingDetail: React.FC = () => {
       await createListingComment(id!, newCommentContent);
       setNewCommentContent('');
       await fetchComments();
-    } catch (err: any) {
-      alert(err.message || '发表留言失败，请稍后重试');
+    } catch (err) {
+      setActionError(getErrorMessage(err, '发表留言失败，请稍后重试'));
     } finally {
       setSubmittingComment(false);
     }
@@ -99,11 +122,7 @@ export const ListingDetail: React.FC = () => {
 
   // 回复留言
   const handleCreateReply = async (commentId: number) => {
-    if (!user) {
-      alert('请先登录后再回复留言！');
-      navigate('/login', { state: { from: { pathname: `/listings/${id}` } } });
-      return;
-    }
+    if (!ensureLoggedIn()) return;
     if (!replyContent.trim()) return;
 
     setSubmittingReply(true);
@@ -112,8 +131,8 @@ export const ListingDetail: React.FC = () => {
       setReplyContent('');
       setReplyTargetId(null);
       await fetchComments();
-    } catch (err: any) {
-      alert(err.message || '发表回复失败，请稍后重试');
+    } catch (err) {
+      setActionError(getErrorMessage(err, '发表回复失败，请稍后重试'));
     } finally {
       setSubmittingReply(false);
     }
@@ -128,79 +147,63 @@ export const ListingDetail: React.FC = () => {
     try {
       await deleteComment(commentId);
       await fetchComments();
-    } catch (err: any) {
-      alert(err.message || '删除留言失败，请稍后重试');
+    } catch (err) {
+      setActionError(getErrorMessage(err, '删除留言失败，请稍后重试'));
     }
   };
 
   // 购买闲置商品逻辑
   const handleBuy = async () => {
-    if (!user) {
-      alert('该操作需要先登录您的账号！将为您跳转至登录页。');
-      navigate('/login', { state: { from: { pathname: `/listings/${id}` } } });
-      return;
-    }
+    if (!ensureLoggedIn()) return;
 
     try {
       const data = await createOrder(listing!.id);
       navigate(`/orders/${data.id}`);
-    } catch (err: any) {
-      alert(err.message || '创建订单失败，请稍后重试');
+    } catch (err) {
+      setActionError(getErrorMessage(err, '创建订单失败，请稍后重试'));
     }
   };
 
   // 联系卖家会话创建与跳转
   const handleContactSeller = async () => {
+    if (!ensureLoggedIn()) return;
     if (!listing) return;
+
     try {
       const conversation = await createConversation(listing.owner.id);
       navigate(`/messages?id=${conversation.id}`);
-    } catch (err: any) {
-      alert(err.message || '发起会话失败，请稍后重试');
+    } catch (err) {
+      setActionError(getErrorMessage(err, '发起会话失败，请稍后重试'));
     }
   };
 
   // 按钮登录拦截逻辑
   const handleActionIntercept = (actionType: 'buy' | 'message') => {
-    if (!user) {
-      // 未登录，拦截并重定向
-      alert('该操作需要先登录您的账号！将为您跳转至登录页。');
-      navigate('/login', { state: { from: { pathname: `/listings/${id}` } } });
+    if (!ensureLoggedIn()) return;
+    if (actionType === 'buy') {
+      handleBuy();
     } else {
-      if (actionType === 'buy') {
-        handleBuy();
-      } else {
-        handleContactSeller();
-      }
+      handleContactSeller();
     }
   };
 
-
   if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="spinner"></div>
-        <p>正在努力加载商品详情...</p>
-      </div>
-    );
+    return <Loading text="正在努力加载商品详情..." />;
   }
 
   if (errorMsg || !listing) {
     return (
-      <div className="placeholder-card error-card fade-in">
-        <h2>⚠️ 获取商品信息失败</h2>
-        <p>{errorMsg || '加载商品详情失败，请检查您的网络连接。'}</p>
-        <button onClick={() => navigate('/')} className="btn btn-primary btn-sm">
-          返回商品列表
-        </button>
-      </div>
+      <ErrorState
+        title="获取商品信息失败"
+        message={errorMsg || '加载商品详情失败，请检查您的网络连接。'}
+        onRetry={() => window.location.reload()}
+        onBack={() => navigate('/')}
+      />
     );
   }
 
   // 排序图片
-  const sortedImages = listing.images
-    ? [...listing.images].sort((a, b) => a.sort_order - b.sort_order)
-    : [];
+  const sortedImages = listing.images ? [...listing.images].sort((a, b) => a.sort_order - b.sort_order) : [];
 
   const activeImage = resolveMediaUrl(sortedImages[activeImageIndex]?.image_url);
 
@@ -208,7 +211,8 @@ export const ListingDetail: React.FC = () => {
   const isOwner = user && user.id === listing.owner.id;
 
   // 计算总评论数
-  const totalCommentsCount = comments.length + comments.reduce((acc, c) => acc + (c.replies ? c.replies.length : 0), 0);
+  const totalCommentsCount =
+    comments.length + comments.reduce((acc, c) => acc + (c.replies ? c.replies.length : 0), 0);
 
   const renderCommentSkeletons = () => (
     <div className="comments-list" aria-hidden="true">
@@ -217,8 +221,11 @@ export const ListingDetail: React.FC = () => {
           <div className="comment-item">
             <div className="skeleton-block comment-avatar" />
             <div className="comment-body">
-              <div className="skeleton-line" style={{ width: '32%', height: '14px', marginBottom: '12px' }} />
-              <div className="skeleton-line" style={{ width: index % 2 === 0 ? '78%' : '62%', height: '14px', marginBottom: '10px' }} />
+              <div className="skeleton-line skeleton-line-short" style={{ height: '14px' }} />
+              <div
+                className="skeleton-line"
+                style={{ width: index % 2 === 0 ? '78%' : '62%', height: '14px' }}
+              />
               <div className="skeleton-line" style={{ width: '44%', height: '14px' }} />
             </div>
           </div>
@@ -229,10 +236,11 @@ export const ListingDetail: React.FC = () => {
 
   return (
     <div className="detail-container fade-in">
-      <div style={{ marginBottom: '20px' }}>
-        <button onClick={() => navigate(-1)} className="btn btn-outline btn-sm">
-          ← 返回上一页
-        </button>
+      <div className="detail-back-action">
+        <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
+          <ArrowLeft size={16} />
+          返回上一页
+        </Button>
       </div>
 
       <div className="detail-layout">
@@ -242,16 +250,18 @@ export const ListingDetail: React.FC = () => {
             {activeImage ? (
               <img src={activeImage} alt={listing.title} className="gallery-preview-img" />
             ) : (
-              <div className="listing-card-placeholder" style={{ borderRadius: '12px' }}>
-                <span className="listing-card-placeholder-icon" style={{ fontSize: '4rem' }}>
-                  {listing.category.id === 1 ? '💻' : listing.category.id === 2 ? '📚' : listing.category.id === 3 ? '👕' : '🏀'}
-                </span>
-                <span style={{ fontSize: '1.2rem', fontWeight: 600 }}>{listing.category.name}占位图片</span>
+              <div className="listing-card-placeholder gallery-preview-placeholder">
+                <ImageIcon className="listing-card-placeholder-icon" size={64} strokeWidth={1.5} />
+                <span>{listing.category.name}</span>
               </div>
             )}
 
             <div className="listing-card-badges">
-              <span className={`card-badge ${listing.item_type === 'physical' ? 'card-badge-physical' : 'card-badge-virtual'}`} style={{ fontSize: '0.85rem' }}>
+              <span
+                className={`card-badge ${
+                  listing.item_type === 'physical' ? 'card-badge-physical' : 'card-badge-virtual'
+                }`}
+              >
                 {listing.item_type_display}
               </span>
             </div>
@@ -265,6 +275,7 @@ export const ListingDetail: React.FC = () => {
                   key={img.id}
                   onClick={() => setActiveImageIndex(idx)}
                   className={`gallery-thumb-btn ${activeImageIndex === idx ? 'active' : ''}`}
+                  aria-label={`查看第 ${idx + 1} 张图片`}
                 >
                   <img src={resolveMediaUrl(img.image_url) || ''} alt={`缩略图 ${idx + 1}`} />
                 </button>
@@ -274,10 +285,10 @@ export const ListingDetail: React.FC = () => {
         </section>
 
         {/* 右栏：详细信息面板 */}
-        <section className="detail-info">
+        <Card padding="lg" shadow="md" className="detail-info">
           <span className="detail-category">{listing.category.name}</span>
           <h1 className="detail-title">{listing.title}</h1>
-          
+
           <div className="detail-price">
             <span>{listing.price}</span>
           </div>
@@ -291,7 +302,7 @@ export const ListingDetail: React.FC = () => {
 
             <div className="spec-item">
               <span className="spec-label">商品状态</span>
-              <span className="spec-value" style={{ color: listing.status === 'active' ? 'var(--success-color)' : 'var(--text-muted)' }}>
+              <span className={`spec-value ${listing.status === 'active' ? 'text-success' : 'text-muted'}`}>
                 {listing.status_display}
               </span>
             </div>
@@ -300,7 +311,7 @@ export const ListingDetail: React.FC = () => {
               <>
                 <div className="spec-item">
                   <span className="spec-label">商品成色</span>
-                  <span className="spec-value" style={{ color: 'var(--warning-color)' }}>{listing.condition_display}</span>
+                  <span className="spec-value text-warning">{listing.condition_display}</span>
                 </div>
                 <div className="spec-item">
                   <span className="spec-label">支持交付方式</span>
@@ -308,11 +319,14 @@ export const ListingDetail: React.FC = () => {
                 </div>
               </>
             ) : (
-              <div className="spec-item" style={{ gridColumn: 'span 2' }}>
+              <div className="spec-item spec-item-wide">
                 <span className="spec-label">虚拟凭证有效期至</span>
                 <span className="spec-value">
                   {listing.virtual_valid_until
-                    ? new Date(listing.virtual_valid_until).toLocaleString('zh-CN', { dateStyle: 'long', timeStyle: 'short' })
+                    ? new Date(listing.virtual_valid_until).toLocaleString('zh-CN', {
+                        dateStyle: 'long',
+                        timeStyle: 'short',
+                      })
                     : '永久有效'}
                 </span>
               </div>
@@ -329,7 +343,7 @@ export const ListingDetail: React.FC = () => {
           {listing.delivery_notes && (
             <div className="detail-description-section">
               <h3 className="detail-section-title">交易说明</h3>
-              <p className="detail-description-text" style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+              <p className="detail-description-text detail-description-muted">
                 {listing.delivery_notes}
               </p>
             </div>
@@ -343,48 +357,87 @@ export const ListingDetail: React.FC = () => {
               className="owner-widget-avatar"
             />
             <div className="owner-widget-info">
-              <span className="owner-widget-name">{listing.owner.profile?.nickname || listing.owner.username}</span>
+              <span className="owner-widget-name">
+                {listing.owner.profile?.nickname || listing.owner.username}
+              </span>
               <span className="owner-widget-meta">
-                发布于 {new Date(listing.created_at).toLocaleDateString('zh-CN')} · {listing.owner.profile?.bio || '这家伙很懒，什么都没写'}
+                发布于 {new Date(listing.created_at).toLocaleDateString('zh-CN')} ·{' '}
+                {listing.owner.profile?.bio || '这家伙很懒，什么都没写'}
               </span>
             </div>
           </Link>
 
           {/* 动作按钮逻辑联动 */}
           <div className="detail-actions">
+            {showLoginPrompt && (
+              <div className="alert alert-info" role="alert">
+                <span>该操作需要先登录您的账号。</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate('/login', { state: { from: { pathname: `/listings/${id}` } } })}
+                >
+                  立即登录
+                </Button>
+              </div>
+            )}
+
+            {actionError && (
+              <div className="alert alert-error" role="alert">
+                <AlertCircle size={18} />
+                <span>{actionError}</span>
+              </div>
+            )}
+
             {isOwner ? (
-              <div style={{ padding: '16px', borderRadius: '8px', backgroundColor: 'var(--primary-light)', color: 'var(--primary-color)', textAlign: 'center', fontWeight: 600 }}>
+              <div className="owner-notice">
                 这是您发布的商品。您可以到“我的商品”中进行编辑或下架管理。
               </div>
             ) : (
               <>
-                <button
+                <Button
                   onClick={() => handleActionIntercept('buy')}
                   disabled={listing.status !== 'active'}
-                  className="btn btn-primary btn-block btn-lg"
+                  size="lg"
+                  fullWidth
                 >
                   {listing.status === 'active' ? '立即购买' : `商品已${listing.status_display}`}
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => handleActionIntercept('message')}
-                  className="btn btn-outline btn-block btn-lg"
+                  variant="outline"
+                  size="lg"
+                  fullWidth
                 >
-                  💬 联系卖家
-                </button>
+                  <MessageCircle size={18} />
+                  联系卖家
+                </Button>
               </>
             )}
           </div>
-        </section>
+        </Card>
       </div>
 
       {/* 评论互动区域 */}
-      <section className="comments-section card-glass-glass">
-        <h3 className="comments-section-title">💬 留言与互动 ({totalCommentsCount})</h3>
+      <Card padding="md" shadow="md" className="comments-section">
+        <h3 className="comments-section-title">
+          <MessageCircle size={22} />
+          留言与互动 ({totalCommentsCount})
+        </h3>
+
+        {/* 操作反馈提示（评论/回复/删除失败） */}
+        {actionError && (
+          <div className="alert alert-error" role="alert">
+            <AlertCircle size={18} />
+            <span>{actionError}</span>
+          </div>
+        )}
 
         {/* 发表新留言 */}
         {user ? (
           <form onSubmit={handleCreateComment} className="comment-form">
-            <textarea
+            <TextArea
+              id="comment"
               value={newCommentContent}
               onChange={(e) => setNewCommentContent(e.target.value)}
               placeholder="对这件宝贝感兴趣？在这里给卖家留言询问吧..."
@@ -393,24 +446,26 @@ export const ListingDetail: React.FC = () => {
               className="comment-textarea"
             />
             <div className="comment-form-actions">
-              <button
+              <Button
                 type="submit"
+                size="sm"
                 disabled={submittingComment || !newCommentContent.trim()}
-                className="btn btn-primary btn-sm"
+                loading={submittingComment}
               >
-                {submittingComment ? '正在发表...' : '发表留言'}
-              </button>
+                发表留言
+              </Button>
             </div>
           </form>
         ) : (
           <div className="comment-login-promo">
             <p>登录后即可留言或回复他人关于宝贝的问答</p>
-            <button
+            <Button
+              size="sm"
+              variant="outline"
               onClick={() => navigate('/login', { state: { from: { pathname: `/listings/${id}` } } })}
-              className="btn btn-outline btn-sm"
             >
               立即登录
-            </button>
+            </Button>
           </div>
         )}
 
@@ -441,7 +496,10 @@ export const ListingDetail: React.FC = () => {
                         )}
                       </span>
                       <span className="comment-meta">
-                        {new Date(comment.created_at).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })}
+                        {new Date(comment.created_at).toLocaleString('zh-CN', {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })}
                       </span>
                     </div>
                     <p className="comment-content">{comment.content}</p>
@@ -458,10 +516,7 @@ export const ListingDetail: React.FC = () => {
                         </button>
                       )}
                       {user && user.id === comment.author.id && (
-                        <button
-                          onClick={() => handleDeleteComment(comment.id)}
-                          className="btn-link btn-link-danger"
-                        >
+                        <button onClick={() => handleDeleteComment(comment.id)} className="btn-link btn-link-danger">
                           删除
                         </button>
                       )}
@@ -470,7 +525,8 @@ export const ListingDetail: React.FC = () => {
                     {/* 就地快捷回复表单 */}
                     {replyTargetId === comment.id && (
                       <div className="reply-form">
-                        <textarea
+                        <TextArea
+                          id={`reply-${comment.id}`}
                           value={replyContent}
                           onChange={(e) => setReplyContent(e.target.value)}
                           placeholder={`回复 @${comment.author.profile?.nickname || comment.author.username}...`}
@@ -479,24 +535,26 @@ export const ListingDetail: React.FC = () => {
                           className="reply-textarea"
                         />
                         <div className="reply-form-actions">
-                          <button
+                          <Button
                             type="button"
+                            variant="outline"
+                            size="sm"
                             onClick={() => {
                               setReplyTargetId(null);
                               setReplyContent('');
                             }}
-                            className="btn btn-outline btn-xs"
                           >
                             取消
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            size="sm"
                             disabled={submittingReply || !replyContent.trim()}
+                            loading={submittingReply}
                             onClick={() => handleCreateReply(comment.id)}
-                            className="btn btn-primary btn-xs"
                           >
-                            {submittingReply ? '发表中...' : '发表回复'}
-                          </button>
+                            发表回复
+                          </Button>
                         </div>
                       </div>
                     )}
@@ -522,19 +580,22 @@ export const ListingDetail: React.FC = () => {
                               )}
                             </span>
                             <span className="reply-meta">
-                              {new Date(reply.created_at).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })}
+                              {new Date(reply.created_at).toLocaleString('zh-CN', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })}
                             </span>
                           </div>
                           <p className="reply-content">{reply.content}</p>
                           <div className="reply-actions">
-                             {user && user.id === reply.author.id && (
-                               <button
-                                 onClick={() => handleDeleteComment(reply.id)}
-                                 className="btn-link btn-link-danger"
-                               >
-                                 删除
-                               </button>
-                             )}
+                            {user && user.id === reply.author.id && (
+                              <button
+                                onClick={() => handleDeleteComment(reply.id)}
+                                className="btn-link btn-link-danger"
+                              >
+                                删除
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -545,7 +606,7 @@ export const ListingDetail: React.FC = () => {
             ))}
           </div>
         )}
-      </section>
+      </Card>
     </div>
   );
 };

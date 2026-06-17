@@ -1,9 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getMyListings, publishListing, deactivateListing, reactivateListing, deleteListing } from '../../api/endpoints/listings';
+import { Plus, Package, AlertCircle, ImageIcon } from 'lucide-react';
+import {
+  getMyListings,
+  publishListing,
+  deactivateListing,
+  reactivateListing,
+  deleteListing,
+} from '../../api/endpoints/listings';
 import { useAuth } from '../../app/providers';
 import { resolveMediaUrl } from '../../utils/media';
-import type { Listing } from '../../types/listings';
+import { Button, Badge, EmptyState, Loading, ErrorState } from '../../components/ui';
+import type { Listing, ListingStatus } from '../../types/listings';
+import type { BadgeVariant } from '../../components/ui';
+
+type ActionType = 'publish' | 'deactivate' | 'reactivate' | 'delete';
+
+const STATUS_VARIANT_MAP: Record<ListingStatus, BadgeVariant> = {
+  draft: 'draft',
+  active: 'active',
+  reserved: 'warning',
+  sold: 'sold',
+  withdrawn: 'inactive',
+};
+
+const getErrorMessage = (err: unknown, fallback: string): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return fallback;
+};
 
 export const MyListings: React.FC = () => {
   const navigate = useNavigate();
@@ -13,28 +38,30 @@ export const MyListings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [error, setError] = useState('');
+  const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // 加载数据
   const loadListings = async () => {
     if (!user) return;
     setLoading(true);
     setError('');
+    setActionMessage(null);
 
     try {
       const data = await getMyListings();
       setListings(data.results);
-    } catch (err: any) {
+    } catch {
       setError('获取我的商品列表失败，请检查后端服务连接。');
     } finally {
       setLoading(false);
     }
   };
 
+  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
     loadListings();
   }, [user]);
-
-  const listingList = listings;
+  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   const openListing = (item: Listing) => {
     if (item.status === 'draft') {
@@ -45,23 +72,23 @@ export const MyListings: React.FC = () => {
   };
 
   // 修改状态动作 (发布、下架、重新上架、删除)
-  const handleAction = async (id: number, actionType: 'publish' | 'deactivate' | 'reactivate' | 'delete') => {
+  const handleAction = async (id: number, actionType: ActionType) => {
     if (actionType === 'delete' && !window.confirm('您确定要永久删除这件商品吗？该操作不可恢复。')) {
       return;
     }
 
     setActionLoadingId(id);
+    setActionMessage(null);
     try {
-      // 调用真实后端
       if (actionType === 'publish') await publishListing(id);
       else if (actionType === 'deactivate') await deactivateListing(id);
       else if (actionType === 'reactivate') await reactivateListing(id);
       else if (actionType === 'delete') await deleteListing(id);
 
-      alert('操作成功！');
+      setActionMessage({ type: 'success', text: '操作成功' });
       await loadListings();
-    } catch (err: any) {
-      alert(err.message || '操作失败，请重试');
+    } catch (err) {
+      setActionMessage({ type: 'error', text: getErrorMessage(err, '操作失败，请重试') });
     } finally {
       setActionLoadingId(null);
     }
@@ -69,10 +96,11 @@ export const MyListings: React.FC = () => {
 
   if (!user) {
     return (
-      <div className="placeholder-card error-card">
-        <h2>⚠️ 您尚未登录</h2>
-        <p>必须登录才能管理您的商品发布。</p>
-      </div>
+      <ErrorState
+        title="您尚未登录"
+        message="必须登录才能管理您的商品发布。"
+        onBack={() => navigate('/login')}
+      />
     );
   }
 
@@ -87,38 +115,47 @@ export const MyListings: React.FC = () => {
 
   return (
     <div className="my-listings-container fade-in">
-      <div className="my-listings-header">
+      <div className="page-header my-listings-page-header">
         <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700 }}>我的商品管理</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>在此管理您发布、下架及草稿状态的所有商品</p>
+          <h1>我的商品管理</h1>
+          <p>在此管理您发布、下架及草稿状态的所有商品</p>
         </div>
-        <button onClick={() => navigate('/me/listings/new')} className="btn btn-primary">
-          ➕ 发布新商品
-        </button>
+        <Button variant="primary" onClick={() => navigate('/me/listings/new')}>
+          <Plus size={18} />
+          发布新商品
+        </Button>
       </div>
 
       {error && (
-        <div className="alert alert-error" style={{ marginBottom: '20px' }}>
-          <span>⚠️ {error}</span>
+        <div className="alert alert-error" role="alert">
+          <AlertCircle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {actionMessage && (
+        <div className={`alert alert-${actionMessage.type === 'success' ? 'success' : 'error'}`} role="alert">
+          {actionMessage.type === 'error' ? <AlertCircle size={18} /> : <Package size={18} />}
+          <span>{actionMessage.text}</span>
         </div>
       )}
 
       {loading ? (
-        <div className="loading-container">
-          <div className="spinner"></div>
-          <p>正在拉取商品列表...</p>
-        </div>
-      ) : listingList.length === 0 ? (
-        <div className="placeholder-card">
-          <h2>📦 还没有发布过商品</h2>
-          <p>快去发布您的第一件二手闲置好物吧！</p>
-          <button onClick={() => navigate('/me/listings/new')} className="btn btn-primary btn-sm">
-            立即发布商品
-          </button>
-        </div>
+        <Loading text="正在拉取商品列表..." />
+      ) : listings.length === 0 ? (
+        <EmptyState
+          icon={<Package size={48} />}
+          title="还没有发布过商品"
+          description="快去发布您的第一件二手闲置好物吧！"
+          action={{
+            label: '立即发布商品',
+            onClick: () => navigate('/me/listings/new'),
+            variant: 'primary',
+          }}
+        />
       ) : (
         <div className="my-listings-list">
-          {listingList.map((item) => {
+          {listings.map((item) => {
             const cover = getCoverImage(item);
             const isActionBusy = actionLoadingId === item.id;
 
@@ -136,26 +173,25 @@ export const MyListings: React.FC = () => {
                   }
                 }}
                 title={item.status === 'draft' ? '编辑草稿' : '查看商品详情'}
-                style={{ cursor: 'pointer' }}
               >
                 {/* 封面缩略图 */}
                 <div className="my-listing-thumb-wrapper">
                   {cover ? (
                     <img src={cover} alt={item.title} className="my-listing-thumb" loading="lazy" />
                   ) : (
-                    <span className="my-listing-thumb-icon">
-                      {item.category.id === 1 ? '💻' : item.category.id === 2 ? '📚' : item.category.id === 3 ? '👕' : '🏀'}
-                    </span>
+                    <ImageIcon className="my-listing-thumb-icon" size={36} strokeWidth={1.5} />
                   )}
                 </div>
 
                 {/* 商品简要信息 */}
                 <div className="my-listing-info">
                   <div className="my-listing-title-row">
-                    <span className={`badge badge-sm badge-${item.status}`}>
+                    <Badge variant={STATUS_VARIANT_MAP[item.status]} size="sm">
                       {item.status_display}
-                    </span>
-                    <h3 className="my-listing-title" title={item.title}>{item.title}</h3>
+                    </Badge>
+                    <h3 className="my-listing-title" title={item.title}>
+                      {item.title}
+                    </h3>
                   </div>
                   <div className="my-listing-meta">
                     <span className="my-listing-price">¥ {item.price}</span>
@@ -166,88 +202,76 @@ export const MyListings: React.FC = () => {
                 </div>
 
                 {/* 操作动作组合 */}
-                <div className="my-listing-actions">
+                <div className="my-listing-actions" onClick={(event) => event.stopPropagation()} role="group">
                   {item.status === 'draft' && (
                     <>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          navigate(`/me/listings/${item.id}/edit`);
-                        }}
+                      <Button
+                        variant="outline"
+                        size="sm"
                         disabled={isActionBusy}
-                        className="btn btn-outline btn-sm"
+                        onClick={() => navigate(`/me/listings/${item.id}/edit`)}
                       >
                         编辑
-                      </button>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleAction(item.id, 'publish');
-                        }}
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
                         disabled={isActionBusy}
-                        className="btn btn-primary btn-sm"
+                        loading={isActionBusy}
+                        onClick={() => handleAction(item.id, 'publish')}
                       >
-                        {isActionBusy ? '...' : '发布'}
-                      </button>
+                        发布
+                      </Button>
                     </>
                   )}
 
                   {item.status === 'active' && (
                     <>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          navigate(`/me/listings/${item.id}/edit`);
-                        }}
+                      <Button
+                        variant="outline"
+                        size="sm"
                         disabled={isActionBusy}
-                        className="btn btn-outline btn-sm"
+                        onClick={() => navigate(`/me/listings/${item.id}/edit`)}
                       >
                         编辑/多图
-                      </button>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleAction(item.id, 'deactivate');
-                        }}
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
                         disabled={isActionBusy}
-                        className="btn btn-outline btn-sm"
-                        style={{ color: '#dc2626', borderColor: '#fecaca' }}
+                        loading={isActionBusy}
+                        onClick={() => handleAction(item.id, 'deactivate')}
                       >
-                        {isActionBusy ? '...' : '下架'}
-                      </button>
+                        下架
+                      </Button>
                     </>
                   )}
 
                   {item.status === 'withdrawn' && (
                     <>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleAction(item.id, 'reactivate');
-                        }}
+                      <Button
+                        variant="primary"
+                        size="sm"
                         disabled={isActionBusy}
-                        className="btn btn-primary btn-sm"
+                        loading={isActionBusy}
+                        onClick={() => handleAction(item.id, 'reactivate')}
                       >
-                        {isActionBusy ? '...' : '重新上架'}
-                      </button>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleAction(item.id, 'delete');
-                        }}
+                        重新上架
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
                         disabled={isActionBusy}
-                        className="btn btn-outline btn-sm"
-                        style={{ color: '#dc2626', borderColor: '#fecaca' }}
+                        loading={isActionBusy}
+                        onClick={() => handleAction(item.id, 'delete')}
                       >
-                        {isActionBusy ? '...' : '删除'}
-                      </button>
+                        删除
+                      </Button>
                     </>
                   )}
 
                   {item.status === 'sold' && (
-                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500, alignSelf: 'center', paddingRight: '12px' }}>
-                      交易已完成
-                    </span>
+                    <span className="my-listing-status-note">交易已完成</span>
                   )}
                 </div>
               </div>

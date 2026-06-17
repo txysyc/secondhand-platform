@@ -4,10 +4,16 @@ import {
   getOrderDetail,
   payOrder,
   confirmOrderDelivery,
-  confirmOrderReceipt
+  confirmOrderReceipt,
 } from '../../api/endpoints/orders';
 import { useAuth } from '../../app/providers';
 import { resolveMediaUrl } from '../../utils/media';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
+import { Loading } from '../../components/ui/Loading';
+import { ErrorState } from '../../components/ui/ErrorState';
+import { ArrowLeft, Package, Check, CreditCard, Truck, PartyPopper } from 'lucide-react';
 import type { Order } from '../../types/orders';
 
 export const OrderDetail: React.FC = () => {
@@ -18,28 +24,35 @@ export const OrderDetail: React.FC = () => {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
-  
+
   // 提交状态
   const [submittingAction, setSubmittingAction] = useState(false);
 
-  // 加载订单详情
-  const fetchOrderDetail = async () => {
-    if (!id) return;
-    setLoading(true);
-    setErrorMsg('');
-    try {
-      const data = await getOrderDetail(id);
-      setOrder(data);
-    } catch (err: any) {
-      console.error(`无法获取订单详情:`, err);
-      setErrorMsg('获取订单详情失败，请检查网络连接。');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchOrderDetail();
+    let cancel = false;
+
+    Promise.resolve()
+      .then(() => {
+        if (cancel || !id) return;
+        setLoading(true);
+        setErrorMsg('');
+        return getOrderDetail(id);
+      })
+      .then((data) => {
+        if (data && !cancel) setOrder(data);
+      })
+      .catch((err) => {
+        if (cancel) return;
+        console.error('无法获取订单详情:', err);
+        setErrorMsg('获取订单详情失败，请检查网络连接。');
+      })
+      .finally(() => {
+        if (!cancel) setLoading(false);
+      });
+
+    return () => {
+      cancel = true;
+    };
   }, [id, user]);
 
   // 动作处理：支付
@@ -49,9 +62,9 @@ export const OrderDetail: React.FC = () => {
     try {
       const data = await payOrder(order.id);
       setOrder(data);
-      alert('💰 支付成功！');
-    } catch (err: any) {
-      alert(err.message || '支付失败，请重试');
+      alert('支付成功！');
+    } catch (err: Error | unknown) {
+      alert(err instanceof Error ? err.message : '支付失败，请重试');
     } finally {
       setSubmittingAction(false);
     }
@@ -64,9 +77,9 @@ export const OrderDetail: React.FC = () => {
     try {
       const data = await confirmOrderDelivery(order.id);
       setOrder(data);
-      alert('🚚 发货处理成功！已通知买家确认收货。');
-    } catch (err: any) {
-      alert(err.message || '确认发货失败，请重试');
+      alert('发货处理成功！已通知买家确认收货。');
+    } catch (err: Error | unknown) {
+      alert(err instanceof Error ? err.message : '确认发货失败，请重试');
     } finally {
       setSubmittingAction(false);
     }
@@ -75,39 +88,36 @@ export const OrderDetail: React.FC = () => {
   // 动作处理：确认收货
   const handleConfirmReceipt = async () => {
     if (!order) return;
-    if (!window.confirm('您收到闲置商品了吗？确认后将把订单交易款结算给卖家，该操作不可恢复。')) {
+    if (
+      !window.confirm(
+        '您收到闲置商品了吗？确认后将把订单交易款结算给卖家，该操作不可恢复。'
+      )
+    ) {
       return;
     }
     setSubmittingAction(true);
     try {
       const data = await confirmOrderReceipt(order.id);
       setOrder(data);
-      alert('🎉 确认收货成功！这笔二货交易已经圆满完成。');
-    } catch (err: any) {
-      alert(err.message || '确认收货失败，请重试');
+      alert('确认收货成功！这笔二货交易已经圆满完成。');
+    } catch (err: Error | unknown) {
+      alert(err instanceof Error ? err.message : '确认收货失败，请重试');
     } finally {
       setSubmittingAction(false);
     }
   };
 
   if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="spinner"></div>
-        <p>正在努力获取交易订单详情...</p>
-      </div>
-    );
+    return <Loading text="正在努力获取交易订单详情..." />;
   }
 
   if (errorMsg || !order) {
     return (
-      <div className="placeholder-card error-card fade-in">
-        <h2>⚠️ 获取订单详情失败</h2>
-        <p>{errorMsg || '加载信息出错，请重试。'}</p>
-        <button onClick={() => navigate('/orders/buyer')} className="btn btn-primary btn-sm">
-          返回订单中心
-        </button>
-      </div>
+      <ErrorState
+        title="获取订单详情失败"
+        message={errorMsg || '加载信息出错，请重试。'}
+        onBack={() => navigate('/orders/buyer')}
+      />
     );
   }
 
@@ -117,306 +127,248 @@ export const OrderDetail: React.FC = () => {
   const firstListingImage = listing?.images
     ? [...listing.images].sort((left, right) => left.sort_order - right.sort_order)[0]
     : null;
-  const snapshotImageUrl = resolveMediaUrl(order.listing_image_snapshot) || resolveMediaUrl(firstListingImage?.image_url);
-  const categoryId = listing?.category?.id;
-  const categoryIcon = categoryId === 1 ? '💻' : categoryId === 2 ? '📚' : categoryId === 3 ? '👕' : '🏀';
+  const snapshotImageUrl =
+    resolveMediaUrl(order.listing_image_snapshot) || resolveMediaUrl(firstListingImage?.image_url);
 
-  // 状态步骤样式决策 (待付款 -> 已付款 -> 已发货 -> 已完成)
-  const stepIndex = 
-    (order.completed_at || order.signed_at || status === 'completed' || status === 'signed') ? 4 :
-    (order.shipped_at || status === 'awaiting_receipt') ? 3 :
-    (order.paid_at || status === 'awaiting_shipment') ? 2 : 1;
+  // 分类图标占位
+  const getCategoryIcon = () => {
+    const categoryId = listing?.category?.id;
+    if (categoryId === 1) return <Package size={28} />;
+    if (categoryId === 2) return <Package size={28} />;
+    if (categoryId === 3) return <Package size={28} />;
+    return <Package size={28} />;
+  };
+
+  // 状态巴尔姆映射（用于右上角或状态提示）
+  const getStatusVariant = () => {
+    if (order.is_expired) return 'error';
+    if (status === 'cancelled') return 'error';
+    if (status === 'pending_payment') return 'warning';
+    if (status === 'awaiting_shipment' || status === 'awaiting_receipt') return 'primary';
+    return 'secondary';
+  };
+
+  // 状态步骤决策 (待付款 -> 已付款 -> 已发货 -> 已完成)
+  const stepIndex =
+    order.completed_at || order.signed_at || status === 'completed' || status === 'signed'
+      ? 4
+      : order.shipped_at || status === 'awaiting_receipt'
+      ? 3
+      : order.paid_at || status === 'awaiting_shipment'
+      ? 2
+      : 1;
+
+  // 时间轴节点数据
+  const timelineSteps = [
+    {
+      label: '创建订单',
+      date: order.created_at,
+      fallback: '待创建',
+      icon: <Check size={18} />,
+    },
+    {
+      label: '买家付款',
+      date: order.paid_at,
+      fallback: '待付款',
+      icon: <CreditCard size={18} />,
+    },
+    {
+      label: '卖家发货',
+      date: order.shipped_at,
+      fallback: '待发货',
+      icon: <Truck size={18} />,
+    },
+    {
+      label: '交易完成',
+      date: order.completed_at || order.signed_at,
+      fallback: '待签收',
+      icon: <PartyPopper size={18} />,
+    },
+  ];
 
   return (
-    <div className="order-detail-container fade-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <button onClick={() => navigate(-1)} className="btn btn-outline btn-sm">
-          ← 返回上一页
-        </button>
-        <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-          订单类型: {listing?.item_type_display || '商品快照'} · 状态: <strong style={{ color: order.is_expired ? 'var(--error-color)' : 'var(--primary-color)' }}>{displayStatus}</strong>
-        </span>
+    <div className="order-detail-container fade-in">
+      <div className="order-detail-topbar">
+        <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
+          <ArrowLeft size={16} />
+          返回
+        </Button>
+        <div className="order-detail-meta">
+          <span>订单类型: {listing?.item_type_display || '商品快照'}</span>
+          <span>·</span>
+          <span>
+            状态:
+            <Badge variant={getStatusVariant()} className="order-status-badge">
+              {displayStatus}
+            </Badge>
+          </span>
+        </div>
       </div>
 
-      {/* 交易流转时间轴 (Timeline) */}
-      <section className="timeline-card card-glass-glass" style={{ padding: '32px', borderRadius: '12px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', marginBottom: '32px' }}>
-        <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '24px', color: 'var(--text-main)' }}>交易节点追踪</h3>
-        
-        <div className="order-timeline" style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', padding: '0 10px' }}>
-          {/* 引线定位容器 (精确定位于两端节点圆圈中心) */}
-          <div style={{ position: 'absolute', top: '20px', left: '50px', right: '50px', height: '3px', zIndex: 1 }}>
-            {/* 背景引线 */}
-            <div style={{ width: '100%', height: '100%', backgroundColor: 'var(--border-color)' }} />
-            {/* 进度激活线 */}
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: `${((stepIndex - 1) / 3) * 100}%`,
-                height: '100%',
-                backgroundColor: 'var(--primary-color)',
-                zIndex: 2,
-                transition: 'width 0.4s ease'
-              }}
-            />
-          </div>
+      {/* 交易流转时间轴 */}
+      <Card className="order-timeline-card" shadow="md">
+        <h3 className="order-section-title">交易节点追踪</h3>
 
-          {/* 节点 1: 创建 */}
-          <div className="timeline-node" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', zIndex: 3, width: '80px' }}>
-            <div
-              style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                backgroundColor: stepIndex >= 1 ? 'var(--primary-color)' : '#ffffff',
-                border: '3px solid var(--primary-color)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: stepIndex >= 1 ? '#ffffff' : 'var(--primary-color)',
-                fontWeight: 'bold',
-                fontSize: '0.9rem',
-                lineHeight: '34px',
-                textAlign: 'center'
-              }}
-            >
-              ✓
-            </div>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '8px', color: stepIndex >= 1 ? 'var(--text-main)' : 'var(--text-muted)' }}>创建订单</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {new Date(order.created_at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
-            </span>
-          </div>
+        <div className="order-timeline">
+          <div
+            className="timeline-progress"
+            style={{ width: `${((stepIndex - 1) / 3) * 100}%` }}
+          />
+          {timelineSteps.map((step, index) => {
+            const nodeIndex = index + 1;
+            const isActive = stepIndex >= nodeIndex;
+            const isCancelled = status === 'cancelled' && nodeIndex === 4;
+            const finalActive = isActive && !isCancelled;
 
-          {/* 节点 2: 付款 */}
-          <div className="timeline-node" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', zIndex: 3, width: '80px' }}>
-            <div
-              style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                backgroundColor: stepIndex >= 2 ? 'var(--primary-color)' : '#ffffff',
-                border: `3px solid ${stepIndex >= 2 ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: stepIndex >= 2 ? '#ffffff' : 'var(--text-muted)',
-                fontWeight: 'bold',
-                fontSize: '0.9rem',
-                lineHeight: '34px',
-                textAlign: 'center'
-              }}
-            >
-              {stepIndex >= 2 ? '✓' : '2'}
-            </div>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '8px', color: stepIndex >= 2 ? 'var(--text-main)' : 'var(--text-muted)' }}>买家付款</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {order.paid_at ? new Date(order.paid_at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '待付款'}
-            </span>
-          </div>
-
-          {/* 节点 3: 发货 */}
-          <div className="timeline-node" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', zIndex: 3, width: '80px' }}>
-            <div
-              style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                backgroundColor: stepIndex >= 3 ? 'var(--primary-color)' : '#ffffff',
-                border: `3px solid ${stepIndex >= 3 ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: stepIndex >= 3 ? '#ffffff' : 'var(--text-muted)',
-                fontWeight: 'bold',
-                fontSize: '0.9rem',
-                lineHeight: '34px',
-                textAlign: 'center'
-              }}
-            >
-              {stepIndex >= 3 ? '✓' : '3'}
-            </div>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '8px', color: stepIndex >= 3 ? 'var(--text-main)' : 'var(--text-muted)' }}>卖家发货</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {order.shipped_at ? new Date(order.shipped_at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '待发货'}
-            </span>
-          </div>
-
-          {/* 节点 4: 完成 */}
-          <div className="timeline-node" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', zIndex: 3, width: '80px' }}>
-            <div
-              style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                backgroundColor: stepIndex >= 4 && status !== 'cancelled' ? 'var(--primary-color)' : '#ffffff',
-                border: `3px solid ${stepIndex >= 4 && status !== 'cancelled' ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: stepIndex >= 4 && status !== 'cancelled' ? '#ffffff' : 'var(--text-muted)',
-                fontWeight: 'bold',
-                fontSize: '0.9rem',
-                lineHeight: '34px',
-                textAlign: 'center'
-              }}
-            >
-              {stepIndex >= 4 && status !== 'cancelled' ? '✓' : '4'}
-            </div>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '8px', color: stepIndex >= 4 && status !== 'cancelled' ? 'var(--text-main)' : 'var(--text-muted)' }}>交易完成</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {order.completed_at ? new Date(order.completed_at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '待签收'}
-            </span>
-          </div>
+            return (
+              <div
+                key={step.label}
+                className={`timeline-node ${finalActive ? 'active' : ''} ${
+                  isCancelled ? 'cancelled' : ''
+                }`}
+              >
+                <div className="timeline-marker">{finalActive ? step.icon : nodeIndex}</div>
+                <span className="timeline-label">{step.label}</span>
+                <span className="timeline-date">
+                  {step.date
+                    ? new Date(step.date).toLocaleDateString('zh-CN', {
+                        month: 'numeric',
+                        day: 'numeric',
+                      })
+                    : step.fallback}
+                </span>
+              </div>
+            );
+          })}
         </div>
-      </section>
+      </Card>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '32px', alignItems: 'start' }}>
+      <div className="order-detail-layout">
         {/* 左侧：商品详情快照及买卖双方板块 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div className="order-detail-main">
           {/* 商品信息快照 */}
-          <div className="card-glass-glass" style={{ border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px', backgroundColor: 'var(--bg-card)' }}>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px', color: 'var(--text-main)' }}>宝贝快照</h3>
-            
+          <Card className="order-snapshot-card" shadow="sm">
+            <h3 className="order-section-title">宝贝快照</h3>
+
             <div
-              style={{ display: 'flex', gap: '16px', cursor: listing ? 'pointer' : 'default' }}
+              className={`order-snapshot-body ${listing ? 'is-clickable' : ''}`}
               onClick={() => {
                 if (listing) navigate(`/listings/${listing.id}`);
               }}
             >
-              <div style={{ width: '80px', height: '80px', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'var(--bg-main)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="order-thumb-wrapper order-thumb-wrapper-sm">
                 {snapshotImageUrl ? (
                   <img
                     src={snapshotImageUrl}
                     alt={order.listing_title_snapshot}
                     loading="lazy"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    className="order-thumb-img"
                   />
                 ) : (
-                  <span style={{ fontSize: '2rem' }}>
-                    {categoryIcon}
-                  </span>
+                  <div className="order-thumb-placeholder">{getCategoryIcon()}</div>
                 )}
               </div>
-              <div>
-                <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '8px', lineHeight: 1.4 }}>
-                  {order.listing_title_snapshot}
-                </h4>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  分类: {listing?.category?.name || '历史快照'} · 类型: {listing?.item_type_display || '未知'}
+              <div className="order-snapshot-info">
+                <h4 className="order-snapshot-title">{order.listing_title_snapshot}</h4>
+                <p className="order-snapshot-meta">
+                  分类: {listing?.category?.name || '历史快照'} · 类型:{' '}
+                  {listing?.item_type_display || '未知'}
                 </p>
               </div>
             </div>
-          </div>
+          </Card>
 
           {/* 交易方信息卡片 */}
-          <div className="card-glass-glass" style={{ border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px', backgroundColor: 'var(--bg-card)' }}>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px', color: 'var(--text-main)' }}>交易关联人</h3>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>买家信息</span>
-                <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-main)' }}>
+          <Card className="order-parties-card" shadow="sm">
+            <h3 className="order-section-title">交易关联人</h3>
+
+            <div className="order-parties-list">
+              <div className="order-party-row">
+                <span className="order-party-label">买家信息</span>
+                <span className="order-party-value">
                   {order.buyer_display_name} (@{order.buyer?.username || '已注销'})
                 </span>
               </div>
-              <div style={{ height: '1px', backgroundColor: 'var(--border-color)' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>卖家信息</span>
-                <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-main)' }}>
+              <div className="order-party-divider" />
+              <div className="order-party-row">
+                <span className="order-party-label">卖家信息</span>
+                <span className="order-party-value">
                   {order.seller_display_name} (@{order.seller?.username || '已注销'})
                 </span>
               </div>
             </div>
-          </div>
+          </Card>
         </div>
 
-        {/* 右侧：交易结算结算面板与动作推进 */}
-        <div className="card-glass-glass" style={{ border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px', backgroundColor: 'var(--bg-card)', position: 'sticky', top: '100px' }}>
-          <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px', color: 'var(--text-main)' }}>交易结算</h3>
-          
-          <div style={{ marginBottom: '24px' }}>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '4px' }}>实付金额</div>
-            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--error-color)' }}>
-              ¥ {order.order_price}
-            </div>
+        {/* 右侧：交易结算面板与动作推进 */}
+        <Card className="order-actions-card" shadow="md">
+          <h3 className="order-section-title">交易结算</h3>
+
+          <div className="order-price-block">
+            <div className="order-price-label">实付金额</div>
+            <div className="detail-price">{order.order_price}</div>
           </div>
 
-          <div style={{ height: '1px', backgroundColor: 'var(--border-color)', marginBottom: '24px' }} />
+          <div className="order-actions-divider" />
 
           {/* 动作按钮逻辑分支 */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* 动作 1: 立即支付 (针对买家且订单有 pay 动作) */}
+          <div className="order-action-stack">
+            {/* 动作 1: 立即支付 */}
             {isBuyer && available_actions.includes('pay') && !order.is_expired && (
-              <button
+              <Button
+                size="lg"
+                fullWidth
                 onClick={handlePay}
-                disabled={submittingAction}
-                className="btn btn-primary btn-block btn-lg"
+                loading={submittingAction}
               >
-                {submittingAction ? '正在推进...' : '立即支付'}
-              </button>
+                立即支付
+              </Button>
             )}
 
-            {/* 动作 2: 卖家确认发货 (针对卖家且有 confirm_delivery) */}
+            {/* 动作 2: 卖家确认发货 */}
             {!isBuyer && available_actions.includes('confirm_delivery') && (
-              <button
+              <Button
+                size="lg"
+                fullWidth
                 onClick={handleConfirmDelivery}
-                disabled={submittingAction}
-                className="btn btn-primary btn-block btn-lg"
+                loading={submittingAction}
               >
-                {submittingAction ? '正在发货...' : '确认发货'}
-              </button>
+                确认发货
+              </Button>
             )}
 
-            {/* 动作 3: 买家确认收货 (针对买家且有 confirm_receipt) */}
+            {/* 动作 3: 买家确认收货 */}
             {isBuyer && available_actions.includes('confirm_receipt') && (
-              <button
+              <Button
+                size="lg"
+                fullWidth
                 onClick={handleConfirmReceipt}
-                disabled={submittingAction}
-                className="btn btn-primary btn-block btn-lg"
+                loading={submittingAction}
               >
-                {submittingAction ? '确认收货中...' : '确认收货'}
-              </button>
+                确认收货
+              </Button>
             )}
 
-            {/* 各类过渡状态提示占位展示 */}
-            {/* 状态 A: 买家付款后，等待卖家发货 */}
+            {/* 过渡状态提示 */}
             {isBuyer && status === 'awaiting_shipment' && (
-              <div style={{ padding: '16px', borderRadius: '8px', backgroundColor: 'var(--primary-light)', color: 'var(--primary-color)', textAlign: 'center', fontSize: '0.9rem', fontWeight: 600 }}>
-                等待卖家确认发货...
-              </div>
+              <div className="alert alert-info">等待卖家确认发货…</div>
             )}
 
-            {/* 状态 B: 卖家发货后，等待买家收货 */}
             {!isBuyer && status === 'awaiting_receipt' && (
-              <div style={{ padding: '16px', borderRadius: '8px', backgroundColor: 'var(--primary-light)', color: 'var(--primary-color)', textAlign: 'center', fontSize: '0.9rem', fontWeight: 600 }}>
-                已通知买家确认收货...
-              </div>
+              <div className="alert alert-info">已通知买家确认收货…</div>
             )}
 
-            {/* 状态 C: 卖家在付款前，等待买家付款 */}
             {!isBuyer && status === 'pending_payment' && (
-              <div style={{ padding: '16px', borderRadius: '8px', backgroundColor: '#fef3c7', color: '#d97706', textAlign: 'center', fontSize: '0.9rem', fontWeight: 600 }}>
-                等待买家付款中...
-              </div>
+              <div className="alert alert-warning">等待买家付款中…</div>
             )}
 
-            {/* 状态 D: 交易完成 */}
             {(status === 'completed' || status === 'signed') && (
-              <div style={{ padding: '16px', borderRadius: '8px', backgroundColor: 'var(--success-bg)', color: 'var(--success-color)', textAlign: 'center', fontSize: '0.9rem', fontWeight: 600 }}>
-                交易已圆满完成 ✓
-              </div>
+              <div className="alert alert-success">交易已圆满完成</div>
             )}
 
-            {/* 状态 E: 过期 */}
-            {order.is_expired && (
-              <div style={{ padding: '16px', borderRadius: '8px', backgroundColor: 'var(--error-bg)', color: 'var(--error-color)', textAlign: 'center', fontSize: '0.9rem', fontWeight: 600 }}>
-                订单已过期失效
-              </div>
-            )}
+            {order.is_expired && <div className="alert alert-error">订单已过期失效</div>}
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );

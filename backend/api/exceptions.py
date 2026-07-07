@@ -4,7 +4,8 @@ from rest_framework.views import exception_handler
 
 
 def _extract_message(data):
-    """从 DRF 默认错误结构中提取适合前端直接展示的中文消息。（提取第一个错误消息，否则返回默认错误信息）"""
+    """从 DRF 默认错误结构中提取适合前端直接展示的中文消息。"""
+
     if isinstance(data, dict):
         detail = data.get("detail")
         if detail:
@@ -24,6 +25,7 @@ def _extract_message(data):
 
 def api_exception_handler(exc, context):
     """将 DRF 异常稳定包装为 message + errors。"""
+
     response = exception_handler(exc, context)
     if response is None:
         return response

@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from config.api_mixins import PageNumberPaginationMixin
+from api.mixins import PageNumberPaginationMixin
 from catalog.models import Listing
 from orders.permissions import IsOrderParticipant
 from orders.serializers import OrderSerializer

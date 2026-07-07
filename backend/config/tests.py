@@ -1,90 +1,101 @@
+"""基础 API 层 pytest 测试。"""
+
+import pytest
 from django.contrib.auth import get_user_model
-from django.test import TestCase
 from django.urls import reverse
-from rest_framework.test import APIClient
-from rest_framework_simplejwt.tokens import RefreshToken
 
 
-class ApiBaseLayerTests(TestCase):
-    """P1 基础 API 层门禁测试。"""
+pytestmark = pytest.mark.django_db
 
-    def setUp(self):
-        self.client = APIClient()
 
-    def _create_token_header(self, user):
-        token = RefreshToken.for_user(user).access_token
-        return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+def test_api_root_is_public_and_returns_version_metadata(api_client):
+    """API 根路径公开返回版本元信息。"""
 
-    def test_api_root_is_public_and_returns_version_metadata(self):
-        response = self.client.get(reverse("api:root"))
+    response = api_client.get(reverse("api:root"))
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.json(),
-            {"name": "secondhand-platform API", "version": "v1", "status": "ok"},
-        )
+    assert response.status_code == 200
+    assert response.json() == {
+        "name": "secondhand-platform API",
+        "version": "v1",
+        "status": "ok",
+    }
 
-    def test_api_root_returns_cors_header_for_local_vite_origin(self):
-        response = self.client.get(
-            reverse("api:root"),
-            HTTP_ORIGIN="http://localhost:5173",
-        )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.headers.get("Access-Control-Allow-Origin"),
-            "http://localhost:5173",
-        )
+def test_api_root_returns_cors_header_for_local_vite_origin(api_client):
+    """本地 Vite 来源请求会返回允许跨域响应头。"""
 
-    def test_authenticated_probe_accepts_valid_bearer_token(self):
-        user = get_user_model().objects.create_user(
-            username="apiuser",
-            email="apiuser@example.com",
-            password="strong-pass-123",
-        )
+    response = api_client.get(
+        reverse("api:root"),
+        HTTP_ORIGIN="http://localhost:5173",
+    )
 
-        response = self.client.get(
-            reverse("api:authenticated_probe"),
-            **self._create_token_header(user),
-        )
+    assert response.status_code == 200
+    assert response.headers.get("Access-Control-Allow-Origin") == "http://localhost:5173"
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"authenticated": True})
 
-    def test_authenticated_probe_rejects_missing_token_with_json_error(self):
-        response = self.client.get(reverse("api:authenticated_probe"))
+def test_authenticated_probe_accepts_valid_bearer_token(api_client, auth_headers):
+    """携带有效 Bearer token 时认证探针返回已认证。"""
 
-        self.assertEqual(response.status_code, 401)
-        self.assertIn("message", response.json())
-        self.assertIn("errors", response.json())
+    user = get_user_model().objects.create_user(
+        username="apiuser",
+        email="apiuser@example.com",
+        password="strong-pass-123",
+    )
 
-    def test_authenticated_probe_rejects_invalid_token_with_json_error(self):
-        response = self.client.get(
-            reverse("api:authenticated_probe"),
-            HTTP_AUTHORIZATION="Bearer invalid-token",
-        )
+    response = api_client.get(
+        reverse("api:authenticated_probe"),
+        **auth_headers(user),
+    )
 
-        self.assertEqual(response.status_code, 401)
-        self.assertIn("message", response.json())
-        self.assertIn("errors", response.json())
+    assert response.status_code == 200
+    assert response.json() == {"authenticated": True}
 
-    def test_staff_probe_rejects_non_staff_user_with_json_error(self):
-        user = get_user_model().objects.create_user(
-            username="normaluser",
-            email="normaluser@example.com",
-            password="strong-pass-123",
-        )
 
-        response = self.client.get(
-            reverse("api:staff_probe"),
-            **self._create_token_header(user),
-        )
+def test_authenticated_probe_rejects_missing_token_with_json_error(api_client):
+    """缺失 token 时认证探针返回统一 JSON 错误结构。"""
 
-        self.assertEqual(response.status_code, 403)
-        self.assertIn("message", response.json())
-        self.assertIn("errors", response.json())
+    response = api_client.get(reverse("api:authenticated_probe"))
 
-    def test_legacy_home_page_is_not_exposed_by_api_only_backend(self):
-        response = self.client.get("/")
+    assert response.status_code == 401
+    assert "message" in response.json()
+    assert "errors" in response.json()
 
-        self.assertEqual(response.status_code, 404)
+
+def test_authenticated_probe_rejects_invalid_token_with_json_error(api_client):
+    """无效 token 时认证探针返回统一 JSON 错误结构。"""
+
+    response = api_client.get(
+        reverse("api:authenticated_probe"),
+        HTTP_AUTHORIZATION="Bearer invalid-token",
+    )
+
+    assert response.status_code == 401
+    assert "message" in response.json()
+    assert "errors" in response.json()
+
+
+def test_staff_probe_rejects_non_staff_user_with_json_error(api_client, auth_headers):
+    """非 staff 用户访问 staff 探针时返回权限错误。"""
+
+    user = get_user_model().objects.create_user(
+        username="normaluser",
+        email="normaluser@example.com",
+        password="strong-pass-123",
+    )
+
+    response = api_client.get(
+        reverse("api:staff_probe"),
+        **auth_headers(user),
+    )
+
+    assert response.status_code == 403
+    assert "message" in response.json()
+    assert "errors" in response.json()
+
+
+def test_legacy_home_page_is_not_exposed_by_api_only_backend(api_client):
+    """API-only 后端不暴露旧首页。"""
+
+    response = api_client.get("/")
+
+    assert response.status_code == 404

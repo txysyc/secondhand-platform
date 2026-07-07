@@ -1,17 +1,16 @@
 from decimal import Decimal
+
+import pytest
 from io import BytesIO
 
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
-from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from PIL import Image
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.test import APIClient, APITestCase
-from rest_framework_simplejwt.tokens import RefreshToken
 
 from catalog.admin import CategoryAdmin, ListingAdmin
 from catalog.models import Category, Listing, ListingImage
@@ -31,19 +30,22 @@ from catalog.services import (
 from users.models import User
 
 
-class CategoryModelTest(TestCase):
+pytestmark = pytest.mark.django_db
+
+
+class TestCategoryModel:
     """分类模型基础行为测试。"""
 
     def test_category_defaults_to_active_and_returns_name(self):
         category = Category.objects.create(name="数码产品")
 
-        self.assertTrue(category.is_active)
-        self.assertEqual(str(category), "数码产品")
+        assert category.is_active is True
+        assert str(category) == "数码产品"
 
     def test_category_name_must_be_unique(self):
         Category.objects.create(name="图书")
 
-        with self.assertRaises(IntegrityError):
+        with pytest.raises(IntegrityError):
             with transaction.atomic():
                 Category.objects.create(name="图书")
 
@@ -54,11 +56,11 @@ class CategoryModelTest(TestCase):
         category.save(update_fields=["is_active", "updated_at"])
 
         category.refresh_from_db()
-        self.assertFalse(category.is_active)
-        self.assertTrue(Category.objects.filter(pk=category.pk).exists())
+        assert category.is_active is False
+        assert Category.objects.filter(pk=category.pk).exists() is True
 
 
-class CategorySelectorTest(TestCase):
+class TestCategorySelector:
     """分类读取查询测试。"""
 
     def test_get_active_categories_returns_only_active_categories_in_stable_order(self):
@@ -68,14 +70,17 @@ class CategorySelectorTest(TestCase):
 
         categories = list(get_active_categories())
 
-        self.assertEqual(categories, [first, second])
-        self.assertNotIn("停用分类", [category.name for category in categories])
+        assert categories == [first, second]
+        assert "停用分类" not in [category.name for category in categories]
 
 
-class ListingModelTest(TestCase):
+class TestListingModel:
     """商品模型基础行为测试。"""
 
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def _setup_listing_model_context(self):
+        """构造商品模型测试需要的卖家和分类。"""
+
         self.user = get_user_model().objects.create_user(
             username="seller",
             email="seller@example.com",
@@ -99,10 +104,10 @@ class ListingModelTest(TestCase):
     def test_listing_can_be_created_with_custom_user_category_and_decimal_price(self):
         listing = self.create_listing()
 
-        self.assertEqual(listing.owner, self.user)
-        self.assertEqual(listing.category, self.category)
-        self.assertEqual(listing.price, Decimal("199.90"))
-        self.assertEqual(str(listing), "二手键盘")
+        assert listing.owner == self.user
+        assert listing.category == self.category
+        assert listing.price == Decimal("199.90")
+        assert str(listing) == "二手键盘"
 
     def test_item_type_supports_physical_and_virtual_with_chinese_labels(self):
         physical = self.create_listing(item_type=Listing.ItemType.PHYSICAL)
@@ -112,56 +117,58 @@ class ListingModelTest(TestCase):
             price=Decimal("29.00"),
         )
 
-        self.assertEqual(physical.get_item_type_display(), "实体商品")
-        self.assertEqual(virtual.get_item_type_display(), "虚拟商品")
+        assert physical.get_item_type_display() == "实体商品"
+        assert virtual.get_item_type_display() == "虚拟商品"
 
     def test_listing_status_contains_required_lifecycle_values(self):
         required_values = {"draft", "active", "reserved", "sold", "withdrawn"}
 
-        self.assertTrue(required_values.issubset(set(Listing.Status.values)))
+        assert required_values.issubset(set(Listing.Status.values)) is True
 
     def test_listing_owner_field_uses_current_custom_user_model(self):
         field = Listing._meta.get_field("owner")
 
-        self.assertIs(field.remote_field.model, get_user_model())
+        assert field.remote_field.model is get_user_model()
 
     def test_listing_category_and_item_type_are_independent_fields(self):
         listing = self.create_listing(item_type=Listing.ItemType.VIRTUAL)
 
-        self.assertEqual(listing.category.name, "数码产品")
-        self.assertEqual(listing.item_type, "virtual")
-        self.assertFalse(Category.objects.filter(name="虚拟商品").exists())
+        assert listing.category.name == "数码产品"
+        assert listing.item_type == "virtual"
+        assert Category.objects.filter(name="虚拟商品").exists() is False
 
     def test_listing_price_preserves_two_decimal_places(self):
         listing = self.create_listing(price=Decimal("12.30"))
 
         listing.refresh_from_db()
 
-        self.assertEqual(listing.price, Decimal("12.30"))
-        self.assertEqual(abs(listing.price.as_tuple().exponent), 2)
+        assert listing.price == Decimal("12.30")
+        assert abs(listing.price.as_tuple().exponent) == 2
 
     def test_listing_published_at_defaults_to_none(self):
         listing = self.create_listing()
 
-        self.assertIsNone(listing.published_at)
+        assert listing.published_at is None
 
 
-class CatalogAdminTest(TestCase):
+class TestCatalogAdmin:
     """catalog 后台注册与配置测试。"""
 
     def test_category_and_listing_are_registered_to_admin_site(self):
-        self.assertIsInstance(admin.site._registry[Category], CategoryAdmin)
-        self.assertIsInstance(admin.site._registry[Listing], ListingAdmin)
+        assert isinstance(admin.site._registry[Category], CategoryAdmin)
+        assert isinstance(admin.site._registry[Listing], ListingAdmin)
 
     def test_category_admin_supports_active_filter_and_name_search(self):
         category_admin = admin.site._registry[Category]
 
-        self.assertEqual(
-            list(category_admin.list_display),
-            ["name", "is_active", "created_at", "updated_at"],
-        )
-        self.assertIn("is_active", category_admin.list_filter)
-        self.assertIn("name", category_admin.search_fields)
+        assert list(category_admin.list_display) == [
+            "name",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        assert "is_active" in category_admin.list_filter
+        assert "name" in category_admin.search_fields
 
     def test_listing_admin_exposes_required_columns_filters_and_search(self):
         listing_admin = admin.site._registry[Listing]
@@ -178,65 +185,68 @@ class CatalogAdminTest(TestCase):
             "updated_at",
             "delivery_notes_summary",
         ]:
-            self.assertIn(field, listing_admin.list_display)
-        self.assertNotIn("delivery_notes", listing_admin.list_display)
+            assert field in listing_admin.list_display
+        assert "delivery_notes" not in listing_admin.list_display
 
         for field in ["status", "category", "owner", "item_type", "created_at"]:
-            self.assertIn(field, listing_admin.list_filter)
+            assert field in listing_admin.list_filter
 
         for field in ["title", "description", "owner__username", "category__name"]:
-            self.assertIn(field, listing_admin.search_fields)
+            assert field in listing_admin.search_fields
 
-        self.assertEqual(listing_admin.list_select_related, ["owner", "category"])
+        assert listing_admin.list_select_related == ["owner", "category"]
         for field in ["created_at", "updated_at", "published_at"]:
-            self.assertIn(field, listing_admin.readonly_fields)
+            assert field in listing_admin.readonly_fields
 
     def test_listing_admin_exposes_image_count_and_image_inline(self):
         listing_admin = admin.site._registry[Listing]
 
-        self.assertIn("image_count_value", listing_admin.list_display)
+        assert "image_count_value" in listing_admin.list_display
         image_inline = next(
             inline for inline in listing_admin.inlines if inline.model is ListingImage
         )
-        self.assertEqual(image_inline.max_num, 6)
+        assert image_inline.max_num == 6
 
     def test_listing_admin_uses_delivery_notes_summary(self):
         listing_admin = admin.site._registry[Listing]
         listing = Listing(delivery_notes="这是一段超过二十个字符的交付说明用于验证摘要")
 
-        self.assertEqual(listing_admin.delivery_notes_summary(listing), listing.delivery_notes[0:20])
+        assert listing_admin.delivery_notes_summary(listing) == listing.delivery_notes[0:20]
 
-    def test_superuser_can_open_category_and_listing_admin_changelists(self):
+    def test_superuser_can_open_category_and_listing_admin_changelists(self, client):
         superuser = get_user_model().objects.create_superuser(
             username="catadmin",
             email="catalogadmin@example.com",
             password="StrongPass123",
         )
-        self.client.force_login(superuser)
+        client.force_login(superuser)
 
-        category_response = self.client.get(reverse("admin:catalog_category_changelist"))
-        listing_response = self.client.get(reverse("admin:catalog_listing_changelist"))
+        category_response = client.get(reverse("admin:catalog_category_changelist"))
+        listing_response = client.get(reverse("admin:catalog_listing_changelist"))
 
-        self.assertEqual(category_response.status_code, 200)
-        self.assertEqual(listing_response.status_code, 200)
+        assert category_response.status_code == 200
+        assert listing_response.status_code == 200
 
-    def test_regular_user_cannot_open_listing_admin_changelist(self):
+    def test_regular_user_cannot_open_listing_admin_changelist(self, client):
         user = get_user_model().objects.create_user(
             username="catnorm",
             email="catalognormal@example.com",
             password="StrongPass123",
         )
-        self.client.force_login(user)
+        client.force_login(user)
 
-        response = self.client.get(reverse("admin:catalog_listing_changelist"))
+        response = client.get(reverse("admin:catalog_listing_changelist"))
 
-        self.assertIn(response.status_code, [302, 403])
+        assert response.status_code in [302, 403]
 
 
-class PublicListingSelectorTest(TestCase):
+class TestPublicListingSelector:
     """公开商品列表 selector 测试。"""
 
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def _setup_public_listing_context(self):
+        """构造公开商品 selector 测试需要的卖家和分类。"""
+
         self.user = get_user_model().objects.create_user(
             username="pubseller",
             email="public_seller@example.com",
@@ -271,7 +281,7 @@ class PublicListingSelectorTest(TestCase):
 
         listings = list(get_public_listing_queryset())
 
-        self.assertEqual(listings, [active])
+        assert listings == [active]
 
     def test_queryset_excludes_non_purchasable_statuses(self):
         active = self.make_listing(title="在售商品", status=Listing.Status.ACTIVE)
@@ -285,7 +295,7 @@ class PublicListingSelectorTest(TestCase):
 
         listings = list(get_public_listing_queryset())
 
-        self.assertEqual(listings, [active])
+        assert listings == [active]
 
     def test_queryset_uses_stable_published_at_and_id_desc_order(self):
         published_at = timezone.now() - timezone.timedelta(days=1)
@@ -298,7 +308,7 @@ class PublicListingSelectorTest(TestCase):
 
         listings = list(get_public_listing_queryset())
 
-        self.assertEqual(listings, [second_same_time, first_same_time, older])
+        assert listings == [second_same_time, first_same_time, older]
 
     def test_keyword_matches_title_or_description(self):
         match_title = self.make_listing(title="蓝牙耳机", description="无关描述")
@@ -307,9 +317,9 @@ class PublicListingSelectorTest(TestCase):
 
         results = list(get_public_listing_queryset({"q": "蓝牙"}))
 
-        self.assertIn(match_title, results)
-        self.assertIn(match_desc, results)
-        self.assertNotIn(no_match, results)
+        assert match_title in results
+        assert match_desc in results
+        assert no_match not in results
 
     def test_category_filter(self):
         other_category = Category.objects.create(name="另一分类")
@@ -318,8 +328,8 @@ class PublicListingSelectorTest(TestCase):
 
         results = list(get_public_listing_queryset({"category": self.category}))
 
-        self.assertIn(target, results)
-        self.assertNotIn(other, results)
+        assert target in results
+        assert other not in results
 
     def test_item_type_filter(self):
         physical = self.make_listing(title="实体", item_type=Listing.ItemType.PHYSICAL)
@@ -327,8 +337,8 @@ class PublicListingSelectorTest(TestCase):
 
         results = list(get_public_listing_queryset({"item_type": "virtual"}))
 
-        self.assertNotIn(physical, results)
-        self.assertIn(virtual, results)
+        assert physical not in results
+        assert virtual in results
 
     def test_price_range_filter(self):
         cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
@@ -339,9 +349,9 @@ class PublicListingSelectorTest(TestCase):
             get_public_listing_queryset({"min_price": Decimal("20"), "max_price": Decimal("100")})
         )
 
-        self.assertNotIn(cheap, results)
-        self.assertIn(mid, results)
-        self.assertNotIn(expensive, results)
+        assert cheap not in results
+        assert mid in results
+        assert expensive not in results
 
     def test_min_price_filter_can_work_alone(self):
         cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
@@ -349,8 +359,8 @@ class PublicListingSelectorTest(TestCase):
 
         results = list(get_public_listing_queryset({"min_price": Decimal("20")}))
 
-        self.assertNotIn(cheap, results)
-        self.assertIn(mid, results)
+        assert cheap not in results
+        assert mid in results
 
     def test_max_price_filter_can_work_alone(self):
         cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
@@ -358,8 +368,8 @@ class PublicListingSelectorTest(TestCase):
 
         results = list(get_public_listing_queryset({"max_price": Decimal("20")}))
 
-        self.assertIn(cheap, results)
-        self.assertNotIn(mid, results)
+        assert cheap in results
+        assert mid not in results
 
     def test_paid_buyer_can_view_reserved_or_sold_listing_detail_queryset(self):
         buyer = get_user_model().objects.create_user(
@@ -394,8 +404,8 @@ class PublicListingSelectorTest(TestCase):
 
         listings = list(get_visible_listing_detail_queryset(buyer))
 
-        self.assertIn(reserved, listings)
-        self.assertIn(sold, listings)
+        assert reserved in listings
+        assert sold in listings
 
     def test_unpaid_buyer_cannot_view_reserved_listing_detail_queryset(self):
         buyer = get_user_model().objects.create_user(
@@ -418,7 +428,7 @@ class PublicListingSelectorTest(TestCase):
 
         listings = list(get_visible_listing_detail_queryset(buyer))
 
-        self.assertNotIn(reserved, listings)
+        assert reserved not in listings
 
     def test_sort_price_asc(self):
         expensive = self.make_listing(title="贵", price=Decimal("200.00"))
@@ -426,7 +436,7 @@ class PublicListingSelectorTest(TestCase):
 
         results = list(get_public_listing_queryset({"sort": "price_asc"}))
 
-        self.assertEqual(results, [cheap, expensive])
+        assert results == [cheap, expensive]
 
     def test_sort_price_desc(self):
         cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
@@ -434,7 +444,7 @@ class PublicListingSelectorTest(TestCase):
 
         results = list(get_public_listing_queryset({"sort": "price_desc"}))
 
-        self.assertEqual(results, [expensive, cheap])
+        assert results == [expensive, cheap]
 
     def test_sort_oldest(self):
         older = self.make_listing(
@@ -446,7 +456,7 @@ class PublicListingSelectorTest(TestCase):
 
         results = list(get_public_listing_queryset({"sort": "oldest"}))
 
-        self.assertEqual(results, [older, newer])
+        assert results == [older, newer]
 
     def test_unknown_sort_falls_back_to_default(self):
         older = self.make_listing(
@@ -460,7 +470,7 @@ class PublicListingSelectorTest(TestCase):
 
         results = list(get_public_listing_queryset({"sort": "invalid_sort"}))
 
-        self.assertEqual(results, [newer, older])
+        assert results == [newer, older]
 
     def test_combined_filters(self):
         target = self.make_listing(
@@ -488,13 +498,16 @@ class PublicListingSelectorTest(TestCase):
             })
         )
 
-        self.assertEqual(results, [target])
+        assert results == [target]
 
 
-class ChangeListingStatusServiceTest(TestCase):
+class TestChangeListingStatusService:
     """商品状态变更服务测试。"""
 
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def _setup_status_service_context(self):
+        """构造商品状态服务测试需要的用户和分类。"""
+
         self.user = get_user_model().objects.create_user(
             username="stseller",
             email="status_seller@example.com",
@@ -535,10 +548,10 @@ class ChangeListingStatusServiceTest(TestCase):
         result = change_listing_status(self.user, listing, ACTION_WITHDRAW)
         result.refresh_from_db()
 
-        self.assertEqual(result.status, Listing.Status.WITHDRAWN)
-        self.assertGreater(result.updated_at, baseline_updated_at)
-        self.assertEqual(result.owner_id, self.user.id)
-        self.assertIsNotNone(result.published_at)
+        assert result.status == Listing.Status.WITHDRAWN
+        assert result.updated_at > baseline_updated_at
+        assert result.owner_id == self.user.id
+        assert result.published_at is not None
 
     def test_withdraw_rejects_non_active_statuses(self):
         for status in [
@@ -549,11 +562,11 @@ class ChangeListingStatusServiceTest(TestCase):
         ]:
             listing = self.make_listing(status=status)
 
-            with self.assertRaises(ValidationError):
+            with pytest.raises(ValidationError):
                 change_listing_status(self.user, listing, ACTION_WITHDRAW)
 
             listing.refresh_from_db()
-            self.assertEqual(listing.status, status)
+            assert listing.status == status
 
     def test_restore_active_keeps_published_at_and_returns_to_active(self):
         published_at = timezone.now() - timezone.timedelta(days=5)
@@ -564,8 +577,8 @@ class ChangeListingStatusServiceTest(TestCase):
         result = change_listing_status(self.user, listing, ACTION_RESTORE_ACTIVE)
         result.refresh_from_db()
 
-        self.assertEqual(result.status, Listing.Status.ACTIVE)
-        self.assertEqual(result.published_at, published_at)
+        assert result.status == Listing.Status.ACTIVE
+        assert result.published_at == published_at
 
     def test_restore_active_back_fills_missing_published_at(self):
         listing = self.make_listing(
@@ -576,22 +589,20 @@ class ChangeListingStatusServiceTest(TestCase):
         result = change_listing_status(self.user, listing, ACTION_RESTORE_ACTIVE)
         result.refresh_from_db()
 
-        self.assertEqual(result.status, Listing.Status.ACTIVE)
-        self.assertIsNotNone(result.published_at)
-        self.assertGreaterEqual(
-            result.published_at, before - timezone.timedelta(seconds=1)
-        )
+        assert result.status == Listing.Status.ACTIVE
+        assert result.published_at is not None
+        assert result.published_at >= before - timezone.timedelta(seconds=1)
 
     def test_restore_active_blocked_when_category_disabled(self):
         listing = self.make_listing(status=Listing.Status.WITHDRAWN)
         self.category.is_active = False
         self.category.save(update_fields=["is_active", "updated_at"])
 
-        with self.assertRaises(ValidationError):
+        with pytest.raises(ValidationError):
             change_listing_status(self.user, listing, ACTION_RESTORE_ACTIVE)
 
         listing.refresh_from_db()
-        self.assertEqual(listing.status, Listing.Status.WITHDRAWN)
+        assert listing.status == Listing.Status.WITHDRAWN
 
     def test_restore_active_rejects_non_withdrawn_statuses(self):
         for status in [
@@ -602,35 +613,31 @@ class ChangeListingStatusServiceTest(TestCase):
         ]:
             listing = self.make_listing(status=status)
 
-            with self.assertRaises(ValidationError):
+            with pytest.raises(ValidationError):
                 change_listing_status(self.user, listing, ACTION_RESTORE_ACTIVE)
 
             listing.refresh_from_db()
-            self.assertEqual(listing.status, status)
+            assert listing.status == status
 
     def test_unknown_action_raises_validation_error(self):
         listing = self.make_listing(status=Listing.Status.ACTIVE)
 
-        with self.assertRaises(ValidationError):
+        with pytest.raises(ValidationError):
             change_listing_status(self.user, listing, "mark_sold")
-        with self.assertRaises(ValidationError):
+        with pytest.raises(ValidationError):
             change_listing_status(self.user, listing, "")
 
         listing.refresh_from_db()
-        self.assertEqual(listing.status, Listing.Status.ACTIVE)
+        assert listing.status == Listing.Status.ACTIVE
 
     def test_non_owner_cannot_change_status(self):
         listing = self.make_listing(status=Listing.Status.ACTIVE)
 
-        with self.assertRaises(PermissionDenied):
+        with pytest.raises(PermissionDenied):
             change_listing_status(self.other_user, listing, ACTION_WITHDRAW)
 
         listing.refresh_from_db()
-        self.assertEqual(listing.status, Listing.Status.ACTIVE)
-
-
-
-
+        assert listing.status == Listing.Status.ACTIVE
 def build_png_image(name="listing.png", size=(16, 16)):
     """构造测试用 PNG 图片。"""
 
@@ -639,22 +646,23 @@ def build_png_image(name="listing.png", size=(16, 16)):
     image.save(buffer, format="PNG")
     return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
 
-
-@override_settings(
-    STORAGES={
-        "default": {
-            "BACKEND": "django.core.files.storage.InMemoryStorage",
-        },
-        "staticfiles": {
-            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
-        },
-    }
-)
-class CatalogApiTests(APITestCase):
+class TestCatalogApi:
     """P3 商品 API 测试。"""
 
-    def setUp(self):
-        self.client = APIClient()
+    @pytest.fixture(autouse=True)
+    def _setup_catalog_api_context(self, api_client, auth_headers, settings):
+        """构造商品 API 测试上下文，并使用内存存储隔离上传文件。"""
+
+        settings.STORAGES = {
+            "default": {
+                "BACKEND": "django.core.files.storage.InMemoryStorage",
+            },
+            "staticfiles": {
+                "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+            },
+        }
+        self.api_client = api_client
+        self.auth_headers = auth_headers
         self.seller = User.objects.create_user(
             username="apiseller",
             email="apiseller@example.com",
@@ -670,10 +678,6 @@ class CatalogApiTests(APITestCase):
             name="API停用分类",
             is_active=False,
         )
-
-    def auth_headers(self, user):
-        token = RefreshToken.for_user(user).access_token
-        return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
 
     def listing_payload(self, **overrides):
         data = {
@@ -708,12 +712,12 @@ class CatalogApiTests(APITestCase):
         return Listing.objects.create(**data)
 
     def test_categories_returns_only_active_categories(self):
-        response = self.client.get(reverse("api:catalog_categories"))
+        response = self.api_client.get(reverse("api:catalog_categories"))
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         names = [item["name"] for item in response.json()]
-        self.assertIn("API数码", names)
-        self.assertNotIn("API停用分类", names)
+        assert "API数码" in names
+        assert "API停用分类" not in names
 
     def test_public_listing_list_filters_active_listings(self):
         match = self.create_listing(title="蓝牙耳机", description="支持降噪")
@@ -721,13 +725,13 @@ class CatalogApiTests(APITestCase):
         self.create_listing(title="草稿商品", status=Listing.Status.DRAFT, published_at=None)
         self.create_listing(title="停用分类商品", category=self.inactive_category)
 
-        response = self.client.get(reverse("api:catalog_listings"), {"q": "蓝牙"})
+        response = self.api_client.get(reverse("api:catalog_listings"), {"q": "蓝牙"})
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         body = response.json()
-        self.assertEqual(body["count"], 1)
-        self.assertEqual(body["results"][0]["id"], match.id)
-        self.assertEqual(body["results"][0]["category"]["name"], "API数码")
+        assert body["count"] == 1
+        assert body["results"][0]["id"] == match.id
+        assert body["results"][0]["category"]["name"] == "API数码"
 
     def test_public_detail_hides_inactive_or_non_active_listing(self):
         active = self.create_listing(title="详情商品")
@@ -737,16 +741,16 @@ class CatalogApiTests(APITestCase):
             published_at=None,
         )
 
-        ok_response = self.client.get(
+        ok_response = self.api_client.get(
             reverse("api:catalog_listing_detail", kwargs={"pk": active.id})
         )
-        hidden_response = self.client.get(
+        hidden_response = self.api_client.get(
             reverse("api:catalog_listing_detail", kwargs={"pk": draft.id})
         )
 
-        self.assertEqual(ok_response.status_code, 200)
-        self.assertEqual(ok_response.json()["title"], "详情商品")
-        self.assertEqual(hidden_response.status_code, 404)
+        assert ok_response.status_code == 200
+        assert ok_response.json()["title"] == "详情商品"
+        assert hidden_response.status_code == 404
 
     def test_paid_buyer_and_seller_can_view_reserved_or_sold_detail(self):
         buyer = User.objects.create_user(
@@ -785,19 +789,19 @@ class CatalogApiTests(APITestCase):
             payment_deadline=timezone.now(),
         )
 
-        buyer_reserved_response = self.client.get(
+        buyer_reserved_response = self.api_client.get(
             reverse("api:catalog_listing_detail", kwargs={"pk": reserved.id}),
             **self.auth_headers(buyer),
         )
-        seller_sold_response = self.client.get(
+        seller_sold_response = self.api_client.get(
             reverse("api:catalog_listing_detail", kwargs={"pk": sold.id}),
             **self.auth_headers(self.seller),
         )
 
-        self.assertEqual(buyer_reserved_response.status_code, 200)
-        self.assertEqual(buyer_reserved_response.json()["title"], "交易中详情")
-        self.assertEqual(seller_sold_response.status_code, 200)
-        self.assertEqual(seller_sold_response.json()["title"], "已售详情")
+        assert buyer_reserved_response.status_code == 200
+        assert buyer_reserved_response.json()["title"] == "交易中详情"
+        assert seller_sold_response.status_code == 200
+        assert seller_sold_response.json()["title"] == "已售详情"
 
     def test_non_participant_cannot_view_reserved_or_sold_detail(self):
         reserved = self.create_listing(
@@ -805,16 +809,16 @@ class CatalogApiTests(APITestCase):
             status=Listing.Status.RESERVED,
         )
 
-        guest_response = self.client.get(
+        guest_response = self.api_client.get(
             reverse("api:catalog_listing_detail", kwargs={"pk": reserved.id})
         )
-        other_response = self.client.get(
+        other_response = self.api_client.get(
             reverse("api:catalog_listing_detail", kwargs={"pk": reserved.id}),
             **self.auth_headers(self.other_user),
         )
 
-        self.assertEqual(guest_response.status_code, 404)
-        self.assertEqual(other_response.status_code, 404)
+        assert guest_response.status_code == 404
+        assert other_response.status_code == 404
 
     def test_owner_can_view_own_draft_listing_detail(self):
         draft = self.create_listing(
@@ -823,15 +827,15 @@ class CatalogApiTests(APITestCase):
             published_at=None,
         )
 
-        response = self.client.get(
+        response = self.api_client.get(
             reverse("api:catalog_my_listing_detail", kwargs={"pk": draft.id}),
             **self.auth_headers(self.seller),
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["id"], draft.id)
-        self.assertEqual(response.json()["title"], "编辑页草稿")
-        self.assertEqual(response.json()["status"], Listing.Status.DRAFT)
+        assert response.status_code == 200
+        assert response.json()["id"] == draft.id
+        assert response.json()["title"] == "编辑页草稿"
+        assert response.json()["status"] == Listing.Status.DRAFT
 
     def test_non_owner_cannot_view_private_listing_detail(self):
         draft = self.create_listing(
@@ -840,72 +844,72 @@ class CatalogApiTests(APITestCase):
             published_at=None,
         )
 
-        response = self.client.get(
+        response = self.api_client.get(
             reverse("api:catalog_my_listing_detail", kwargs={"pk": draft.id}),
             **self.auth_headers(self.other_user),
         )
 
-        self.assertEqual(response.status_code, 403)
+        assert response.status_code == 403
 
     def test_create_update_publish_deactivate_and_reactivate_listing(self):
-        create_response = self.client.post(
+        create_response = self.api_client.post(
             reverse("api:catalog_my_listings"),
             data=self.listing_payload(),
             format="json",
             **self.auth_headers(self.seller),
         )
-        self.assertEqual(create_response.status_code, 201)
+        assert create_response.status_code == 201
         listing_id = create_response.json()["id"]
-        self.assertEqual(create_response.json()["status"], Listing.Status.DRAFT)
+        assert create_response.json()["status"] == Listing.Status.DRAFT
 
-        update_response = self.client.patch(
+        update_response = self.api_client.patch(
             reverse("api:catalog_my_listing_detail", kwargs={"pk": listing_id}),
             data={"title": "更新后的相机", "price": "399.00"},
             format="json",
             **self.auth_headers(self.seller),
         )
-        self.assertEqual(update_response.status_code, 200)
-        self.assertEqual(update_response.json()["title"], "更新后的相机")
+        assert update_response.status_code == 200
+        assert update_response.json()["title"] == "更新后的相机"
 
-        publish_response = self.client.post(
+        publish_response = self.api_client.post(
             reverse("api:catalog_my_listing_publish", kwargs={"pk": listing_id}),
             **self.auth_headers(self.seller),
         )
-        self.assertEqual(publish_response.status_code, 200)
-        self.assertEqual(publish_response.json()["status"], Listing.Status.ACTIVE)
+        assert publish_response.status_code == 200
+        assert publish_response.json()["status"] == Listing.Status.ACTIVE
 
-        deactivate_response = self.client.post(
+        deactivate_response = self.api_client.post(
             reverse("api:catalog_my_listing_deactivate", kwargs={"pk": listing_id}),
             **self.auth_headers(self.seller),
         )
-        self.assertEqual(deactivate_response.status_code, 200)
-        self.assertEqual(deactivate_response.json()["status"], Listing.Status.WITHDRAWN)
+        assert deactivate_response.status_code == 200
+        assert deactivate_response.json()["status"] == Listing.Status.WITHDRAWN
 
-        reactivate_response = self.client.post(
+        reactivate_response = self.api_client.post(
             reverse("api:catalog_my_listing_reactivate", kwargs={"pk": listing_id}),
             **self.auth_headers(self.seller),
         )
-        self.assertEqual(reactivate_response.status_code, 200)
-        self.assertEqual(reactivate_response.json()["status"], Listing.Status.ACTIVE)
+        assert reactivate_response.status_code == 200
+        assert reactivate_response.json()["status"] == Listing.Status.ACTIVE
 
     def test_non_owner_cannot_mutate_listing(self):
         listing = self.create_listing()
 
-        response = self.client.patch(
+        response = self.api_client.patch(
             reverse("api:catalog_my_listing_detail", kwargs={"pk": listing.id}),
             data={"title": "越权修改"},
             format="json",
             **self.auth_headers(self.other_user),
         )
 
-        self.assertEqual(response.status_code, 403)
+        assert response.status_code == 403
         listing.refresh_from_db()
-        self.assertNotEqual(listing.title, "越权修改")
+        assert listing.title != "越权修改"
 
     def test_image_upload_reorder_delete_and_limit(self):
         listing = self.create_listing(status=Listing.Status.DRAFT, published_at=None)
 
-        upload_response = self.client.post(
+        upload_response = self.api_client.post(
             reverse("api:catalog_my_listing_images_upload", kwargs={"pk": listing.id}),
             data={
                 "images": [
@@ -916,45 +920,47 @@ class CatalogApiTests(APITestCase):
             format="multipart",
             **self.auth_headers(self.seller),
         )
-        self.assertEqual(upload_response.status_code, 201)
+        assert upload_response.status_code == 201
         image_ids = [image["id"] for image in upload_response.json()["images"]]
-        self.assertEqual(len(image_ids), 2)
+        assert len(image_ids) == 2
 
-        reorder_response = self.client.post(
+        reorder_response = self.api_client.post(
             reverse("api:catalog_my_listing_images_reorder", kwargs={"pk": listing.id}),
             data={"image_ids": list(reversed(image_ids))},
             format="json",
             **self.auth_headers(self.seller),
         )
-        self.assertEqual(reorder_response.status_code, 200)
-        self.assertEqual(
-            [image["id"] for image in reorder_response.json()["images"]],
-            list(reversed(image_ids)),
+        assert reorder_response.status_code == 200
+        assert [image["id"] for image in reorder_response.json()["images"]] == list(
+            reversed(image_ids)
         )
 
-        delete_response = self.client.delete(
+        delete_response = self.api_client.delete(
             reverse(
                 "api:catalog_my_listing_images_delete",
                 kwargs={"pk": listing.id, "image_id": image_ids[0]},
             ),
             **self.auth_headers(self.seller),
         )
-        self.assertEqual(delete_response.status_code, 204)
-        self.assertFalse(ListingImage.objects.filter(pk=image_ids[0]).exists())
+        assert delete_response.status_code == 204
+        assert ListingImage.objects.filter(pk=image_ids[0]).exists() is False
 
-        too_many_response = self.client.post(
+        too_many_response = self.api_client.post(
             reverse("api:catalog_my_listing_images_upload", kwargs={"pk": listing.id}),
             data={"images": [build_png_image(f"extra-{index}.png") for index in range(6)]},
             format="multipart",
             **self.auth_headers(self.seller),
         )
-        self.assertEqual(too_many_response.status_code, 400)
+        assert too_many_response.status_code == 400
 
     def test_invalid_filter_returns_json_error(self):
-        response = self.client.get(
+        response = self.api_client.get(
             reverse("api:catalog_listings"),
             {"min_price": "100", "max_price": "10"},
         )
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("message", response.json())
+        assert response.status_code == 400
+        assert "message" in response.json()
+
+
+

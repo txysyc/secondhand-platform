@@ -2,7 +2,7 @@
 
 from django.urls import include, path
 
-from config.api_views import ApiRootView, AuthenticatedProbeView, StaffProbeView
+from api.views import ApiRootView, AuthenticatedProbeView, StaffProbeView
 
 app_name = "api"
 
@@ -20,4 +20,3 @@ urlpatterns = [
     path("", include("orders.urls")),
     path("", include("messaging.urls")),
 ]
-

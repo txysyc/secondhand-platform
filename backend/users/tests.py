@@ -1,20 +1,19 @@
+"""users 应用 pytest 测试。"""
+
 from decimal import Decimal
-from io import BytesIO
 from pathlib import Path
 
-from django.conf import settings
+import pytest
+from django.conf import settings as django_settings
 from django.contrib import admin
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.test import RequestFactory
 from django.urls import reverse
-from django.test import RequestFactory, TestCase
 from django.utils import timezone
-from PIL import Image
-from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from catalog.models import Category, Listing
@@ -23,17 +22,17 @@ from users.models import Profile, User, avatar_upload_to
 from users.signals import create_user_profile
 
 
-class UserModelTest(TestCase):
-    """用户模型基础行为测试。
+pytestmark = pytest.mark.django_db
 
-    覆盖用户模型配置、密码哈希、展示文本、用户名长度校验和邮箱唯一约束。
-    """
+
+class TestUserModel:
+    """用户模型基础行为测试。"""
 
     def test_auth_user_model_points_to_custom_user_model(self):
-        self.assertEqual(settings.AUTH_USER_MODEL, "users.User")
+        assert django_settings.AUTH_USER_MODEL == "users.User"
 
     def test_get_user_model_returns_custom_user_model(self):
-        self.assertIs(get_user_model(), User)
+        assert get_user_model() is User
 
     def test_create_user_hashes_password(self):
         user = User.objects.create_user(
@@ -42,8 +41,8 @@ class UserModelTest(TestCase):
             password="plain-password",
         )
 
-        self.assertNotEqual(user.password, "plain-password")
-        self.assertTrue(user.check_password("plain-password"))
+        assert user.password != "plain-password"
+        assert user.check_password("plain-password") is True
 
     def test_create_superuser_keeps_admin_permissions_and_password_hash(self):
         user = User.objects.create_superuser(
@@ -52,28 +51,32 @@ class UserModelTest(TestCase):
             password="admin-password",
         )
 
-        self.assertTrue(user.is_staff)
-        self.assertTrue(user.is_superuser)
-        self.assertTrue(user.check_password("admin-password"))
-        self.assertTrue(Profile.objects.filter(user=user).exists())
+        assert user.is_staff is True
+        assert user.is_superuser is True
+        assert user.check_password("admin-password") is True
+        assert Profile.objects.filter(user=user).exists() is True
 
     def test_user_str_returns_username_label(self):
         user = User(username="张三", email="zhangsan@example.com")
 
-        self.assertEqual(str(user), "张三的账号")
+        assert str(user) == "张三的账号"
 
     def test_username_must_not_be_shorter_than_two_chars(self):
         user = User(username="a", email="short@example.com", password="test-pass")
 
-        with self.assertRaises(ValidationError) as context:
+        with pytest.raises(ValidationError) as exc_info:
             user.full_clean()
 
-        self.assertIn("username", context.exception.message_dict)
+        assert "username" in exc_info.value.message_dict
 
     def test_email_must_be_unique(self):
-        User.objects.create_user(username="user1", email="same@example.com", password="test-pass")
+        User.objects.create_user(
+            username="user1",
+            email="same@example.com",
+            password="test-pass",
+        )
 
-        with self.assertRaises(IntegrityError):
+        with pytest.raises(IntegrityError):
             with transaction.atomic():
                 User.objects.create_user(
                     username="user2",
@@ -82,11 +85,8 @@ class UserModelTest(TestCase):
                 )
 
 
-class ProfileModelTest(TestCase):
-    """用户资料模型和头像路径测试。
-
-    覆盖资料展示文本、头像路径目录、扩展名标准化和默认扩展名。
-    """
+class TestProfileModel:
+    """用户资料模型和头像路径测试。"""
 
     def test_profile_str_returns_owner_username_label(self):
         user = User.objects.create_user(
@@ -95,7 +95,7 @@ class ProfileModelTest(TestCase):
             password="test-pass",
         )
 
-        self.assertEqual(str(user.profile), "owner的用户资料")
+        assert str(user.profile) == "owner的用户资料"
 
     def test_created_profile_uses_default_nickname(self):
         user = User.objects.create_user(
@@ -104,7 +104,7 @@ class ProfileModelTest(TestCase):
             password="test-pass",
         )
 
-        self.assertEqual(user.profile.nickname, "初始昵称")
+        assert user.profile.nickname == "初始昵称"
 
     def test_avatar_upload_to_uses_user_id_uuid_and_lowercase_extension(self):
         user = User.objects.create_user(
@@ -115,8 +115,8 @@ class ProfileModelTest(TestCase):
 
         upload_path = avatar_upload_to(user.profile, "MyAvatar.PNG")
 
-        self.assertTrue(upload_path.startswith(f"avatars/users/{user.id}/"))
-        self.assertEqual(Path(upload_path).suffix, ".png")
+        assert upload_path.startswith(f"avatars/users/{user.id}/")
+        assert Path(upload_path).suffix == ".png"
 
     def test_avatar_upload_to_defaults_to_jpg_when_filename_has_no_extension(self):
         user = User.objects.create_user(
@@ -127,14 +127,11 @@ class ProfileModelTest(TestCase):
 
         upload_path = avatar_upload_to(user.profile, "avatar")
 
-        self.assertTrue(upload_path.endswith(".jpg"))
+        assert upload_path.endswith(".jpg")
 
 
-class UserProfileSignalTest(TestCase):
-    """用户创建信号的资料自动创建测试。
-
-    覆盖普通用户创建、fixture/raw 保存跳过，以及重复触发时的幂等行为。
-    """
+class TestUserProfileSignal:
+    """用户创建信号的资料自动创建测试。"""
 
     def test_profile_is_created_when_user_is_created(self):
         user = User.objects.create_user(
@@ -143,7 +140,7 @@ class UserProfileSignalTest(TestCase):
             password="test-pass",
         )
 
-        self.assertTrue(Profile.objects.filter(user=user).exists())
+        assert Profile.objects.filter(user=user).exists() is True
 
     def test_raw_user_save_does_not_create_profile(self):
         user = User.objects.create_user(
@@ -155,7 +152,7 @@ class UserProfileSignalTest(TestCase):
 
         create_user_profile(sender=User, instance=user, created=True, raw=True)
 
-        self.assertFalse(Profile.objects.filter(user=user).exists())
+        assert Profile.objects.filter(user=user).exists() is False
 
     def test_existing_profile_does_not_break_created_signal(self):
         user = User.objects.create_user(
@@ -166,17 +163,17 @@ class UserProfileSignalTest(TestCase):
 
         create_user_profile(sender=User, instance=user, created=True, raw=False)
 
-        self.assertEqual(Profile.objects.filter(user=user).count(), 1)
+        assert Profile.objects.filter(user=user).count() == 1
 
 
-class UserAdminTest(TestCase):
+class TestUserAdmin:
     """用户后台注册、治理字段和访问烟雾测试。"""
 
     def test_user_admin_is_registered_with_profile_inline(self):
         user_admin = admin.site._registry[User]
 
-        self.assertIsInstance(user_admin, MyUserAdmin)
-        self.assertIn(ProfileInline, user_admin.inlines)
+        assert isinstance(user_admin, MyUserAdmin)
+        assert ProfileInline in user_admin.inlines
 
     def test_user_admin_exposes_required_columns_filters_search_and_readonly_fields(self):
         user_admin = admin.site._registry[User]
@@ -191,75 +188,88 @@ class UserAdminTest(TestCase):
             "created_at",
             "updated_at",
         ]:
-            self.assertIn(field, user_admin.list_display)
+            assert field in user_admin.list_display
 
         for field in ["is_active", "is_staff", "is_superuser", "groups", "created_at"]:
-            self.assertIn(field, user_admin.list_filter)
+            assert field in user_admin.list_filter
 
         for field in ["id", "username", "email"]:
-            self.assertIn(field, user_admin.search_fields)
+            assert field in user_admin.search_fields
 
         for field in ["created_at", "updated_at", "last_login"]:
-            self.assertIn(field, user_admin.readonly_fields)
+            assert field in user_admin.readonly_fields
 
         permission_fields = user_admin.fieldsets[2][1]["fields"]
-        self.assertIn("is_active", permission_fields)
+        assert "is_active" in permission_fields
 
-    def test_superuser_can_open_user_admin_changelist(self):
+    def test_superuser_can_open_user_admin_changelist(self, client):
         superuser = User.objects.create_superuser(
             username="useradmin",
             email="useradmin@example.com",
             password="StrongPass123",
         )
-        self.client.force_login(superuser)
+        client.force_login(superuser)
 
-        response = self.client.get(reverse("admin:users_user_changelist"))
+        response = client.get(reverse("admin:users_user_changelist"))
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
 
-    def test_regular_user_cannot_open_user_admin_changelist(self):
+    def test_regular_user_cannot_open_user_admin_changelist(self, client):
         user = User.objects.create_user(
             username="normadm",
             email="normaladmin@example.com",
             password="StrongPass123",
         )
-        self.client.force_login(user)
+        client.force_login(user)
 
-        response = self.client.get(reverse("admin:users_user_changelist"))
+        response = client.get(reverse("admin:users_user_changelist"))
 
-        self.assertIn(response.status_code, [302, 403])
+        assert response.status_code in [302, 403]
 
 
-class ProfileInlineAdminTest(TestCase):
-    """后台用户资料内联表单的边界行为测试。
+@pytest.fixture
+def profile_inline_context():
+    """构造后台资料 inline 及请求对象。"""
 
-    覆盖用户新增页、已有资料用户、缺少资料用户三个后台展示路径。
-    """
+    return {
+        "inline": ProfileInline(User, AdminSite()),
+        "request": RequestFactory().get("/admin/users/user/1/change/"),
+    }
 
-    def setUp(self):
-        """构造后台 inline 实例和请求对象。
 
-        Returns:
-            None: 该方法只为测试用例准备共享状态。
-        """
+class TestProfileInlineAdmin:
+    """后台用户资料内联表单的边界行为测试。"""
 
-        self.inline = ProfileInline(User, AdminSite())
-        self.request = RequestFactory().get("/admin/users/user/1/change/")
+    def test_profile_inline_does_not_render_extra_form_on_user_create_page(
+        self,
+        profile_inline_context,
+    ):
+        inline = profile_inline_context["inline"]
+        request = profile_inline_context["request"]
 
-    def test_profile_inline_does_not_render_extra_form_on_user_create_page(self):
-        self.assertEqual(self.inline.get_extra(self.request, obj=None), 0)
+        assert inline.get_extra(request, obj=None) == 0
 
-    def test_profile_inline_does_not_allow_second_profile_when_profile_exists(self):
+    def test_profile_inline_does_not_allow_second_profile_when_profile_exists(
+        self,
+        profile_inline_context,
+    ):
+        inline = profile_inline_context["inline"]
+        request = profile_inline_context["request"]
         user = User.objects.create_user(
             username="filled",
             email="filled@example.com",
             password="test-pass",
         )
 
-        self.assertFalse(self.inline.has_add_permission(self.request, obj=user))
-        self.assertEqual(self.inline.get_extra(self.request, obj=user), 0)
+        assert inline.has_add_permission(request, obj=user) is False
+        assert inline.get_extra(request, obj=user) == 0
 
-    def test_profile_inline_allows_one_profile_when_profile_is_missing(self):
+    def test_profile_inline_allows_one_profile_when_profile_is_missing(
+        self,
+        profile_inline_context,
+    ):
+        inline = profile_inline_context["inline"]
+        request = profile_inline_context["request"]
         user = User.objects.create_user(
             username="miss",
             email="missing@example.com",
@@ -268,33 +278,28 @@ class ProfileInlineAdminTest(TestCase):
         user.profile.delete()
         user = User.objects.get(pk=user.pk)
 
-        self.assertTrue(self.inline.has_add_permission(self.request, obj=user))
-        self.assertEqual(self.inline.get_extra(self.request, obj=user), 1)
-        self.assertEqual(self.inline.max_num, 1)
-        self.assertFalse(self.inline.can_delete)
+        assert inline.has_add_permission(request, obj=user) is True
+        assert inline.get_extra(request, obj=user) == 1
+        assert inline.max_num == 1
+        assert inline.can_delete is False
 
 
+@pytest.fixture
+def default_group():
+    """创建注册流程依赖的默认用户组。"""
+
+    return Group.objects.create(name="普通用户组")
 
 
-class UsersApiTests(APITestCase):
-    """P2 用户与认证 API 测试。"""
+class TestUsersApi:
+    """用户与认证 API 测试。"""
 
-    def setUp(self):
-        self.client = APIClient()
-        Group.objects.create(name="普通用户组")
-
-    def _auth_headers(self, user):
-        token = RefreshToken.for_user(user).access_token
-        return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
-
-    def _build_png_image(self, name="avatar.png"):
-        buffer = BytesIO()
-        image = Image.new("RGB", (1, 1), color="white")
-        image.save(buffer, format="PNG")
-        return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
-
-    def test_register_creates_user_profile_and_default_group(self):
-        response = self.client.post(
+    def test_register_creates_user_profile_and_default_group(
+        self,
+        api_client,
+        default_group,
+    ):
+        response = api_client.post(
             reverse("api:auth_register"),
             data={
                 "username": "buyer",
@@ -305,21 +310,25 @@ class UsersApiTests(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json()["username"], "buyer")
+        assert response.status_code == 201
+        assert response.json()["username"] == "buyer"
         user = User.objects.get(username="buyer")
-        self.assertEqual(user.email, "buyer@example.com")
-        self.assertTrue(user.profile)
-        self.assertTrue(user.groups.filter(name="普通用户组").exists())
+        assert user.email == "buyer@example.com"
+        assert user.profile
+        assert user.groups.filter(pk=default_group.pk).exists() is True
 
-    def test_register_rejects_duplicate_email_and_password_mismatch(self):
+    def test_register_rejects_duplicate_email_and_password_mismatch(
+        self,
+        api_client,
+        default_group,
+    ):
         User.objects.create_user(
             username="taken",
             email="taken@example.com",
             password="StrongPass123",
         )
 
-        response = self.client.post(
+        response = api_client.post(
             reverse("api:auth_register"),
             data={
                 "username": "fresh",
@@ -330,56 +339,60 @@ class UsersApiTests(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        assert response.status_code == 400
         body = response.json()
-        self.assertIn("message", body)
-        self.assertIn("errors", body)
+        assert "message" in body
+        assert "errors" in body
 
-    def test_token_uses_identifier_for_username_login(self):
+    def test_token_uses_identifier_for_username_login(self, api_client, default_group):
         user = User.objects.create_user(
             username="loginu",
             email="loginu@example.com",
             password="StrongPass123",
         )
 
-        response = self.client.post(
+        response = api_client.post(
             reverse("api:auth_token"),
             data={"identifier": user.username, "password": "StrongPass123"},
             format="json",
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("access", response.json())
-        self.assertIn("refresh", response.json())
+        assert response.status_code == 200
+        assert "access" in response.json()
+        assert "refresh" in response.json()
 
-    def test_token_uses_identifier_for_email_login(self):
+    def test_token_uses_identifier_for_email_login(self, api_client, default_group):
         User.objects.create_user(
-            username="emaillogin",
+            username="emaillog",
             email="email-login@example.com",
             password="StrongPass123",
         )
 
-        response = self.client.post(
+        response = api_client.post(
             reverse("api:auth_token"),
             data={"identifier": "EMAIL-LOGIN@example.com", "password": "StrongPass123"},
             format="json",
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("access", response.json())
+        assert response.status_code == 200
+        assert "access" in response.json()
 
-    def test_token_rejects_invalid_credentials_with_json_error(self):
-        response = self.client.post(
+    def test_token_rejects_invalid_credentials_with_json_error(
+        self,
+        api_client,
+        default_group,
+    ):
+        response = api_client.post(
             reverse("api:auth_token"),
             data={"identifier": "missing", "password": "wrong"},
             format="json",
         )
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("message", response.json())
-        self.assertIn("errors", response.json())
+        assert response.status_code == 400
+        assert "message" in response.json()
+        assert "errors" in response.json()
 
-    def test_refresh_token_returns_new_access_token(self):
+    def test_refresh_token_returns_new_access_token(self, api_client, default_group):
         user = User.objects.create_user(
             username="refreshu",
             email="refreshu@example.com",
@@ -387,16 +400,21 @@ class UsersApiTests(APITestCase):
         )
         refresh = RefreshToken.for_user(user)
 
-        response = self.client.post(
+        response = api_client.post(
             reverse("api:auth_token_refresh"),
             data={"refresh": str(refresh)},
             format="json",
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("access", response.json())
+        assert response.status_code == 200
+        assert "access" in response.json()
 
-    def test_me_get_returns_current_user_profile(self):
+    def test_me_get_returns_current_user_profile(
+        self,
+        api_client,
+        auth_headers,
+        default_group,
+    ):
         user = User.objects.create_user(
             username="profileu",
             email="profileu@example.com",
@@ -406,48 +424,52 @@ class UsersApiTests(APITestCase):
         user.profile.bio = "公开简介"
         user.profile.save()
 
-        response = self.client.get(
+        response = api_client.get(
             reverse("api:users_me"),
-            **self._auth_headers(user),
+            **auth_headers(user),
         )
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         body = response.json()
-        self.assertEqual(body["username"], "profileu")
-        self.assertEqual(body["profile"]["nickname"], "我的昵称")
-        self.assertEqual(body["profile"]["bio"], "公开简介")
+        assert body["username"] == "profileu"
+        assert body["profile"]["nickname"] == "我的昵称"
+        assert body["profile"]["bio"] == "公开简介"
 
-    def test_me_patch_updates_profile_and_avatar(self):
+    def test_me_patch_updates_profile_and_avatar(
+        self,
+        api_client,
+        auth_headers,
+        png_image,
+        settings,
+        default_group,
+    ):
         user = User.objects.create_user(
             username="updateu",
             email="updateu@example.com",
             password="StrongPass123",
         )
-        avatar = self._build_png_image()
+        settings.STORAGES = {
+            "default": {
+                "BACKEND": "django.core.files.storage.InMemoryStorage",
+            },
+            "staticfiles": {
+                "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+            },
+        }
 
-        with self.settings(
-            STORAGES={
-                "default": {
-                    "BACKEND": "django.core.files.storage.InMemoryStorage",
-                },
-                "staticfiles": {
-                    "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
-                },
-            }
-        ):
-            response = self.client.patch(
-                reverse("api:users_me"),
-                data={"nickname": "新昵称", "bio": "新简介", "avatar": avatar},
-                format="multipart",
-                **self._auth_headers(user),
-            )
+        response = api_client.patch(
+            reverse("api:users_me"),
+            data={"nickname": "新昵称", "bio": "新简介", "avatar": png_image("avatar.png")},
+            format="multipart",
+            **auth_headers(user),
+        )
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         user.profile.refresh_from_db()
-        self.assertEqual(user.profile.nickname, "新昵称")
-        self.assertEqual(user.profile.bio, "新简介")
+        assert user.profile.nickname == "新昵称"
+        assert user.profile.bio == "新简介"
 
-    def test_public_user_profile_includes_active_listings(self):
+    def test_public_user_profile_includes_active_listings(self, api_client, default_group):
         seller = User.objects.create_user(
             username="seller",
             email="seller@example.com",
@@ -468,15 +490,19 @@ class UsersApiTests(APITestCase):
             published_at=timezone.now(),
         )
 
-        response = self.client.get(reverse("api:users_public", kwargs={"user_id": seller.id}))
+        response = api_client.get(reverse("api:users_public", kwargs={"user_id": seller.id}))
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         body = response.json()
-        self.assertEqual(body["username"], "seller")
-        self.assertEqual(body["listings"][0]["title"], "公开商品")
-        self.assertEqual(body["listings"][0]["category_name"], "公开分类")
+        assert body["username"] == "seller"
+        assert body["listings"][0]["title"] == "公开商品"
+        assert body["listings"][0]["category_name"] == "公开分类"
 
-    def test_public_user_profile_returns_404_for_missing_user(self):
-        response = self.client.get(reverse("api:users_public", kwargs={"user_id": 99999}))
+    def test_public_user_profile_returns_404_for_missing_user(
+        self,
+        api_client,
+        default_group,
+    ):
+        response = api_client.get(reverse("api:users_public", kwargs={"user_id": 99999}))
 
-        self.assertEqual(response.status_code, 404)
+        assert response.status_code == 404

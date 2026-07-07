@@ -18,3 +18,19 @@ dependencies = [
     "django-cors-headers>=4.9.0",
     "djangorestframework-simplejwt>=5.5.1",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9,<10",
+    "pytest-asyncio>=1.4.0",
+    "pytest-django>=4.11,<5",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.development"
+pythonpath = ["backend"]
+testpaths = ["backend"]
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+python_classes = ["Test*", "*Test"]
+asyncio_mode = "auto"
+addopts = "-ra"

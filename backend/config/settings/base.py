@@ -171,7 +171,7 @@ REST_FRAMEWORK = {
     # 默认全局接口返回数据格式
     "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
     # 默认异常处理器
-    "EXCEPTION_HANDLER": "config.api_exceptions.api_exception_handler",
+    "EXCEPTION_HANDLER": "api.exceptions.api_exception_handler",
 }
 
 # JWT设置

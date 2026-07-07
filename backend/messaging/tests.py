@@ -7,10 +7,10 @@ from channels.testing import WebsocketCommunicator
 from django.contrib.admin.sites import site
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
@@ -190,7 +190,7 @@ class RedisCacheSelectorTest(TestCase):
             password="StrongPass123",
         )
         seller = User.objects.create_user(
-            username="cacheseller",
+            username="cachesell",
             email="cacheseller@example.com",
             password="StrongPass123",
         )

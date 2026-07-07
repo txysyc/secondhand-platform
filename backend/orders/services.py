@@ -1,9 +1,9 @@
 from datetime import timedelta
 import random
 
-from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils import timezone
 from django.db import transaction
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from users.models import User
 from catalog.models import Listing

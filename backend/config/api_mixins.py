@@ -1,26 +1,6 @@
 """项目级 API 视图复用组件。"""
 
-from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
-from django.core.exceptions import ValidationError as DjangoValidationError
-from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
-
-
-class ServiceErrorMixin:
-    """将服务层 Django 异常转换为统一的 DRF JSON 错误响应。"""
-
-    def run_service(self, func, *args, **kwargs):
-        """执行服务函数，并把业务异常映射为 API 可识别的异常类型。"""
-
-        try:
-            return func(*args, **kwargs)
-        except DjangoValidationError as exc:
-            # 服务层使用 Django ValidationError 表达业务规则失败；
-            # 这里统一转成 DRF ValidationError，交给全局异常处理器包装。
-            message = exc.messages[0] if getattr(exc, "messages", None) else "请求处理失败"
-            raise ValidationError(detail=message)
-        except DjangoPermissionDenied as exc:
-            raise PermissionDenied(detail=str(exc))
 
 
 class PageNumberPaginationMixin:
@@ -35,7 +15,9 @@ class PageNumberPaginationMixin:
 
         serializer_class = serializer_class or self.serializer_class
         if serializer_class is None:
-            raise AssertionError("必须提供 serializer_class 或定义 self.serializer_class")
+            raise AssertionError(
+                "必须提供 serializer_class 或定义 self.serializer_class"
+            )
 
         page_number = self._parse_page_number(request)
         page_size = self._parse_page_size(request)
@@ -49,7 +31,9 @@ class PageNumberPaginationMixin:
         return Response(
             {
                 "count": total,
-                "next": None if next_page is None else self._page_url(request, next_page),
+                "next": None
+                if next_page is None
+                else self._page_url(request, next_page),
                 "previous": (
                     None
                     if previous_page is None

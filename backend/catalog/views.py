@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from config.api_mixins import PageNumberPaginationMixin, ServiceErrorMixin
+from config.api_mixins import PageNumberPaginationMixin
 from catalog.permissions import IsListingOwner
 from catalog.serializers import (
     CategorySerializer,
@@ -77,11 +77,7 @@ class ListingDetailApiView(APIView):
         return Response(serializer.data)
 
 
-class MyListingListCreateApiView(
-    ServiceErrorMixin,
-    PageNumberPaginationMixin,
-    APIView,
-):
+class MyListingListCreateApiView(PageNumberPaginationMixin, APIView):
     """当前用户商品列表与草稿创建。"""
 
     permission_classes = [IsAuthenticated]
@@ -93,8 +89,7 @@ class MyListingListCreateApiView(
     def post(self, request):
         serializer = ListingWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        listing = self.run_service(
-            create_listing_from_payload,
+        listing = create_listing_from_payload(
             request.user,
             serializer.validated_data,
         )
@@ -105,7 +100,7 @@ class MyListingListCreateApiView(
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class _OwnedListingAPIView(ServiceErrorMixin, APIView):
+class _OwnedListingAPIView(APIView):
     """带所有权校验的商品基类视图。"""
 
     permission_classes = [IsAuthenticated, IsListingOwner]
@@ -139,8 +134,7 @@ class MyListingDetailApiView(_OwnedListingAPIView):
             partial=True,
         )
         serializer.is_valid(raise_exception=True)
-        listing = self.run_service(
-            update_listing_from_payload,
+        listing = update_listing_from_payload(
             request.user,
             listing,
             serializer.validated_data,
@@ -153,7 +147,7 @@ class MyListingDetailApiView(_OwnedListingAPIView):
 
     def delete(self, request, pk):
         listing = self.get_object(request, pk)
-        self.run_service(delete_listing_for_user, request.user, listing)
+        delete_listing_for_user(request.user, listing)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -162,7 +156,7 @@ class ListingPublishApiView(_OwnedListingAPIView):
 
     def post(self, request, pk):
         listing = self.get_object(request, pk)
-        listing = self.run_service(publish_listing_for_user, request.user, listing)
+        listing = publish_listing_for_user(request.user, listing)
         response_serializer = ListingDetailSerializer(
             listing,
             context={"request": request},
@@ -175,8 +169,7 @@ class ListingDeactivateApiView(_OwnedListingAPIView):
 
     def post(self, request, pk):
         listing = self.get_object(request, pk)
-        listing = self.run_service(
-            change_listing_status_for_user,
+        listing = change_listing_status_for_user(
             request.user,
             listing,
             "withdraw",
@@ -193,8 +186,7 @@ class ListingReactivateApiView(_OwnedListingAPIView):
 
     def post(self, request, pk):
         listing = self.get_object(request, pk)
-        listing = self.run_service(
-            change_listing_status_for_user,
+        listing = change_listing_status_for_user(
             request.user,
             listing,
             "restore_active",
@@ -214,8 +206,7 @@ class ListingImageUploadApiView(_OwnedListingAPIView):
         images = request.FILES.getlist("images") or request.FILES.getlist("image")
         serializer = ListingImageUploadSerializer(data={"images": images})
         serializer.is_valid(raise_exception=True)
-        self.run_service(
-            add_listing_images,
+        add_listing_images(
             request.user,
             listing,
             serializer.validated_data["images"],
@@ -233,7 +224,7 @@ class ListingImageDeleteApiView(_OwnedListingAPIView):
 
     def delete(self, request, pk, image_id):
         listing = self.get_object(request, pk)
-        self.run_service(delete_listing_image, request.user, listing, image_id)
+        delete_listing_image(request.user, listing, image_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -244,8 +235,7 @@ class ListingImageReorderApiView(_OwnedListingAPIView):
         listing = self.get_object(request, pk)
         serializer = ListingImageReorderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        self.run_service(
-            reorder_listing_images,
+        reorder_listing_images(
             request.user,
             listing,
             serializer.validated_data["image_ids"],

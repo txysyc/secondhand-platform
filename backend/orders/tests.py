@@ -5,10 +5,10 @@ from unittest.mock import patch
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
-from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -394,7 +394,7 @@ class PayOrderServiceTest(TransactionTestCase):
         order = self._create_pending_order(deadline_minutes=-1)
         with self.assertRaises(ValidationError) as ctx:
             pay_order(self.buyer, order.pk)
-        self.assertIn("超时", str(ctx.exception.message))
+        self.assertIn("超时", str(ctx.exception))
 
     def test_non_active_listing_payment_fails(self):
         self.listing.status = Listing.Status.RESERVED
@@ -402,7 +402,7 @@ class PayOrderServiceTest(TransactionTestCase):
         order = self._create_pending_order()
         with self.assertRaises(ValidationError) as ctx:
             pay_order(self.buyer, order.pk)
-        self.assertIn("不可购买", str(ctx.exception.message))
+        self.assertIn("不可购买", str(ctx.exception))
         order.refresh_from_db()
         self.assertEqual(order.status, Order.OrderStatus.PENDING_PAYMENT)
 
@@ -431,7 +431,7 @@ class PayOrderServiceTest(TransactionTestCase):
         order.save()
         with self.assertRaises(ValidationError) as ctx:
             pay_order(self.buyer, order.pk)
-        self.assertIn("商品不存在", str(ctx.exception.message))
+        self.assertIn("商品不存在", str(ctx.exception))
 
     def test_already_paid_order_cannot_pay_again(self):
         order = self._create_pending_order()

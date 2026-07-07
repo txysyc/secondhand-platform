@@ -3,13 +3,13 @@ from io import BytesIO
 
 from django.contrib import admin
 from django.contrib.auth import get_user_model
-from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from PIL import Image
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 

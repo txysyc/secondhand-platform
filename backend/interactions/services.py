@@ -1,4 +1,4 @@
-from django.core.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from users.models import User
 from catalog.models import Listing
 from interactions.models import Comment

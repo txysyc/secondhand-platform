@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.core.cache import cache
-from django.core.exceptions import PermissionDenied
 from django.db.models import Count, OuterRef, Q, Subquery
+from rest_framework.exceptions import PermissionDenied
 
 from messaging.models import Conversation, PrivateMessage
 

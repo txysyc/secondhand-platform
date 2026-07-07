@@ -156,26 +156,31 @@ CHANNEL_LAYERS = {
 
 # DRF API 基础配置；业务阶段只在各 app 中补充 serializer、view 和权限。
 REST_FRAMEWORK = {
+    # 默认认证
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
-    "DEFAULT_PERMISSION_CLASSES": (
-        "rest_framework.permissions.IsAuthenticated",
-    ),
-    "DEFAULT_FILTER_BACKENDS": (
-        "django_filters.rest_framework.DjangoFilterBackend",
-    ),
+    # 默认权限
+    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    # 默认过滤后端
+    "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
+    # 默认分页类
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    # 默认全局每页大小
     "PAGE_SIZE": 20,
-    "DEFAULT_RENDERER_CLASSES": (
-        "rest_framework.renderers.JSONRenderer",
-    ),
+    # 默认全局接口返回数据格式
+    "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
+    # 默认异常处理器
     "EXCEPTION_HANDLER": "config.api_exceptions.api_exception_handler",
 }
 
+# JWT设置
 SIMPLE_JWT = {
+    # access_token过期时间
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    # refresh_token过期时间
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    # jwt的http header类型
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
@@ -189,6 +194,8 @@ CORS_ALLOWED_ORIGINS = env.list(
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Celery 通用配置
+
+# Celery定时任务配置
 CELERY_BEAT_SCHEDULE = {
     "cleanup_expired_unpaid_orders": {
         "task": "orders.tasks.cancel_expired_pending_orders_task",

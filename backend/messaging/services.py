@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
-from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from messaging.models import Conversation, PrivateMessage
 from messaging.selectors import invalidate_conversation_message_cache
@@ -90,8 +90,16 @@ def serialize_private_message(message):
 
 
 def first_error_message(error, fallback):
-    """从 Django 校验异常或普通异常中取出首条可展示错误消息。"""
+    """从 DRF 校验异常或普通异常中取出首条可展示错误消息。"""
 
+    detail = getattr(error, "detail", None)
+    if isinstance(detail, list) and detail:
+        return str(detail[0])
+    if isinstance(detail, dict) and detail:
+        first_value = next(iter(detail.values()))
+        if isinstance(first_value, list) and first_value:
+            return str(first_value[0])
+        return str(first_value)
     messages_list = getattr(error, "messages", None)
     if messages_list:
         return messages_list[0]

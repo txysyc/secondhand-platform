@@ -7,7 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from config.api_mixins import PageNumberPaginationMixin, ServiceErrorMixin
+from config.api_mixins import PageNumberPaginationMixin
 from messaging.permissions import IsConversationParticipant
 from messaging.serializers import (
     ConversationCreateSerializer,
@@ -30,11 +30,7 @@ from messaging.services import (
 )
 
 
-class ConversationListCreateApiView(
-    ServiceErrorMixin,
-    PageNumberPaginationMixin,
-    APIView,
-):
+class ConversationListCreateApiView(PageNumberPaginationMixin, APIView):
     """当前用户会话列表与发起会话。"""
 
     permission_classes = [IsAuthenticated]
@@ -49,8 +45,7 @@ class ConversationListCreateApiView(
     def post(self, request):
         serializer = ConversationCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        conversation = self.run_service(
-            get_or_create_conversation,
+        conversation = get_or_create_conversation(
             request.user,
             serializer.validated_data["target_user"],
         )
@@ -61,7 +56,7 @@ class ConversationListCreateApiView(
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class _ConversationParticipantApiView(ServiceErrorMixin, APIView):
+class _ConversationParticipantApiView(APIView):
     """需要会话参与者身份的 API 基类。"""
 
     permission_classes = [IsAuthenticated, IsConversationParticipant]
@@ -118,8 +113,7 @@ class ConversationMessageListCreateApiView(
         conversation = self.get_object(request, pk)
         serializer = PrivateMessageCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        message = self.run_service(
-            create_private_message,
+        message = create_private_message(
             request.user,
             conversation,
             serializer.validated_data["content"],
@@ -132,6 +126,6 @@ class ConversationReadApiView(_ConversationParticipantApiView):
 
     def post(self, request, pk):
         conversation = self.get_object(request, pk)
-        updated_count = self.run_service(mark_conversation_read, request.user, conversation)
+        updated_count = mark_conversation_read(request.user, conversation)
         return Response({"updated_count": updated_count})
 

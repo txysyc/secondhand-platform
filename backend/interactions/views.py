@@ -6,7 +6,6 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from config.api_mixins import ServiceErrorMixin
 from catalog.selectors import get_visible_listing_detail_queryset
 from interactions.permissions import IsCommentAuthor
 from interactions.serializers import CommentSerializer, CommentWriteSerializer
@@ -45,7 +44,7 @@ class _VisibleListingMixin:
         return comment
 
 
-class ListingCommentApiView(ServiceErrorMixin, _VisibleListingMixin, APIView):
+class ListingCommentApiView(_VisibleListingMixin, APIView):
     """商品评论列表和顶层评论创建。"""
 
     def get_permissions(self):
@@ -63,8 +62,7 @@ class ListingCommentApiView(ServiceErrorMixin, _VisibleListingMixin, APIView):
         listing = self.get_visible_listing_or_404(request, listing_id)
         serializer = CommentWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        comment = self.run_service(
-            create_comment,
+        comment = create_comment(
             request.user,
             listing,
             serializer.validated_data["content"],
@@ -73,7 +71,7 @@ class ListingCommentApiView(ServiceErrorMixin, _VisibleListingMixin, APIView):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class CommentReplyApiView(ServiceErrorMixin, _VisibleListingMixin, APIView):
+class CommentReplyApiView(_VisibleListingMixin, APIView):
     """评论回复创建。"""
 
     permission_classes = [IsAuthenticated]
@@ -82,8 +80,7 @@ class CommentReplyApiView(ServiceErrorMixin, _VisibleListingMixin, APIView):
         parent_comment = self.get_visible_comment_or_404(request, comment_id)
         serializer = CommentWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        reply = self.run_service(
-            create_reply,
+        reply = create_reply(
             request.user,
             parent_comment,
             serializer.validated_data["content"],
@@ -92,7 +89,7 @@ class CommentReplyApiView(ServiceErrorMixin, _VisibleListingMixin, APIView):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class CommentDeleteApiView(ServiceErrorMixin, _VisibleListingMixin, APIView):
+class CommentDeleteApiView(_VisibleListingMixin, APIView):
     """删除自己的评论。"""
 
     permission_classes = [IsAuthenticated, IsCommentAuthor]
@@ -104,6 +101,6 @@ class CommentDeleteApiView(ServiceErrorMixin, _VisibleListingMixin, APIView):
 
     def delete(self, request, comment_id):
         comment = self.get_object(request, comment_id)
-        self.run_service(delete_comment, request.user, comment)
+        delete_comment(request.user, comment)
         return Response(status=status.HTTP_204_NO_CONTENT)
 

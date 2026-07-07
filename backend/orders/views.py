@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from config.api_mixins import PageNumberPaginationMixin, ServiceErrorMixin
+from config.api_mixins import PageNumberPaginationMixin
 from catalog.models import Listing
 from orders.permissions import IsOrderParticipant
 from orders.serializers import OrderSerializer
@@ -19,7 +19,7 @@ from orders.services import (
 )
 
 
-class ListingOrderCreateApiView(ServiceErrorMixin, APIView):
+class ListingOrderCreateApiView(APIView):
     """为指定商品创建待支付订单。"""
 
     permission_classes = [IsAuthenticated]
@@ -29,7 +29,7 @@ class ListingOrderCreateApiView(ServiceErrorMixin, APIView):
             Listing.objects.select_related("owner", "owner__profile"),
             pk=listing_id,
         )
-        order = self.run_service(create_order, request.user, listing)
+        order = create_order(request.user, listing)
         serializer = OrderSerializer(order, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -54,7 +54,7 @@ class SellerOrderListApiView(PageNumberPaginationMixin, APIView):
         return self.paginate(request, get_seller_orders(request.user))
 
 
-class _OrderParticipantApiView(ServiceErrorMixin, APIView):
+class _OrderParticipantApiView(APIView):
     """需要订单参与者身份的 API 基类。"""
 
     permission_classes = [IsAuthenticated, IsOrderParticipant]
@@ -80,7 +80,7 @@ class OrderPayApiView(_OrderParticipantApiView):
     def post(self, request, pk):
         # 先做参与者权限校验，再进入服务层加锁处理支付状态流转。
         self.get_object(request, pk)
-        order = self.run_service(pay_order, request.user, pk)
+        order = pay_order(request.user, pk)
         serializer = OrderSerializer(order, context={"request": request})
         return Response(serializer.data)
 
@@ -91,7 +91,7 @@ class OrderConfirmDeliveryApiView(_OrderParticipantApiView):
     def post(self, request, pk):
         # 服务层会重新锁定订单和商品；这里的读取只负责 API 权限门禁。
         self.get_object(request, pk)
-        self.run_service(confirm_order_delivery, request.user, pk)
+        confirm_order_delivery(request.user, pk)
         order = self.get_object(request, pk)
         serializer = OrderSerializer(order, context={"request": request})
         return Response(serializer.data)
@@ -103,7 +103,7 @@ class OrderConfirmReceiptApiView(_OrderParticipantApiView):
     def post(self, request, pk):
         # 服务层会重新锁定订单和商品；这里的读取只负责 API 权限门禁。
         self.get_object(request, pk)
-        self.run_service(confirm_order_receipt, request.user, pk)
+        confirm_order_receipt(request.user, pk)
         order = self.get_object(request, pk)
         serializer = OrderSerializer(order, context={"request": request})
         return Response(serializer.data)

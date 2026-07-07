@@ -1,6 +1,7 @@
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from catalog.constants import MAX_IMAGE_COUNT
 from catalog.models import Listing, ListingImage
@@ -12,6 +13,16 @@ EDITABLE_STATUSES = {Listing.Status.DRAFT, Listing.Status.ACTIVE}
 ACTION_WITHDRAW = "withdraw"
 ACTION_RESTORE_ACTIVE = "restore_active"
 STATUS_ACTION_ALLOWED = {ACTION_WITHDRAW, ACTION_RESTORE_ACTIVE}
+
+
+def _full_clean_listing(listing: Listing):
+    """执行模型校验，并把 Django 校验错误转换为 DRF 校验错误。"""
+
+    try:
+        listing.full_clean()
+    except DjangoValidationError as exc:
+        detail = getattr(exc, "message_dict", None) or getattr(exc, "messages", None)
+        raise ValidationError(detail=detail or "商品信息校验失败")
 
 
 def ensure_listing_owner(user: User, listing: Listing):
@@ -109,7 +120,7 @@ def create_listing_from_payload(user: User, data: dict):
     listing = Listing(**data)
     listing.owner = user
     listing.status = Listing.Status.DRAFT
-    listing.full_clean()
+    _full_clean_listing(listing)
     listing.save()
     return listing
 
@@ -135,7 +146,7 @@ def update_listing_from_payload(user: User, listing: Listing, data: dict, *, pub
     if original_status == Listing.Status.DRAFT and publish:
         publish_listing(user, listing)
 
-    listing.full_clean()
+    _full_clean_listing(listing)
     listing.save()
     return listing
 

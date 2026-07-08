@@ -57,6 +57,7 @@ class OrderSerializer(serializers.ModelSerializer):
     viewer_role = serializers.SerializerMethodField()
     is_expired = serializers.SerializerMethodField()
     available_actions = serializers.SerializerMethodField()
+    shipping_address_snapshot = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -69,6 +70,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "seller_display_name",
             "listing_title_snapshot",
             "listing_image_snapshot",
+            "shipping_address_snapshot",
             "status",
             "status_display",
             "order_price",
@@ -106,4 +108,17 @@ class OrderSerializer(serializers.ModelSerializer):
     def get_available_actions(self, obj):
         request = self.context.get("request")
         return get_order_available_actions(obj, getattr(request, "user", None))
+
+    def get_shipping_address_snapshot(self, obj):
+        fields = {
+            "recipient_name": obj.shipping_recipient_name,
+            "phone": obj.shipping_phone,
+            "province": obj.shipping_province,
+            "city": obj.shipping_city,
+            "district": obj.shipping_district,
+            "detail_address": obj.shipping_detail_address,
+        }
+        if not any(fields.values()):
+            return None
+        return fields
 

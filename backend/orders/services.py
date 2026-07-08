@@ -5,12 +5,12 @@ from django.utils import timezone
 from django.db import transaction
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from users.models import User
+from users.models import User, UserAddress
 from catalog.models import Listing
 from orders.models import Order
 
 
-def create_order(buyer: User, listing: Listing) -> Order:
+def create_order(buyer: User, listing: Listing, address_id=None) -> Order:
     """为买家创建待支付订单；同一商品只允许一个未过期待支付订单。"""
     now = timezone.now()
 
@@ -30,6 +30,15 @@ def create_order(buyer: User, listing: Listing) -> Order:
             raise PermissionDenied("用户不能购买自己发布的商品")
         if listing.status != Listing.Status.ACTIVE:
             raise ValidationError("该商品不能购买")
+
+        address = None
+        if listing.item_type == Listing.ItemType.PHYSICAL:
+            if not address_id:
+                raise ValidationError("实体商品订单必须选择收货地址")
+            try:
+                address = UserAddress.objects.get(pk=address_id, user=buyer)
+            except UserAddress.DoesNotExist:
+                raise ValidationError("收货地址不存在或无权使用")
 
         has_active_pending_order = Order.objects.filter(
             listing=listing,
@@ -54,6 +63,17 @@ def create_order(buyer: User, listing: Listing) -> Order:
             "order_price": listing.price,
             "payment_deadline": now + timedelta(minutes=15),
         }
+        if address is not None:
+            kwargs.update(
+                {
+                    "shipping_recipient_name": address.recipient_name,
+                    "shipping_phone": address.phone,
+                    "shipping_province": address.province,
+                    "shipping_city": address.city,
+                    "shipping_district": address.district,
+                    "shipping_detail_address": address.detail_address,
+                }
+            )
         order = Order.objects.create(**kwargs)
 
     return order

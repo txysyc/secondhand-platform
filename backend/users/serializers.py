@@ -7,7 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from catalog.models import Listing
 from catalog.selectors import get_public_listing_queryset
-from users.models import Profile, User
+from users.models import Profile, User, UserAddress
 from users.services import register_user
 
 
@@ -129,3 +129,50 @@ class PublicUserSerializer(serializers.ModelSerializer):
     def get_listings(self, obj):
         queryset = get_public_listing_queryset().filter(owner=obj)
         return PublicListingSummarySerializer(queryset, many=True).data
+
+
+class UserAddressSerializer(serializers.ModelSerializer):
+    """用户收货地址展示与写入。"""
+
+    class Meta:
+        model = UserAddress
+        fields = [
+            "id",
+            "recipient_name",
+            "phone",
+            "province",
+            "city",
+            "district",
+            "detail_address",
+            "is_default",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        text_fields = [
+            "recipient_name",
+            "phone",
+            "province",
+            "city",
+            "district",
+            "detail_address",
+        ]
+        errors = {}
+
+        for field in text_fields:
+            if field in attrs and isinstance(attrs[field], str):
+                attrs[field] = attrs[field].strip()
+
+            value = attrs.get(field)
+            if self.instance is not None and field not in attrs:
+                value = getattr(self.instance, field)
+
+            if value in [None, ""]:
+                errors[field] = "该字段不能为空"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return attrs

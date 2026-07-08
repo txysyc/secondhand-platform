@@ -1,7 +1,9 @@
 """orders 应用 API 类视图。"""
 
+from django.core.cache import cache
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -19,17 +21,65 @@ from orders.services import (
 )
 
 
+class OrderCreationConflict(APIException):
+    """订单创建幂等处理中冲突。"""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "订单正在创建中，请勿重复提交"
+    default_code = "order_creation_conflict"
+
+
 class ListingOrderCreateApiView(APIView):
     """为指定商品创建待支付订单。"""
 
     permission_classes = [IsAuthenticated]
+    idempotency_ttl_seconds = 15 * 60
+
+    def _validate_idempotency_key(self, request):
+        idempotency_key = request.headers.get("Idempotency-Key", "").strip()
+        if not idempotency_key:
+            raise ValidationError("缺少幂等请求头")
+        if len(idempotency_key) < 8 or len(idempotency_key) > 128:
+            raise ValidationError("幂等请求头长度必须为8到128个字符")
+        return idempotency_key
 
     def post(self, request, listing_id):
+        idempotency_key = self._validate_idempotency_key(request)
+        cache_key = (
+            f"order:idempotency:{request.user.id}:{listing_id}:{idempotency_key}"
+        )
+
+        cached_value = cache.get(cache_key)
+        if cached_value == "processing":
+            raise OrderCreationConflict()
+        if cached_value:
+            order = get_object_or_404(get_order_queryset(), pk=cached_value)
+            serializer = OrderSerializer(order, context={"request": request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        is_processing_mark_created = cache.add(
+            cache_key,
+            "processing",
+            timeout=self.idempotency_ttl_seconds,
+        )
+        if not is_processing_mark_created:
+            raise OrderCreationConflict()
+
         listing = get_object_or_404(
             Listing.objects.select_related("owner", "owner__profile"),
             pk=listing_id,
         )
-        order = create_order(request.user, listing)
+        try:
+            order = create_order(
+                request.user,
+                listing,
+                address_id=request.data.get("address_id"),
+            )
+        except Exception:
+            cache.delete(cache_key)
+            raise
+
+        cache.set(cache_key, order.pk, timeout=self.idempotency_ttl_seconds)
         serializer = OrderSerializer(order, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 

@@ -56,6 +56,42 @@ class Order(models.Model):
         null=True,
         blank=True,
     )
+    shipping_recipient_name = models.CharField(
+        verbose_name="收货人快照",
+        max_length=30,
+        null=True,
+        blank=True,
+    )
+    shipping_phone = models.CharField(
+        verbose_name="手机号快照",
+        max_length=20,
+        null=True,
+        blank=True,
+    )
+    shipping_province = models.CharField(
+        verbose_name="省快照",
+        max_length=30,
+        null=True,
+        blank=True,
+    )
+    shipping_city = models.CharField(
+        verbose_name="市快照",
+        max_length=30,
+        null=True,
+        blank=True,
+    )
+    shipping_district = models.CharField(
+        verbose_name="区快照",
+        max_length=30,
+        null=True,
+        blank=True,
+    )
+    shipping_detail_address = models.CharField(
+        verbose_name="详细地址快照",
+        max_length=200,
+        null=True,
+        blank=True,
+    )
     status = models.CharField(
         max_length=20,
         choices=OrderStatus.choices,

@@ -5,6 +5,7 @@ from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import MinLengthValidator
+from django.db.models import Q
 
 
 class User(AbstractUser):
@@ -93,3 +94,44 @@ class Profile(models.Model):
         """
 
         return f"{self.user.username}的用户资料"
+
+
+class UserAddress(models.Model):
+    """用户收货地址。
+
+    地址记录只服务于后续下单选择；订单创建后会保存地址快照，
+    因此删除或修改地址不会影响历史订单。
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="addresses",
+        verbose_name="用户",
+    )
+    recipient_name = models.CharField(verbose_name="收货人", max_length=30)
+    phone = models.CharField(verbose_name="手机号", max_length=20)
+    province = models.CharField(verbose_name="省", max_length=30)
+    city = models.CharField(verbose_name="市", max_length=30)
+    district = models.CharField(verbose_name="区", max_length=30)
+    detail_address = models.CharField(verbose_name="详细地址", max_length=200)
+    is_default = models.BooleanField(verbose_name="是否默认", default=False)
+    created_at = models.DateTimeField(verbose_name="创建时间", auto_now_add=True)
+    updated_at = models.DateTimeField(verbose_name="更新时间", auto_now=True)
+
+    class Meta:
+        verbose_name = "用户收货地址"
+        verbose_name_plural = "用户收货地址"
+        ordering = ["-is_default", "-updated_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=Q(is_default=True),
+                name="unique_default_address_per_user",
+            )
+        ]
+
+    def __str__(self):
+        """返回后台和调试输出中的地址摘要。"""
+
+        return f"{self.user.username} - {self.recipient_name}"

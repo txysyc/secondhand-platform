@@ -26,6 +26,7 @@ from orders.services import (
     pay_order,
 )
 from orders import tasks as order_tasks
+from users.models import UserAddress
 
 User = get_user_model()
 
@@ -182,6 +183,16 @@ class TestCreateOrderService:
             username="卖家B", email="seller@test.com", password="testpass123"
         )
         self.category = Category.objects.create(name="数码产品")
+        self.address = UserAddress.objects.create(
+            user=self.buyer,
+            recipient_name="买家A",
+            phone="13800138000",
+            province="广东省",
+            city="深圳市",
+            district="南山区",
+            detail_address="科技园1号",
+            is_default=True,
+        )
 
     def _create_active_listing(self, **kwargs):
         defaults = {
@@ -198,7 +209,7 @@ class TestCreateOrderService:
 
     def test_create_order_success(self):
         listing = self._create_active_listing()
-        order = create_order(self.buyer, listing)
+        order = create_order(self.buyer, listing, address_id=self.address.id)
 
         assert order.status == Order.OrderStatus.PENDING_PAYMENT
         assert order.buyer == self.buyer
@@ -206,6 +217,8 @@ class TestCreateOrderService:
         assert order.listing == listing
         assert order.order_price == Decimal("199.00")
         assert order.listing_title_snapshot == "测试商品"
+        assert order.shipping_recipient_name == "买家A"
+        assert order.shipping_phone == "13800138000"
 
     def test_create_order_captures_first_listing_image_snapshot(self):
         listing = self._create_active_listing()
@@ -220,13 +233,13 @@ class TestCreateOrderService:
             sort_order=1,
         )
 
-        order = create_order(self.buyer, listing)
+        order = create_order(self.buyer, listing, address_id=self.address.id)
 
         assert order.listing_image_snapshot == first_image.image.url
 
     def test_create_order_listing_status_unchanged(self):
         listing = self._create_active_listing()
-        create_order(self.buyer, listing)
+        create_order(self.buyer, listing, address_id=self.address.id)
 
         listing.refresh_from_db()
         assert listing.status == Listing.Status.ACTIVE
@@ -234,7 +247,7 @@ class TestCreateOrderService:
     def test_payment_deadline_is_15_minutes_from_now(self):
         listing = self._create_active_listing()
         before = timezone.now()
-        order = create_order(self.buyer, listing)
+        order = create_order(self.buyer, listing, address_id=self.address.id)
         after = timezone.now()
 
         expected_min = before + timedelta(minutes=15)
@@ -246,7 +259,7 @@ class TestCreateOrderService:
         listing = self._create_active_listing(owner=self.buyer)
 
         with pytest.raises(PermissionDenied):
-            create_order(self.buyer, listing)
+            create_order(self.buyer, listing, address_id=self.address.id)
 
     def test_cannot_order_non_active_listing(self):
         for status in [
@@ -257,17 +270,27 @@ class TestCreateOrderService:
         ]:
             listing = self._create_active_listing(status=status)
             with pytest.raises(ValidationError):
-                create_order(self.buyer, listing)
+                create_order(self.buyer, listing, address_id=self.address.id)
 
     def test_rejects_duplicate_unexpired_pending_order_for_same_listing(self):
         listing = self._create_active_listing()
         another_buyer = User.objects.create_user(
             username="买家C", email="buyerc@test.com", password="testpass123"
         )
-        order1 = create_order(self.buyer, listing)
+        UserAddress.objects.create(
+            user=another_buyer,
+            recipient_name="买家C",
+            phone="13900139000",
+            province="广东省",
+            city="广州市",
+            district="天河区",
+            detail_address="体育西路1号",
+            is_default=True,
+        )
+        order1 = create_order(self.buyer, listing, address_id=self.address.id)
 
         with pytest.raises(ValidationError):
-            create_order(another_buyer, listing)
+            create_order(another_buyer, listing, address_id=another_buyer.addresses.first().id)
 
         assert order1.status == Order.OrderStatus.PENDING_PAYMENT
         assert (
@@ -294,14 +317,24 @@ class TestCreateOrderService:
         another_buyer = User.objects.create_user(
             username="买家C", email="buyerc@test.com", password="testpass123"
         )
+        another_address = UserAddress.objects.create(
+            user=another_buyer,
+            recipient_name="买家C",
+            phone="13900139000",
+            province="广东省",
+            city="广州市",
+            district="天河区",
+            detail_address="体育西路1号",
+            is_default=True,
+        )
 
-        order = create_order(another_buyer, listing)
+        order = create_order(another_buyer, listing, address_id=another_address.id)
 
         assert order.status == Order.OrderStatus.PENDING_PAYMENT
 
     def test_snapshot_fields_captured_at_creation(self):
         listing = self._create_active_listing(title="原始标题", price=Decimal("50.00"))
-        order = create_order(self.buyer, listing)
+        order = create_order(self.buyer, listing, address_id=self.address.id)
 
         listing.title = "修改后标题"
         listing.price = Decimal("999.00")
@@ -318,10 +351,45 @@ class TestCreateOrderService:
         self.seller.profile.save()
 
         listing = self._create_active_listing()
-        order = create_order(self.buyer, listing)
+        order = create_order(self.buyer, listing, address_id=self.address.id)
 
         assert order.buyer_display_name == "买家昵称"
         assert order.seller_display_name == "卖家昵称"
+
+    def test_physical_order_requires_address(self):
+        listing = self._create_active_listing()
+
+        with pytest.raises(ValidationError) as ctx:
+            create_order(self.buyer, listing)
+
+        assert "收货地址" in str(ctx.value)
+
+    def test_rejects_other_users_address(self):
+        listing = self._create_active_listing()
+        other_user = User.objects.create_user(
+            username="地址他人", email="addr-other@test.com", password="testpass123"
+        )
+        other_address = UserAddress.objects.create(
+            user=other_user,
+            recipient_name="地址他人",
+            phone="13700137000",
+            province="广东省",
+            city="珠海市",
+            district="香洲区",
+            detail_address="情侣路1号",
+        )
+
+        with pytest.raises(ValidationError) as ctx:
+            create_order(self.buyer, listing, address_id=other_address.id)
+
+        assert "收货地址不存在" in str(ctx.value)
+
+    def test_virtual_order_ignores_address(self):
+        listing = self._create_active_listing(item_type=Listing.ItemType.VIRTUAL)
+
+        order = create_order(self.buyer, listing, address_id=self.address.id)
+
+        assert order.shipping_recipient_name is None
 
 
 @pytest.mark.django_db(transaction=True)
@@ -957,6 +1025,34 @@ class TestOrdersApi:
         )
         self.category = Category.objects.create(name="订单分类")
         self.listing = self.create_listing()
+        self.address = self.create_address(self.buyer)
+        self.other_address = self.create_address(
+            self.other,
+            recipient_name="其他买家",
+            phone="13900139000",
+        )
+        self.idempotency_index = 0
+
+    def create_address(self, user, **overrides):
+        data = {
+            "user": user,
+            "recipient_name": "订单买家",
+            "phone": "13800138000",
+            "province": "广东省",
+            "city": "深圳市",
+            "district": "南山区",
+            "detail_address": "订单地址1号",
+            "is_default": True,
+        }
+        data.update(overrides)
+        return UserAddress.objects.create(**data)
+
+    def create_order_headers(self, user):
+        self.idempotency_index += 1
+        return {
+            **self.auth_headers(user),
+            "HTTP_IDEMPOTENCY_KEY": f"order-key-{self.idempotency_index:04d}",
+        }
 
     def create_listing(self, **overrides):
         data = {
@@ -1001,8 +1097,9 @@ class TestOrdersApi:
     def test_buyer_can_create_order_for_active_listing(self):
         response = self.api_client.post(
             reverse("api:orders_create", kwargs={"listing_id": self.listing.id}),
+            data={"address_id": self.address.id},
             format="json",
-            **self.auth_headers(self.buyer),
+            **self.create_order_headers(self.buyer),
         )
 
         assert response.status_code == 201
@@ -1011,6 +1108,7 @@ class TestOrdersApi:
         assert body["viewer_role"] == "buyer"
         assert body["available_actions"] == ["pay"]
         assert "listing_image_snapshot" in body
+        assert body["shipping_address_snapshot"]["recipient_name"] == "订单买家"
         assert Order.objects.filter(
             pk=body["id"],
             buyer=self.buyer,
@@ -1021,14 +1119,16 @@ class TestOrdersApi:
     def test_create_order_rejects_self_purchase_and_non_active_listing(self):
         self_purchase_response = self.api_client.post(
             reverse("api:orders_create", kwargs={"listing_id": self.listing.id}),
+            data={"address_id": self.address.id},
             format="json",
-            **self.auth_headers(self.seller),
+            **self.create_order_headers(self.seller),
         )
         withdrawn = self.create_listing(status=Listing.Status.WITHDRAWN)
         withdrawn_response = self.api_client.post(
             reverse("api:orders_create", kwargs={"listing_id": withdrawn.id}),
+            data={"address_id": self.address.id},
             format="json",
-            **self.auth_headers(self.buyer),
+            **self.create_order_headers(self.buyer),
         )
 
         assert self_purchase_response.status_code == 403
@@ -1041,12 +1141,85 @@ class TestOrdersApi:
 
         response = self.api_client.post(
             reverse("api:orders_create", kwargs={"listing_id": self.listing.id}),
+            data={"address_id": self.other_address.id},
             format="json",
-            **self.auth_headers(self.other),
+            **self.create_order_headers(self.other),
         )
 
         assert response.status_code == 400
         assert response.json()["message"] == "该商品已有待支付订单，请稍后再试"
+
+    def test_create_physical_order_requires_address(self):
+        response = self.api_client.post(
+            reverse("api:orders_create", kwargs={"listing_id": self.listing.id}),
+            format="json",
+            **self.create_order_headers(self.buyer),
+        )
+
+        assert response.status_code == 400
+        assert response.json()["message"] == "实体商品订单必须选择收货地址"
+
+    def test_create_order_rejects_other_users_address(self):
+        response = self.api_client.post(
+            reverse("api:orders_create", kwargs={"listing_id": self.listing.id}),
+            data={"address_id": self.other_address.id},
+            format="json",
+            **self.create_order_headers(self.buyer),
+        )
+
+        assert response.status_code == 400
+        assert response.json()["message"] == "收货地址不存在或无权使用"
+
+    def test_create_virtual_order_without_address_and_snapshot_is_null(self):
+        virtual_listing = self.create_listing(
+            title="虚拟商品",
+            item_type=Listing.ItemType.VIRTUAL,
+            condition=None,
+            physical_delivery_method=None,
+        )
+
+        response = self.api_client.post(
+            reverse("api:orders_create", kwargs={"listing_id": virtual_listing.id}),
+            format="json",
+            **self.create_order_headers(self.buyer),
+        )
+
+        assert response.status_code == 201
+        assert response.json()["shipping_address_snapshot"] is None
+
+    def test_create_order_requires_idempotency_key(self):
+        response = self.api_client.post(
+            reverse("api:orders_create", kwargs={"listing_id": self.listing.id}),
+            data={"address_id": self.address.id},
+            format="json",
+            **self.auth_headers(self.buyer),
+        )
+
+        assert response.status_code == 400
+        assert response.json()["message"] == "缺少幂等请求头"
+
+    def test_same_idempotency_key_returns_same_order(self):
+        headers = {
+            **self.auth_headers(self.buyer),
+            "HTTP_IDEMPOTENCY_KEY": "same-key-0001",
+        }
+
+        first_response = self.api_client.post(
+            reverse("api:orders_create", kwargs={"listing_id": self.listing.id}),
+            data={"address_id": self.address.id},
+            format="json",
+            **headers,
+        )
+        second_response = self.api_client.post(
+            reverse("api:orders_create", kwargs={"listing_id": self.listing.id}),
+            data={"address_id": self.address.id},
+            format="json",
+            **headers,
+        )
+
+        assert first_response.status_code == 201
+        assert second_response.status_code == 200
+        assert second_response.json()["id"] == first_response.json()["id"]
 
     def test_buyer_and_seller_lists_only_return_related_orders(self):
         buyer_order = self.create_order()

@@ -12,6 +12,8 @@ class OrderAdmin(admin.ModelAdmin):
         "listing",
         "status",
         "order_price",
+        "shipping_recipient_name",
+        "shipping_phone",
         "payment_deadline",
         "paid_at",
         "shipped_at",
@@ -35,5 +37,7 @@ class OrderAdmin(admin.ModelAdmin):
         "seller_display_name",
         "buyer__username",
         "seller__username",
+        "shipping_recipient_name",
+        "shipping_phone",
     ]
     list_select_related = ["buyer", "seller", "listing"]

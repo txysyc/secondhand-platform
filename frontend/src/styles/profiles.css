@@ -1,0 +1,109 @@
+/* ========================
+   Profile Edit
+   ======================== */
+.profile-edit-title {
+  margin-bottom: var(--space-2);
+}
+
+.profile-edit-subtitle {
+  margin-bottom: var(--space-8);
+}
+
+.read-only-control {
+  background-color: var(--bg-main);
+  cursor: not-allowed;
+  color: var(--text-muted);
+}
+
+.read-only-field {
+  margin-bottom: 0;
+}
+
+.visually-hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.avatar-upload-hint {
+  margin-top: var(--space-2);
+}
+
+.profile-save-btn {
+  margin-top: var(--space-3);
+}
+
+/* ========================
+   Public Profile
+   ======================== */
+.public-profile-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.profile-header-card {
+  margin-bottom: var(--space-8);
+}
+
+.profile-header-content {
+  display: flex;
+  gap: var(--space-6);
+  align-items: center;
+}
+
+.profile-header-info {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.profile-name {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: var(--space-1);
+  color: var(--text-main);
+}
+
+.profile-username {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-bottom: var(--space-2);
+}
+
+.profile-bio {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.profile-listings-section {
+  margin-top: var(--space-8);
+}
+
+.public-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-5);
+}
+
+@media (max-width: 640px) {
+  .profile-header-content {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .public-profile-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 992px) {
+  .user-welcome {
+    display: none;
+  }
+}

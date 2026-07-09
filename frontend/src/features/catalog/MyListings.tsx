@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Package, AlertCircle, ImageIcon, Search } from 'lucide-react';
+import { Plus, Package, AlertCircle } from 'lucide-react';
 import {
   getCategories,
   getMyListings,
@@ -10,46 +10,14 @@ import {
   deleteListing,
 } from '../../api/endpoints/listings';
 import { useAuth } from '../../app/providers';
-import { resolveMediaUrl } from '../../utils/media';
-import { Button, Badge, EmptyState, Loading, ErrorState, Input, Select } from '../../components/ui';
-import type { Category, Listing, ListingStatus } from '../../types/listings';
-import type { BadgeVariant } from '../../components/ui';
+import { Button, EmptyState, Loading, ErrorState } from '../../components/ui';
+import { MyListingsFilterPanel } from './my/MyListingsFilterPanel';
+import { MyListingsRows } from './my/MyListingsRows';
+import type { Category, Listing } from '../../types/listings';
 
 type ActionType = 'publish' | 'deactivate' | 'reactivate' | 'delete';
 
 const MY_LISTING_PAGE_SIZE = 10;
-
-const STATUS_VARIANT_MAP: Record<ListingStatus, BadgeVariant> = {
-  draft: 'draft',
-  active: 'active',
-  reserved: 'warning',
-  sold: 'sold',
-  withdrawn: 'inactive',
-};
-
-const STATUS_OPTIONS = [
-  { value: 'all', label: '全部状态' },
-  { value: 'draft', label: '草稿' },
-  { value: 'active', label: '在售' },
-  { value: 'reserved', label: '交易占用' },
-  { value: 'sold', label: '已售出' },
-  { value: 'withdrawn', label: '已下架' },
-];
-
-const ITEM_TYPE_OPTIONS = [
-  { value: 'all', label: '全部类型' },
-  { value: 'physical', label: '实体商品' },
-  { value: 'virtual', label: '虚拟商品' },
-];
-
-const SORT_OPTIONS = [
-  { value: 'updated_desc', label: '最近更新' },
-  { value: 'updated_asc', label: '最早更新' },
-  { value: 'published_desc', label: '最近发布' },
-  { value: 'published_asc', label: '最早发布' },
-  { value: 'price_asc', label: '价格从低到高' },
-  { value: 'price_desc', label: '价格从高到低' },
-];
 
 const getErrorMessage = (err: unknown, fallback: string): string => {
   if (err instanceof Error) return err.message;
@@ -217,15 +185,6 @@ export const MyListings: React.FC = () => {
     );
   }
 
-  // 获取封面展示图。
-  const getCoverImage = (item: Listing) => {
-    if (item.images && item.images.length > 0) {
-      const sorted = [...item.images].sort((a, b) => a.sort_order - b.sort_order);
-      return resolveMediaUrl(sorted[0].image_url);
-    }
-    return null;
-  };
-
   return (
     <div className="my-listings-container fade-in">
       <div className="page-header my-listings-page-header">
@@ -239,66 +198,22 @@ export const MyListings: React.FC = () => {
         </Button>
       </div>
 
-      <form className="my-listing-filter-panel" onSubmit={handleFilterSubmit}>
-        <Input
-          id="my_listing_search"
-          icon={<Search size={16} />}
-          label="搜索商品"
-          placeholder="标题或描述"
-          value={searchText}
-          onChange={(event) => setSearchText(event.target.value)}
-        />
-        <Select
-          id="my_listing_status"
-          label="商品状态"
-          options={STATUS_OPTIONS}
-          value={status}
-          onChange={(event) => updateQueryParam({ status: event.target.value })}
-        />
-        <Select
-          id="my_listing_category"
-          label="分类"
-          options={[{ value: 'all', label: '全部分类' }, ...categories.map((item) => ({ value: item.id, label: item.name }))]}
-          value={category}
-          onChange={(event) => updateQueryParam({ category: event.target.value })}
-        />
-        <Select
-          id="my_listing_item_type"
-          label="类型"
-          options={ITEM_TYPE_OPTIONS}
-          value={itemType}
-          onChange={(event) => updateQueryParam({ item_type: event.target.value })}
-        />
-        <Select
-          id="my_listing_sort"
-          label="排序"
-          options={SORT_OPTIONS}
-          value={sort}
-          onChange={(event) => updateQueryParam({ sort: event.target.value })}
-        />
-        <Input
-          id="my_listing_min_price"
-          label="最低价格"
-          type="number"
-          value={tempMinPrice}
-          onChange={(event) => setTempMinPrice(event.target.value)}
-        />
-        <Input
-          id="my_listing_max_price"
-          label="最高价格"
-          type="number"
-          value={tempMaxPrice}
-          onChange={(event) => setTempMaxPrice(event.target.value)}
-        />
-        <div className="filter-actions-row">
-          <Button type="submit" size="sm">
-            应用筛选
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={clearFilters}>
-            清空
-          </Button>
-        </div>
-      </form>
+      <MyListingsFilterPanel
+        categories={categories}
+        searchText={searchText}
+        status={status}
+        category={category}
+        itemType={itemType}
+        sort={sort}
+        tempMinPrice={tempMinPrice}
+        tempMaxPrice={tempMaxPrice}
+        onSearchTextChange={setSearchText}
+        onTempMinPriceChange={setTempMinPrice}
+        onTempMaxPriceChange={setTempMaxPrice}
+        onFilterSubmit={handleFilterSubmit}
+        onClearFilters={clearFilters}
+        onUpdateQueryParam={updateQueryParam}
+      />
 
       {error && (
         <div className="alert alert-error" role="alert">
@@ -328,159 +243,47 @@ export const MyListings: React.FC = () => {
           }}
         />
       ) : (
-        <div className="my-listings-list">
-          {listings.map((item) => {
-            const cover = getCoverImage(item);
-            const isActionBusy = actionLoadingId === item.id;
+        <>
+          <MyListingsRows
+            listings={listings}
+            actionLoadingId={actionLoadingId}
+            onOpenListing={openListing}
+            onEditListing={(listingId) => navigate(`/me/listings/${listingId}/edit`)}
+            onAction={handleAction}
+          />
 
-            return (
-              <div
-                key={item.id}
-                className="my-listing-row"
-                onClick={() => openListing(item)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    openListing(item);
-                  }
-                }}
-                title={item.status === 'draft' ? '编辑草稿' : '查看商品详情'}
+          {totalPages > 1 && (
+            <nav className="pagination" aria-label="我的商品分页">
+              <button
+                disabled={currentPage === 1}
+                onClick={() => updateQueryParam({ page: currentPage - 1 })}
+                className="page-btn"
+                aria-label="上一页"
               >
-                <div className="my-listing-thumb-wrapper">
-                  {cover ? (
-                    <img src={cover} alt={item.title} className="my-listing-thumb" loading="lazy" />
-                  ) : (
-                    <ImageIcon className="my-listing-thumb-icon" size={36} strokeWidth={1.5} />
-                  )}
-                </div>
-
-                <div className="my-listing-info">
-                  <div className="my-listing-title-row">
-                    <Badge variant={STATUS_VARIANT_MAP[item.status]} size="sm">
-                      {item.status_display}
-                    </Badge>
-                    <h3 className="my-listing-title" title={item.title}>
-                      {item.title}
-                    </h3>
-                  </div>
-                  <div className="my-listing-meta">
-                    <span className="my-listing-price">¥ {item.price}</span>
-                    <span>分类: {item.category.name}</span>
-                    <span>类别: {item.item_type_display}</span>
-                    <span>更新: {new Date(item.updated_at).toLocaleDateString('zh-CN')}</span>
-                  </div>
-                </div>
-
-                <div className="my-listing-actions" onClick={(event) => event.stopPropagation()} role="group">
-                  {item.status === 'draft' && (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={isActionBusy}
-                        onClick={() => navigate(`/me/listings/${item.id}/edit`)}
-                      >
-                        编辑
-                      </Button>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        disabled={isActionBusy}
-                        loading={isActionBusy}
-                        onClick={() => handleAction(item.id, 'publish')}
-                      >
-                        发布
-                      </Button>
-                    </>
-                  )}
-
-                  {item.status === 'active' && (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={isActionBusy}
-                        onClick={() => navigate(`/me/listings/${item.id}/edit`)}
-                      >
-                        编辑/多图
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        disabled={isActionBusy}
-                        loading={isActionBusy}
-                        onClick={() => handleAction(item.id, 'deactivate')}
-                      >
-                        下架
-                      </Button>
-                    </>
-                  )}
-
-                  {item.status === 'withdrawn' && (
-                    <>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        disabled={isActionBusy}
-                        loading={isActionBusy}
-                        onClick={() => handleAction(item.id, 'reactivate')}
-                      >
-                        重新上架
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        disabled={isActionBusy}
-                        loading={isActionBusy}
-                        onClick={() => handleAction(item.id, 'delete')}
-                      >
-                        删除
-                      </Button>
-                    </>
-                  )}
-
-                  {item.status === 'sold' && (
-                    <span className="my-listing-status-note">交易已完成</span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {!loading && !error && totalPages > 1 && (
-        <nav className="pagination" aria-label="我的商品分页">
-          <button
-            disabled={currentPage === 1}
-            onClick={() => updateQueryParam({ page: currentPage - 1 })}
-            className="page-btn"
-            aria-label="上一页"
-          >
-            上页
-          </button>
-          {pageNumbers.map((page) => (
-            <button
-              key={page}
-              onClick={() => updateQueryParam({ page })}
-              className={`page-btn ${currentPage === page ? 'active' : ''}`}
-              aria-label={`第 ${page} 页`}
-              aria-current={currentPage === page ? 'page' : undefined}
-            >
-              {page}
-            </button>
-          ))}
-          <button
-            disabled={currentPage === totalPages}
-            onClick={() => updateQueryParam({ page: currentPage + 1 })}
-            className="page-btn"
-            aria-label="下一页"
-          >
-            下页
-          </button>
-        </nav>
+                上页
+              </button>
+              {pageNumbers.map((page) => (
+                <button
+                  key={page}
+                  onClick={() => updateQueryParam({ page })}
+                  className={`page-btn ${currentPage === page ? 'active' : ''}`}
+                  aria-label={`第 ${page} 页`}
+                  aria-current={currentPage === page ? 'page' : undefined}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                disabled={currentPage === totalPages}
+                onClick={() => updateQueryParam({ page: currentPage + 1 })}
+                className="page-btn"
+                aria-label="下一页"
+              >
+                下页
+              </button>
+            </nav>
+          )}
+        </>
       )}
     </div>
   );

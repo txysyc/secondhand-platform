@@ -1,0 +1,132 @@
+/* ========================
+   设计系统补充与页面覆写
+   ======================== */
+
+:root {
+  /* 兼容早期组件中使用的 --border-radius 变量 */
+  --border-radius: var(--radius-md);
+}
+
+/* 通用文字色辅助类 */
+.text-success {
+  color: var(--success-color);
+}
+
+.text-warning {
+  color: var(--warning-color);
+}
+
+.text-error {
+  color: var(--error-color);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+.text-price {
+  color: var(--price-color);
+}
+
+/* 商品列表 - 搜索/排序组件紧凑化 */
+.filter-search-form {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.filter-search-form .form-group,
+.filter-sort-select .form-group {
+  margin-bottom: 0;
+}
+
+.price-apply-btn {
+  margin-top: var(--space-3);
+}
+
+.published-apply-btn {
+  margin-top: var(--space-3);
+}
+
+.published-range-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.filter-field-label {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.order-filter-panel,
+.my-listing-filter-panel {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  gap: var(--space-4);
+  align-items: end;
+  padding: var(--space-5);
+  margin-bottom: var(--space-6);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+}
+
+.order-filter-panel .form-group,
+.my-listing-filter-panel .form-group {
+  margin-bottom: 0;
+}
+
+.filter-actions-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+@media (max-width: 1100px) {
+  .order-filter-panel,
+  .my-listing-filter-panel {
+    grid-template-columns: repeat(3, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .order-filter-panel,
+  .my-listing-filter-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-actions-row {
+    justify-content: stretch;
+  }
+
+  .filter-actions-row .btn {
+    flex: 1;
+  }
+}
+
+/* 商品详情页覆写 */
+.detail-back-action {
+  margin-bottom: var(--space-5);
+}
+
+.owner-notice {
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background-color: var(--primary-light);
+  color: var(--primary-color);
+  text-align: center;
+  font-weight: 600;
+}
+
+.spec-item-wide {
+  grid-column: span 2;
+}
+
+.detail-description-muted {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+

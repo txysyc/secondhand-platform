@@ -1,0 +1,162 @@
+/* ==========================================
+   P8.5 Private Messages CSS Styles
+   ========================================== */
+
+/* 呼吸灯微动效 */
+@keyframes status-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+@keyframes status-pulse-warning {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+
+/* 消息布局包裹器 - 毛玻璃效果 */
+.messages-layout-wrapper {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  background: rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid rgba(226, 232, 240, 0.8) !important;
+  box-shadow: var(--shadow-lg) !important;
+  border-radius: var(--border-radius);
+}
+
+/* 状态指示器绿灯呼吸 */
+.chat-header span[style*="var(--success-color)"] {
+  animation: status-pulse 2s infinite;
+}
+
+/* 状态指示器黄灯呼吸 */
+.chat-header span[style*="#f59e0b"],
+.chat-header span[style*="var(--warning-color)"] {
+  animation: status-pulse-warning 2s infinite;
+}
+
+/* 左侧会话列表卡片 hover 及 active 状态 */
+.conversation-item {
+  position: relative;
+  border-left: 4px solid transparent;
+  transition: var(--transition-fast);
+}
+
+.conversation-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(13, 148, 136, 0.04) 0%, rgba(255, 255, 255, 0) 100%);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  z-index: 1;
+}
+
+.conversation-item > * {
+  position: relative;
+  z-index: 2;
+}
+
+.conversation-item:hover {
+  background-color: #fafbfc !important;
+}
+
+.conversation-item:hover::before {
+  opacity: 1;
+}
+
+.conversation-item.active {
+  background-color: rgba(13, 148, 136, 0.05) !important;
+  border-left-color: var(--primary-color);
+}
+
+.conversation-item.active::before {
+  opacity: 1;
+  background: linear-gradient(90deg, rgba(13, 148, 136, 0.08) 0%, rgba(224, 231, 255, 0.1) 100%);
+}
+
+/* 侧边栏和会话卡片动画 */
+.conversation-list-container {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(226, 232, 240, 0.8) transparent;
+}
+
+.conversation-list-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.conversation-list-container::-webkit-scrollbar-thumb {
+  background-color: rgba(226, 232, 240, 0.8);
+  border-radius: 3px;
+}
+
+/* 聊天气泡及其微动效 */
+.chat-bubble {
+  position: relative;
+  transition: var(--transition-fast);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.02);
+  border-radius: 14px;
+}
+
+.chat-bubble:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.06);
+}
+
+.chat-bubble-me {
+  background: var(--primary-gradient) !important;
+  color: #ffffff !important;
+  border-bottom-right-radius: 4px;
+}
+
+.chat-bubble-other {
+  background: #ffffff !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-main) !important;
+  border-bottom-left-radius: 4px;
+}
+
+.message-skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 输入框聚焦动画 */
+.chat-input:focus {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.15) !important;
+  background-color: #ffffff !important;
+}
+
+/* 消息流区域的滚动条 */
+.chat-messages-container {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(13, 148, 136, 0.15) transparent;
+}
+
+.chat-messages-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages-container::-webkit-scrollbar-thumb {
+  background-color: rgba(13, 148, 136, 0.15);
+  border-radius: 3px;
+}
+

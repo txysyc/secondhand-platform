@@ -1,19 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, AlertCircle, ImageIcon } from 'lucide-react';
+import { Search, AlertCircle } from 'lucide-react';
 import { getCategories, getListings } from '../../api/endpoints/listings';
-import { resolveAvatarUrl, resolveMediaUrl } from '../../utils/media';
-import { Button, Input, Select, EmptyState } from '../../components/ui';
+import { Button, EmptyState } from '../../components/ui';
+import { ListingGrid } from './list/ListingGrid';
+import { ListingListFilterPanel } from './list/ListingListFilterPanel';
 import type { Category, Listing } from '../../types/listings';
 
 const CATEGORIES_CACHE_KEY = 'secondhand:categories';
-
-const SORT_OPTIONS = [
-  { value: 'newest', label: '最新发布' },
-  { value: 'oldest', label: '时间最久' },
-  { value: 'price_asc', label: '价格从低到高' },
-  { value: 'price_desc', label: '价格从高到低' },
-];
 
 const getErrorMessage = (err: unknown, fallback: string): string => {
   if (err instanceof Error) return err.message;
@@ -212,16 +206,6 @@ export const ListingList: React.FC = () => {
     });
   };
 
-  // 获取封面展示图
-  const getCoverImage = (item: Listing) => {
-    if (item.images && item.images.length > 0) {
-      // 优先显示排在首位的图片
-      const sorted = [...item.images].sort((a, b) => a.sort_order - b.sort_order);
-      return resolveMediaUrl(sorted[0].image_url);
-    }
-    return null;
-  };
-
   // 渲染分页器
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
   const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -235,152 +219,26 @@ export const ListingList: React.FC = () => {
 
       <div className="catalog-layout">
         {/* 侧边栏筛选面板：小屏幕下会随 catalog-layout 自动堆叠 */}
-        <aside className="filter-panel">
-          {/* 搜索 */}
-          <div className="filter-section">
-            <h3 className="filter-section-title">搜索</h3>
-            <form onSubmit={handleSearchSubmit} className="filter-search-form">
-              <Input
-                id="search"
-                icon={<Search size={18} />}
-                placeholder="搜索商品..."
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-              />
-              <Button type="submit" variant="primary" size="sm" aria-label="搜索">
-                <Search size={16} />
-              </Button>
-            </form>
-          </div>
-
-          {/* 分类 */}
-          <div className="filter-section">
-            <h3 className="filter-section-title">商品分类</h3>
-            <ul className="category-list">
-              <li>
-                <button
-                  onClick={() => updateQueryParam({ category: 'all' })}
-                  className={`category-item-btn ${currentCategory === 'all' ? 'active' : ''}`}
-                >
-                  全部商品
-                </button>
-              </li>
-              {categories.map((cat) => (
-                <li key={cat.id}>
-                  <button
-                    onClick={() => updateQueryParam({ category: cat.id })}
-                    className={`category-item-btn ${currentCategory === String(cat.id) ? 'active' : ''}`}
-                  >
-                    {cat.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* 商品类型 */}
-          <div className="filter-section">
-            <h3 className="filter-section-title">交付类别</h3>
-            <div className="segmented-control">
-              <button
-                onClick={() => updateQueryParam({ item_type: 'all' })}
-                className={`segment-btn ${itemType === 'all' ? 'active' : ''}`}
-              >
-                全部
-              </button>
-              <button
-                onClick={() => updateQueryParam({ item_type: 'physical' })}
-                className={`segment-btn ${itemType === 'physical' ? 'active' : ''}`}
-              >
-                实体
-              </button>
-              <button
-                onClick={() => updateQueryParam({ item_type: 'virtual' })}
-                className={`segment-btn ${itemType === 'virtual' ? 'active' : ''}`}
-              >
-                虚拟
-              </button>
-            </div>
-          </div>
-
-          {/* 价格区间 */}
-          <div className="filter-section">
-            <h3 className="filter-section-title">价格区间 (元)</h3>
-            <form onSubmit={handlePriceSubmit}>
-              <div className="price-range-inputs">
-                <div className="price-input-wrapper">
-                  <span className="price-currency">¥</span>
-                  <input
-                    type="number"
-                    className="form-control price-control"
-                    placeholder="最低"
-                    value={tempMinPrice}
-                    onChange={(e) => setTempMinPrice(e.target.value)}
-                  />
-                </div>
-                <span className="price-range-divider">-</span>
-                <div className="price-input-wrapper">
-                  <span className="price-currency">¥</span>
-                  <input
-                    type="number"
-                    className="form-control price-control"
-                    placeholder="最高"
-                    value={tempMaxPrice}
-                    onChange={(e) => setTempMaxPrice(e.target.value)}
-                  />
-                </div>
-              </div>
-              <Button type="submit" variant="outline" size="sm" fullWidth className="price-apply-btn">
-                应用区间
-              </Button>
-            </form>
-          </div>
-
-          {/* 发布时间区间 */}
-          <div className="filter-section">
-            <h3 className="filter-section-title">发布时间</h3>
-            <form onSubmit={handlePublishedSubmit}>
-              <div className="published-range-inputs">
-                <label className="filter-field-label" htmlFor="published_after">
-                  起始时间
-                </label>
-                <input
-                  id="published_after"
-                  type="datetime-local"
-                  className="form-control"
-                  value={tempPublishedAfter}
-                  onChange={(e) => setTempPublishedAfter(e.target.value)}
-                />
-                <label className="filter-field-label" htmlFor="published_before">
-                  截止时间
-                </label>
-                <input
-                  id="published_before"
-                  type="datetime-local"
-                  className="form-control"
-                  value={tempPublishedBefore}
-                  onChange={(e) => setTempPublishedBefore(e.target.value)}
-                />
-              </div>
-              <Button type="submit" variant="outline" size="sm" fullWidth className="published-apply-btn">
-                应用时间
-              </Button>
-            </form>
-          </div>
-
-          {/* 排序 */}
-          <div className="filter-section">
-            <h3 className="filter-section-title">排序方式</h3>
-            <div className="filter-sort-select">
-              <Select
-                id="sort"
-                options={SORT_OPTIONS}
-                value={currentSort}
-                onChange={(e) => updateQueryParam({ sort: e.target.value })}
-              />
-            </div>
-          </div>
-        </aside>
+        <ListingListFilterPanel
+          categories={categories}
+          searchText={searchText}
+          currentCategory={currentCategory}
+          itemType={itemType}
+          tempMinPrice={tempMinPrice}
+          tempMaxPrice={tempMaxPrice}
+          tempPublishedAfter={tempPublishedAfter}
+          tempPublishedBefore={tempPublishedBefore}
+          currentSort={currentSort}
+          onSearchTextChange={setSearchText}
+          onTempMinPriceChange={setTempMinPrice}
+          onTempMaxPriceChange={setTempMaxPrice}
+          onTempPublishedAfterChange={setTempPublishedAfter}
+          onTempPublishedBeforeChange={setTempPublishedBefore}
+          onSearchSubmit={handleSearchSubmit}
+          onPriceSubmit={handlePriceSubmit}
+          onPublishedSubmit={handlePublishedSubmit}
+          onUpdateQueryParam={updateQueryParam}
+        />
 
         {/* 右侧商品网格 */}
         <main className="catalog-main">
@@ -409,78 +267,7 @@ export const ListingList: React.FC = () => {
             />
           ) : (
             <>
-              <div className="listings-grid">
-                {listings.map((item) => {
-                  const cover = getCoverImage(item);
-                  return (
-                    <article
-                      key={item.id}
-                      className="listing-card"
-                      onClick={() => navigate(`/listings/${item.id}`)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          navigate(`/listings/${item.id}`);
-                        }
-                      }}
-                      aria-label={`查看商品：${item.title}`}
-                    >
-                      <div className="listing-card-image-wrapper">
-                        {cover ? (
-                          <img src={cover} alt={item.title} className="listing-card-image" loading="lazy" />
-                        ) : (
-                          <div className="listing-card-placeholder">
-                            <ImageIcon className="listing-card-placeholder-icon" size={48} strokeWidth={1.5} />
-                            <span>{item.category.name}</span>
-                          </div>
-                        )}
-
-                        <div className="listing-card-badges">
-                          <span
-                            className={`card-badge ${
-                              item.item_type === 'physical' ? 'card-badge-physical' : 'card-badge-virtual'
-                            }`}
-                          >
-                            {item.item_type_display}
-                          </span>
-                        </div>
-
-                        {item.status !== 'active' && (
-                          <span className="card-badge-status">{item.status_display}</span>
-                        )}
-                      </div>
-
-                      <div className="listing-card-content">
-                        <span className="listing-card-category">{item.category.name}</span>
-                        <h2 className="listing-card-title">{item.title}</h2>
-
-                        <div className="listing-card-price-row">
-                          <span className="listing-card-price">{item.price}</span>
-                          {item.item_type === 'physical' && item.condition_display && (
-                            <span className="listing-card-condition">{item.condition_display}</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="listing-card-footer">
-                        <div className="listing-card-owner">
-                          <img
-                            src={resolveAvatarUrl(item.owner.profile?.avatar_url, item.owner.username)}
-                            alt={item.owner.username}
-                            className="listing-card-avatar"
-                          />
-                          <span>{item.owner.profile?.nickname || item.owner.username}</span>
-                        </div>
-                        <span>
-                          {new Date(item.created_at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
-                        </span>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
+              <ListingGrid listings={listings} onOpenListing={(listingId) => navigate(`/listings/${listingId}`)} />
 
               {/* 分页 */}
               {totalPages > 1 && (

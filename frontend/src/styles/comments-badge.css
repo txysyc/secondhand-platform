@@ -1,0 +1,15 @@
+/* Seller Comment Badge */
+.comment-seller-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  background-color: var(--primary-light);
+  border: 1px solid rgba(13, 148, 136, 0.3);
+  border-radius: 5px;
+  padding: 2px 8px;
+  margin-left: 8px;
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1.2;
+}
+

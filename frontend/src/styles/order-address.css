@@ -1,0 +1,164 @@
+/* ==========================================
+   Order Shipping Address Snapshot
+   ========================================== */
+
+.order-shipping-card {
+  overflow: hidden;
+}
+
+.order-section-title svg {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: var(--space-2);
+}
+
+.order-shipping-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.order-shipping-recipient {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.order-shipping-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.order-shipping-phone {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.order-shipping-address {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ==========================================
+   Listing Detail — Address Picker
+   ========================================== */
+
+.address-picker {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  background-color: var(--bg-elevated);
+}
+
+.address-picker-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0 0 var(--space-3);
+}
+
+.address-picker-loading,
+.address-picker-empty {
+  padding: var(--space-4) 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.address-picker-empty p {
+  margin: 0;
+}
+
+.address-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.address-picker-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-card);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.address-picker-item input[type="radio"] {
+  margin-top: 3px;
+  accent-color: var(--primary-color);
+  flex-shrink: 0;
+}
+
+.address-picker-item.selected {
+  border-color: var(--primary-color);
+  background-color: var(--primary-light);
+}
+
+.address-picker-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.address-picker-recipient {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-main);
+}
+
+.address-picker-phone {
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.address-picker-text {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.address-picker-manage {
+  display: block;
+  font-size: 0.85rem;
+  text-align: right;
+  padding: var(--space-1) 0;
+}
+
+.address-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-color);
+}
+
+.comments-section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+

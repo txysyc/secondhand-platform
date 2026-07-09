@@ -1,6 +1,6 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, AlertCircle, ImageIcon, MessageCircle, MapPin, Star } from 'lucide-react';
+import { ArrowLeft, AlertCircle, MessageCircle } from 'lucide-react';
 import { getListingDetail } from '../../api/endpoints/listings';
 import {
   getListingComments,
@@ -13,7 +13,10 @@ import { getAddresses } from '../../api/endpoints/addresses';
 import { createConversation } from '../../api/endpoints/messages';
 import { useAuth } from '../../app/providers';
 import { resolveAvatarUrl, resolveMediaUrl } from '../../utils/media';
-import { Button, Card, TextArea, ErrorState, Loading } from '../../components/ui';
+import { Button, Card, ErrorState, Loading } from '../../components/ui';
+import { AddressPickerPanel } from './detail/AddressPickerPanel';
+import { ListingCommentsSection } from './detail/ListingCommentsSection';
+import { ListingGallery } from './detail/ListingGallery';
 import type { Listing } from '../../types/listings';
 import type { Comment } from '../../types/comments';
 import type { UserAddress } from '../../types/address';
@@ -262,26 +265,6 @@ export const ListingDetail: React.FC = () => {
   const totalCommentsCount =
     comments.length + comments.reduce((acc, c) => acc + (c.replies ? c.replies.length : 0), 0);
 
-  const renderCommentSkeletons = () => (
-    <div className="comments-list" aria-hidden="true">
-      {Array.from({ length: 3 }).map((_, index) => (
-        <div key={index} className="comment-item-group">
-          <div className="comment-item">
-            <div className="skeleton-block comment-avatar" />
-            <div className="comment-body">
-              <div className="skeleton-line skeleton-line-short" style={{ height: '14px' }} />
-              <div
-                className="skeleton-line"
-                style={{ width: index % 2 === 0 ? '78%' : '62%', height: '14px' }}
-              />
-              <div className="skeleton-line" style={{ width: '44%', height: '14px' }} />
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-
   return (
     <div className="detail-container fade-in">
       <div className="detail-back-action">
@@ -292,45 +275,13 @@ export const ListingDetail: React.FC = () => {
       </div>
 
       <div className="detail-layout">
-        {/* 左栏：图片画廊 */}
-        <section className="detail-gallery">
-          <div className="gallery-preview-wrapper">
-            {activeImage ? (
-              <img src={activeImage} alt={listing.title} className="gallery-preview-img" />
-            ) : (
-              <div className="listing-card-placeholder gallery-preview-placeholder">
-                <ImageIcon className="listing-card-placeholder-icon" size={64} strokeWidth={1.5} />
-                <span>{listing.category.name}</span>
-              </div>
-            )}
-
-            <div className="listing-card-badges">
-              <span
-                className={`card-badge ${
-                  listing.item_type === 'physical' ? 'card-badge-physical' : 'card-badge-virtual'
-                }`}
-              >
-                {listing.item_type_display}
-              </span>
-            </div>
-          </div>
-
-          {/* 缩略图选择器 */}
-          {sortedImages.length > 1 && (
-            <div className="gallery-thumbnails">
-              {sortedImages.map((img, idx) => (
-                <button
-                  key={img.id}
-                  onClick={() => setActiveImageIndex(idx)}
-                  className={`gallery-thumb-btn ${activeImageIndex === idx ? 'active' : ''}`}
-                  aria-label={`查看第 ${idx + 1} 张图片`}
-                >
-                  <img src={resolveMediaUrl(img.image_url) || ''} alt={`缩略图 ${idx + 1}`} />
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
+        <ListingGallery
+          listing={listing}
+          images={sortedImages}
+          activeImageIndex={activeImageIndex}
+          activeImage={activeImage}
+          onActiveImageIndexChange={setActiveImageIndex}
+        />
 
         {/* 右栏：详细信息面板 */}
         <Card padding="lg" shadow="md" className="detail-info">
@@ -445,74 +396,15 @@ export const ListingDetail: React.FC = () => {
               <>
                 {/* 实体商品地址选择面板 */}
                 {showAddressPicker && (
-                  <div className="address-picker">
-                    <h4 className="address-picker-title">
-                      <MapPin size={16} />
-                      选择收货地址
-                    </h4>
-                    {loadingAddresses ? (
-                      <div className="address-picker-loading">正在加载地址…</div>
-                    ) : addresses.length === 0 ? (
-                      <div className="address-picker-empty">
-                        <p>您还没有收货地址</p>
-                        <Link to="/me/addresses" className="btn-link">
-                          前往添加
-                        </Link>
-                      </div>
-                    ) : (
-                      <div className="address-picker-list">
-                        {addresses.map((addr) => (
-                          <label
-                            key={addr.id}
-                            className={`address-picker-item ${selectedAddressId === addr.id ? 'selected' : ''}`}
-                          >
-                            <input
-                              type="radio"
-                              name="address"
-                              value={addr.id}
-                              checked={selectedAddressId === addr.id}
-                              onChange={() => setSelectedAddressId(addr.id)}
-                            />
-                            <div className="address-picker-info">
-                              <span className="address-picker-recipient">
-                                {addr.recipient_name}
-                                <span className="address-picker-phone">{addr.phone}</span>
-                                {addr.is_default && (
-                                  <span className="address-default-badge">
-                                    <Star size={11} />
-                                    默认
-                                  </span>
-                                )}
-                              </span>
-                              <span className="address-picker-text">
-                                {addr.province} {addr.city} {addr.district} {addr.detail_address}
-                              </span>
-                            </div>
-                          </label>
-                        ))}
-                        <Link to="/me/addresses" className="btn-link address-picker-manage">
-                          管理地址
-                        </Link>
-                      </div>
-                    )}
-                    <div className="address-picker-actions">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowAddressPicker(false)}
-                      >
-                        取消
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={handleConfirmBuy}
-                        loading={buySubmitting}
-                        disabled={!selectedAddressId || loadingAddresses}
-                      >
-                        确认下单
-                      </Button>
-                    </div>
-                  </div>
+                  <AddressPickerPanel
+                    addresses={addresses}
+                    selectedAddressId={selectedAddressId}
+                    loadingAddresses={loadingAddresses}
+                    buySubmitting={buySubmitting}
+                    onSelectedAddressIdChange={setSelectedAddressId}
+                    onCancel={() => setShowAddressPicker(false)}
+                    onConfirm={handleConfirmBuy}
+                  />
                 )}
 
                 {!showAddressPicker && (
@@ -542,195 +434,26 @@ export const ListingDetail: React.FC = () => {
         </Card>
       </div>
 
-      {/* 评论互动区域 */}
-      <Card padding="md" shadow="md" className="comments-section">
-        <h3 className="comments-section-title">
-          <MessageCircle size={22} />
-          留言与互动 ({totalCommentsCount})
-        </h3>
-
-        {/* 操作反馈提示（评论/回复/删除失败） */}
-        {actionError && (
-          <div className="alert alert-error" role="alert">
-            <AlertCircle size={18} />
-            <span>{actionError}</span>
-          </div>
-        )}
-
-        {/* 发表新留言 */}
-        {user ? (
-          <form onSubmit={handleCreateComment} className="comment-form">
-            <TextArea
-              id="comment"
-              value={newCommentContent}
-              onChange={(e) => setNewCommentContent(e.target.value)}
-              placeholder="对这件宝贝感兴趣？在这里给卖家留言询问吧..."
-              rows={3}
-              required
-              className="comment-textarea"
-            />
-            <div className="comment-form-actions">
-              <Button
-                type="submit"
-                size="sm"
-                disabled={submittingComment || !newCommentContent.trim()}
-                loading={submittingComment}
-              >
-                发表留言
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <div className="comment-login-promo">
-            <p>登录后即可留言或回复他人关于宝贝的问答</p>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => navigate('/login', { state: { from: { pathname: `/listings/${id}` } } })}
-            >
-              立即登录
-            </Button>
-          </div>
-        )}
-
-        {/* 留言列表 */}
-        {loadingComments ? (
-          renderCommentSkeletons()
-        ) : comments.length === 0 ? (
-          <div className="comments-empty">
-            <p>暂无留言，快来问问卖家关于宝贝的问题吧！</p>
-          </div>
-        ) : (
-          <div className="comments-list">
-            {comments.map((comment) => (
-              <div key={comment.id} className="comment-item-group">
-                {/* 顶层评论 */}
-                <div className="comment-item">
-                  <img
-                    src={resolveAvatarUrl(comment.author.profile?.avatar_url, comment.author.username)}
-                    alt={comment.author.username}
-                    className="comment-avatar"
-                  />
-                  <div className="comment-body">
-                    <div className="comment-header">
-                      <span className="comment-author-name">
-                        {comment.author.profile?.nickname || comment.author.username}
-                        {comment.author.id === listing?.owner?.id && (
-                          <span className="comment-seller-badge">卖家</span>
-                        )}
-                      </span>
-                      <span className="comment-meta">
-                        {new Date(comment.created_at).toLocaleString('zh-CN', {
-                          dateStyle: 'short',
-                          timeStyle: 'short',
-                        })}
-                      </span>
-                    </div>
-                    <p className="comment-content">{comment.content}</p>
-                    <div className="comment-actions">
-                      {user && (
-                        <button
-                          onClick={() => {
-                            setReplyTargetId(replyTargetId === comment.id ? null : comment.id);
-                            setReplyContent('');
-                          }}
-                          className="btn-link"
-                        >
-                          回复
-                        </button>
-                      )}
-                      {user && user.id === comment.author.id && (
-                        <button onClick={() => handleDeleteComment(comment.id)} className="btn-link btn-link-danger">
-                          删除
-                        </button>
-                      )}
-                    </div>
-
-                    {/* 就地快捷回复表单 */}
-                    {replyTargetId === comment.id && (
-                      <div className="reply-form">
-                        <TextArea
-                          id={`reply-${comment.id}`}
-                          value={replyContent}
-                          onChange={(e) => setReplyContent(e.target.value)}
-                          placeholder={`回复 @${comment.author.profile?.nickname || comment.author.username}...`}
-                          rows={2}
-                          required
-                          className="reply-textarea"
-                        />
-                        <div className="reply-form-actions">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setReplyTargetId(null);
-                              setReplyContent('');
-                            }}
-                          >
-                            取消
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={submittingReply || !replyContent.trim()}
-                            loading={submittingReply}
-                            onClick={() => handleCreateReply(comment.id)}
-                          >
-                            发表回复
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 子回复列表 */}
-                {comment.replies && comment.replies.length > 0 && (
-                  <div className="replies-container">
-                    {comment.replies.map((reply) => (
-                      <div key={reply.id} className="reply-item">
-                        <img
-                          src={resolveAvatarUrl(reply.author.profile?.avatar_url, reply.author.username)}
-                          alt={reply.author.username}
-                          className="reply-avatar"
-                        />
-                        <div className="reply-body">
-                          <div className="reply-header">
-                            <span className="reply-author-name">
-                              {reply.author.profile?.nickname || reply.author.username}
-                              {reply.author.id === listing?.owner?.id && (
-                                <span className="comment-seller-badge">卖家</span>
-                              )}
-                            </span>
-                            <span className="reply-meta">
-                              {new Date(reply.created_at).toLocaleString('zh-CN', {
-                                dateStyle: 'short',
-                                timeStyle: 'short',
-                              })}
-                            </span>
-                          </div>
-                          <p className="reply-content">{reply.content}</p>
-                          <div className="reply-actions">
-                            {user && user.id === reply.author.id && (
-                              <button
-                                onClick={() => handleDeleteComment(reply.id)}
-                                className="btn-link btn-link-danger"
-                              >
-                                删除
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+      <ListingCommentsSection
+        listing={listing}
+        comments={comments}
+        totalCommentsCount={totalCommentsCount}
+        user={user}
+        actionError={actionError}
+        loadingComments={loadingComments}
+        newCommentContent={newCommentContent}
+        replyTargetId={replyTargetId}
+        replyContent={replyContent}
+        submittingComment={submittingComment}
+        submittingReply={submittingReply}
+        onNewCommentContentChange={setNewCommentContent}
+        onReplyTargetIdChange={setReplyTargetId}
+        onReplyContentChange={setReplyContent}
+        onCreateComment={handleCreateComment}
+        onCreateReply={handleCreateReply}
+        onDeleteComment={handleDeleteComment}
+        onLoginClick={() => navigate('/login', { state: { from: { pathname: `/listings/${id}` } } })}
+      />
     </div>
   );
 };

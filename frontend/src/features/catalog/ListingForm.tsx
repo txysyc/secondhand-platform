@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Camera, Trash2, ArrowLeft, ArrowRight, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import {
   getCategories,
   createListing,
@@ -12,8 +12,10 @@ import {
   publishListing,
 } from '../../api/endpoints/listings';
 import { useAuth } from '../../app/providers';
-import { resolveMediaUrl } from '../../utils/media';
-import { Button, Card, Input, TextArea, Select, ErrorState, Loading } from '../../components/ui';
+import { Button, Card, ErrorState, Loading } from '../../components/ui';
+import { ListingFormFields } from './form/ListingFormFields';
+import { ListingImageManager } from './form/ListingImageManager';
+import type { ListingPayload, PendingListingImage } from './form/types';
 import type {
   Category,
   Listing,
@@ -23,43 +25,6 @@ import type {
   ItemCondition,
   PhysicalDeliveryMethod,
 } from '../../types/listings';
-
-interface PendingListingImage {
-  id: string;
-  file: File;
-  previewUrl: string;
-  sort_order: number;
-}
-
-interface ListingPayload {
-  title: string;
-  category: number;
-  item_type: ItemType;
-  price: string;
-  description: string;
-  delivery_notes: string;
-  condition?: ItemCondition | null;
-  physical_delivery_method?: PhysicalDeliveryMethod | null;
-  virtual_valid_until?: string | null;
-}
-
-const CONDITION_OPTIONS = [
-  { value: 'new', label: '全新 (未拆封/未使用)' },
-  { value: 'like_new', label: '九五新 (几乎无使用痕迹)' },
-  { value: 'good', label: '九成新 (轻微使用痕迹)' },
-  { value: 'fair', label: '八成新及以下 (有明显瑕疵/使用痕迹)' },
-];
-
-const DELIVERY_METHOD_OPTIONS = [
-  { value: 'meetup', label: '同城当面面交' },
-  { value: 'shipping', label: '邮寄顺丰包邮' },
-  { value: 'both', label: '均可' },
-];
-
-const ITEM_TYPE_OPTIONS = [
-  { value: 'physical', label: '实体商品' },
-  { value: 'virtual', label: '虚拟商品 (卡券/兑换码等)' },
-];
 
 const getErrorMessage = (err: unknown, fallback: string): string => {
   if (err instanceof Error) return err.message;
@@ -411,263 +376,42 @@ export const ListingForm: React.FC = () => {
         )}
 
         <form onSubmit={handleSubmit}>
-          {/* 商品标题 */}
-          <Input
-            id="title"
-            label="商品标题"
-            required
-            type="text"
-            placeholder="请输入商品标题 (例如：品牌、型号、关键规格)"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            disabled={saving}
+          <ListingFormFields
+            categoryOptions={categoryOptions}
+            title={title}
+            category={category}
+            itemType={itemType}
+            price={price}
+            description={description}
+            deliveryNotes={deliveryNotes}
+            condition={condition}
+            physicalDeliveryMethod={physicalDeliveryMethod}
+            virtualValidUntil={virtualValidUntil}
+            fieldErrors={fieldErrors}
+            saving={saving}
+            isEditMode={isEditMode}
+            onTitleChange={setTitle}
+            onCategoryChange={setCategory}
+            onItemTypeChange={setItemType}
+            onPriceChange={setPrice}
+            onDescriptionChange={setDescription}
+            onDeliveryNotesChange={setDeliveryNotes}
+            onConditionChange={setCondition}
+            onPhysicalDeliveryMethodChange={setPhysicalDeliveryMethod}
+            onVirtualValidUntilChange={setVirtualValidUntil}
           />
 
-          {/* 分类与交付类别 */}
-          <div className="form-row">
-            <Select
-              id="category"
-              label="商品分类"
-              required
-              options={categoryOptions}
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              disabled={saving}
-            />
-
-            <Select
-              id="itemType"
-              label="交付类别"
-              required
-              options={ITEM_TYPE_OPTIONS}
-              value={itemType}
-              onChange={(e) => setItemType(e.target.value as ItemType)}
-              disabled={saving || isEditMode}
-            />
-          </div>
-
-          {/* 价格 */}
-          <div className="form-group">
-            <label htmlFor="price" className="form-label-required">
-              转让价格 (元)
-            </label>
-            <div className="price-input-wrapper">
-              <span className="price-currency">¥</span>
-              <input
-                id="price"
-                type="number"
-                step="0.01"
-                min="0"
-                className="form-control price-control"
-                placeholder="请输入转让价格"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                disabled={saving}
-                required
-              />
-            </div>
-          </div>
-
-          {/* 动态属性表单配置 */}
-          <div className="form-specs-section">
-            {itemType === 'physical' ? (
-              <div className="form-row">
-                <Select
-                  id="condition"
-                  label="商品成色"
-                  required
-                  options={CONDITION_OPTIONS}
-                  value={condition}
-                  onChange={(e) => setCondition(e.target.value as ItemCondition)}
-                  disabled={saving}
-                />
-
-                <Select
-                  id="deliveryMethod"
-                  label="建议交付方式"
-                  required
-                  options={DELIVERY_METHOD_OPTIONS}
-                  value={physicalDeliveryMethod}
-                  onChange={(e) => setPhysicalDeliveryMethod(e.target.value as PhysicalDeliveryMethod)}
-                  disabled={saving}
-                />
-              </div>
-            ) : (
-              <Input
-                id="validUntil"
-                label="虚拟兑换码有效期"
-                required={itemType === 'virtual'}
-                type="datetime-local"
-                error={fieldErrors.virtual_valid_until}
-                value={virtualValidUntil}
-                onChange={(e) => setVirtualValidUntil(e.target.value)}
-                disabled={saving}
-              />
-            )}
-          </div>
-
-          {/* 商品详细描述 */}
-          <TextArea
-            id="description"
-            label="商品描述"
-            required
-            rows={5}
-            placeholder="请详细说明商品的规格参数、购买途径、使用痕迹、功能瑕疵等，有利于更快卖出"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            disabled={saving}
+          <ListingImageManager
+            isEditMode={isEditMode}
+            saving={saving}
+            uploadedImages={uploadedImages}
+            pendingImages={pendingImages}
+            onImageUpload={handleImageUpload}
+            onImageDelete={handleImageDelete}
+            onPendingImageDelete={handlePendingImageDelete}
+            onImageMove={handleImageMove}
+            onPendingImageMove={handlePendingImageMove}
           />
-
-          {/* 交易说明 */}
-          <Input
-            id="deliveryNotes"
-            label="补充交易说明 (可选)"
-            type="text"
-            placeholder="例：同城可约地铁站面交；谢绝砍价；不退换"
-            value={deliveryNotes}
-            onChange={(e) => setDeliveryNotes(e.target.value)}
-            disabled={saving}
-          />
-
-          {/* 多图上传及重排区域 */}
-          {isEditMode ? (
-            <div className="image-manager-section">
-              <div className="image-manager-section-title">
-                商品图片管理 ({uploadedImages.length}/6)
-              </div>
-              <p className="image-manager-hint">
-                支持最多上传 6 张高清大图，首图将被用作搜索封面。支持左右方向键进行排序。
-              </p>
-
-              <div className="image-manager-grid">
-                {uploadedImages.map((img, idx) => (
-                  <div key={img.id} className="image-manager-item">
-                    <img
-                      src={resolveMediaUrl(img.image_url) || undefined}
-                      alt={`商品图 ${idx + 1}`}
-                      className="image-manager-img"
-                    />
-
-                    {/* 删除图片 */}
-                    <button
-                      type="button"
-                      onClick={() => handleImageDelete(img.id)}
-                      className="image-manager-delete-btn"
-                      disabled={saving}
-                      title="删除"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-
-                    {/* 左右移动控制 */}
-                    <div className="image-manager-controls">
-                      <button
-                        type="button"
-                        onClick={() => handleImageMove(idx, 'left')}
-                        disabled={idx === 0 || saving}
-                        className="image-control-btn"
-                        title="前移"
-                      >
-                        <ArrowLeft size={16} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleImageMove(idx, 'right')}
-                        disabled={idx === uploadedImages.length - 1 || saving}
-                        className="image-control-btn"
-                        title="后移"
-                      >
-                        <ArrowRight size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-                {/* 上传卡片 */}
-                {uploadedImages.length < 6 && (
-                  <div className="image-manager-upload-card">
-                    <Camera className="image-manager-upload-icon" size={32} />
-                    <span>添加图片</span>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      className="image-manager-file-input"
-                      onChange={handleImageUpload}
-                      disabled={saving}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="image-manager-section">
-              <div className="image-manager-section-title">
-                商品图片 ({pendingImages.length}/6)
-              </div>
-              <p className="image-manager-hint">
-                可先选择图片，提交后会自动创建草稿、上传图片，并按您的选择保存或发布。
-              </p>
-
-              <div className="image-manager-grid">
-                {pendingImages.map((img, idx) => (
-                  <div key={img.id} className="image-manager-item">
-                    <img src={img.previewUrl} alt={`商品图预览 ${idx + 1}`} className="image-manager-img" />
-
-                    <button
-                      type="button"
-                      onClick={() => handlePendingImageDelete(img.id)}
-                      className="image-manager-delete-btn"
-                      disabled={saving}
-                      title="删除"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-
-                    <div className="image-manager-controls">
-                      <button
-                        type="button"
-                        onClick={() => handlePendingImageMove(idx, 'left')}
-                        disabled={idx === 0 || saving}
-                        className="image-control-btn"
-                        title="前移"
-                      >
-                        <ArrowLeft size={16} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handlePendingImageMove(idx, 'right')}
-                        disabled={idx === pendingImages.length - 1 || saving}
-                        className="image-control-btn"
-                        title="后移"
-                      >
-                        <ArrowRight size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-                {pendingImages.length < 6 && (
-                  <div className="image-manager-upload-card">
-                    <Camera className="image-manager-upload-icon" size={32} />
-                    <span>添加图片</span>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      className="image-manager-file-input"
-                      onChange={handleImageUpload}
-                      disabled={saving}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <p className="image-manager-tip">
-                提示：至少填写完整商品信息后，可以保存为草稿，也可以直接发布上架。
-              </p>
-            </div>
-          )}
 
           <div className="form-actions-bar">
             <Button

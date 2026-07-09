@@ -1,0 +1,121 @@
+/* My Listings Page */
+.my-listings-container {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.my-listings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+}
+
+.my-listings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.my-listing-row {
+  display: flex;
+  background-color: var(--bg-card);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+  padding: 20px;
+  gap: 24px;
+  align-items: center;
+  transition: var(--transition-normal);
+}
+
+.my-listing-row:hover {
+  box-shadow: var(--shadow-md);
+  border-color: rgba(13, 148, 136, 0.25);
+  transform: translateY(-2px);
+}
+
+.my-listing-thumb-wrapper {
+  width: 110px;
+  height: 82px;
+  border-radius: 10px;
+  overflow: hidden;
+  background-color: var(--bg-main);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-color);
+}
+
+.my-listing-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.my-listing-thumb-icon {
+  font-size: 1.8rem;
+}
+
+.my-listing-info {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.my-listing-title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.my-listing-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.my-listing-meta {
+  display: flex;
+  gap: 20px;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.my-listing-price {
+  font-weight: 800;
+  color: var(--price-color);
+}
+
+.my-listing-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* Badges for status */
+.badge-draft {
+  background-color: #f1f5f9;
+  color: #475569;
+}
+
+.badge-active {
+  background-color: var(--success-bg);
+  color: var(--success-color);
+}
+
+.badge-inactive {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
+.badge-sold {
+  background-color: #e2e8f0;
+  color: #94a3b8;
+  text-decoration: line-through;
+}
+

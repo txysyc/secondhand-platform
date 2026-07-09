@@ -1,0 +1,519 @@
+from decimal import Decimal
+
+import pytest
+from io import BytesIO
+
+from django.contrib import admin
+from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import IntegrityError, transaction
+from django.urls import reverse
+from django.utils import timezone
+from PIL import Image
+from rest_framework.exceptions import PermissionDenied, ValidationError
+
+from catalog.admin import CategoryAdmin, ListingAdmin
+from catalog.filters import ListingFilterSet
+from catalog.models import Category, Listing, ListingImage
+from catalog.selectors import (
+    apply_public_listing_sort,
+    get_active_categories,
+    get_public_listing_queryset,
+    get_visible_listing_detail_queryset,
+)
+from orders.models import Order
+from catalog.services import (
+    ACTION_RESTORE_ACTIVE,
+    ACTION_WITHDRAW,
+    change_listing_status,
+    delete_listing,
+    publish_listing,
+)
+from users.models import User
+
+
+pytestmark = pytest.mark.django_db
+
+def build_png_image(name="listing.png", size=(16, 16)):
+    """构造测试用 PNG 图片。"""
+
+    buffer = BytesIO()
+    image = Image.new("RGB", size, color="white")
+    image.save(buffer, format="PNG")
+    return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
+
+class TestCatalogApi:
+    """P3 商品 API 测试。"""
+
+    @pytest.fixture(autouse=True)
+    def _setup_catalog_api_context(self, api_client, auth_headers, settings):
+        """构造商品 API 测试上下文，并使用内存存储隔离上传文件。"""
+
+        settings.STORAGES = {
+            "default": {
+                "BACKEND": "django.core.files.storage.InMemoryStorage",
+            },
+            "staticfiles": {
+                "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+            },
+        }
+        self.api_client = api_client
+        self.auth_headers = auth_headers
+        self.seller = User.objects.create_user(
+            username="apiseller",
+            email="apiseller@example.com",
+            password="StrongPass123",
+        )
+        self.other_user = User.objects.create_user(
+            username="apiother",
+            email="apiother@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="API数码")
+        self.inactive_category = Category.objects.create(
+            name="API停用分类",
+            is_active=False,
+        )
+
+    def listing_payload(self, **overrides):
+        data = {
+            "title": "API二手相机",
+            "category": self.category.id,
+            "item_type": Listing.ItemType.PHYSICAL,
+            "price": "388.00",
+            "condition": Listing.Condition.LIKE_NEW,
+            "description": "功能正常。",
+            "delivery_notes": "地铁站面交",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "virtual_valid_until": None,
+        }
+        data.update(overrides)
+        return data
+
+    def create_listing(self, **overrides):
+        data = {
+            "owner": self.seller,
+            "category": self.category,
+            "title": "公开商品",
+            "item_type": Listing.ItemType.PHYSICAL,
+            "status": Listing.Status.ACTIVE,
+            "price": Decimal("99.00"),
+            "condition": Listing.Condition.GOOD,
+            "description": "公开描述",
+            "delivery_notes": "面交",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "published_at": timezone.now(),
+        }
+        data.update(overrides)
+        return Listing.objects.create(**data)
+
+    def test_categories_returns_only_active_categories(self):
+        response = self.api_client.get(reverse("api:catalog_categories"))
+
+        assert response.status_code == 200
+        names = [item["name"] for item in response.json()]
+        assert "API数码" in names
+        assert "API停用分类" not in names
+
+    def test_public_listing_list_filters_active_listings(self):
+        match = self.create_listing(title="蓝牙耳机", description="支持降噪")
+        self.create_listing(title="普通键盘", description="无关描述")
+        self.create_listing(title="草稿商品", status=Listing.Status.DRAFT, published_at=None)
+        self.create_listing(title="停用分类商品", category=self.inactive_category)
+
+        response = self.api_client.get(reverse("api:catalog_listings"), {"q": "蓝牙"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["count"] == 1
+        assert body["results"][0]["id"] == match.id
+        assert body["results"][0]["category"]["name"] == "API数码"
+
+    def test_public_detail_hides_inactive_or_non_active_listing(self):
+        active = self.create_listing(title="详情商品")
+        draft = self.create_listing(
+            title="草稿详情",
+            status=Listing.Status.DRAFT,
+            published_at=None,
+        )
+
+        ok_response = self.api_client.get(
+            reverse("api:catalog_listing_detail", kwargs={"pk": active.id})
+        )
+        hidden_response = self.api_client.get(
+            reverse("api:catalog_listing_detail", kwargs={"pk": draft.id})
+        )
+
+        assert ok_response.status_code == 200
+        assert ok_response.json()["title"] == "详情商品"
+        assert hidden_response.status_code == 404
+
+    def test_paid_buyer_and_seller_can_view_reserved_or_sold_detail(self):
+        buyer = User.objects.create_user(
+            username="detailbuy",
+            email="detail_buyer@example.com",
+            password="StrongPass123",
+        )
+        reserved = self.create_listing(
+            title="交易中详情",
+            status=Listing.Status.RESERVED,
+        )
+        sold = self.create_listing(
+            title="已售详情",
+            status=Listing.Status.SOLD,
+        )
+        Order.objects.create(
+            buyer=buyer,
+            seller=self.seller,
+            listing=reserved,
+            buyer_display_name=buyer.username,
+            seller_display_name=self.seller.username,
+            listing_title_snapshot=reserved.title,
+            order_price=reserved.price,
+            status=Order.OrderStatus.AWAITING_SHIPMENT,
+            payment_deadline=timezone.now(),
+        )
+        Order.objects.create(
+            buyer=buyer,
+            seller=self.seller,
+            listing=sold,
+            buyer_display_name=buyer.username,
+            seller_display_name=self.seller.username,
+            listing_title_snapshot=sold.title,
+            order_price=sold.price,
+            status=Order.OrderStatus.COMPLETED,
+            payment_deadline=timezone.now(),
+        )
+
+        buyer_reserved_response = self.api_client.get(
+            reverse("api:catalog_listing_detail", kwargs={"pk": reserved.id}),
+            **self.auth_headers(buyer),
+        )
+        seller_sold_response = self.api_client.get(
+            reverse("api:catalog_listing_detail", kwargs={"pk": sold.id}),
+            **self.auth_headers(self.seller),
+        )
+
+        assert buyer_reserved_response.status_code == 200
+        assert buyer_reserved_response.json()["title"] == "交易中详情"
+        assert seller_sold_response.status_code == 200
+        assert seller_sold_response.json()["title"] == "已售详情"
+
+    def test_non_participant_cannot_view_reserved_or_sold_detail(self):
+        reserved = self.create_listing(
+            title="路人不可见",
+            status=Listing.Status.RESERVED,
+        )
+
+        guest_response = self.api_client.get(
+            reverse("api:catalog_listing_detail", kwargs={"pk": reserved.id})
+        )
+        other_response = self.api_client.get(
+            reverse("api:catalog_listing_detail", kwargs={"pk": reserved.id}),
+            **self.auth_headers(self.other_user),
+        )
+
+        assert guest_response.status_code == 404
+        assert other_response.status_code == 404
+
+    def test_owner_can_view_own_draft_listing_detail(self):
+        draft = self.create_listing(
+            title="编辑页草稿",
+            status=Listing.Status.DRAFT,
+            published_at=None,
+        )
+
+        response = self.api_client.get(
+            reverse("api:catalog_my_listing_detail", kwargs={"pk": draft.id}),
+            **self.auth_headers(self.seller),
+        )
+
+        assert response.status_code == 200
+        assert response.json()["id"] == draft.id
+        assert response.json()["title"] == "编辑页草稿"
+        assert response.json()["status"] == Listing.Status.DRAFT
+
+    def test_non_owner_cannot_view_private_listing_detail(self):
+        draft = self.create_listing(
+            title="他人草稿",
+            status=Listing.Status.DRAFT,
+            published_at=None,
+        )
+
+        response = self.api_client.get(
+            reverse("api:catalog_my_listing_detail", kwargs={"pk": draft.id}),
+            **self.auth_headers(self.other_user),
+        )
+
+        assert response.status_code == 403
+
+    def test_my_listing_list_filters_and_sorts_own_listings(self):
+        target = self.create_listing(
+            title="我的蓝牙耳机",
+            description="轻微使用痕迹",
+            status=Listing.Status.ACTIVE,
+            price=Decimal("88.00"),
+        )
+        Listing.objects.filter(pk=target.pk).update(
+            updated_at=timezone.now() - timezone.timedelta(days=2)
+        )
+        wrong_status = self.create_listing(
+            title="我的蓝牙草稿",
+            status=Listing.Status.DRAFT,
+            price=Decimal("80.00"),
+            published_at=None,
+        )
+        too_expensive = self.create_listing(
+            title="我的蓝牙音箱",
+            status=Listing.Status.ACTIVE,
+            price=Decimal("188.00"),
+        )
+        other_owner = self.create_listing(
+            owner=self.other_user,
+            title="别人的蓝牙耳机",
+            status=Listing.Status.ACTIVE,
+            price=Decimal("88.00"),
+        )
+
+        response = self.api_client.get(
+            reverse("api:catalog_my_listings"),
+            {
+                "q": " 蓝牙 ",
+                "status": Listing.Status.ACTIVE,
+                "min_price": "50",
+                "max_price": "100",
+                "updated_after": (timezone.now() - timezone.timedelta(days=3)).isoformat(),
+                "updated_before": (timezone.now() - timezone.timedelta(days=1)).isoformat(),
+                "sort": "price_asc",
+            },
+            **self.auth_headers(self.seller),
+        )
+
+        ids = [item["id"] for item in response.json()["results"]]
+        assert response.status_code == 200
+        assert ids == [target.id]
+        assert wrong_status.id not in ids
+        assert too_expensive.id not in ids
+        assert other_owner.id not in ids
+
+    def test_my_listing_list_invalid_filter_and_page_size_cap(self):
+        for index in range(55):
+            self.create_listing(title=f"我的分页商品{index}")
+
+        invalid_price_response = self.api_client.get(
+            reverse("api:catalog_my_listings"),
+            {"min_price": "100", "max_price": "10"},
+            **self.auth_headers(self.seller),
+        )
+        invalid_time_response = self.api_client.get(
+            reverse("api:catalog_my_listings"),
+            {
+                "updated_after": "2026-05-02T10:00:00+08:00",
+                "updated_before": "2026-05-01T10:00:00+08:00",
+            },
+            **self.auth_headers(self.seller),
+        )
+        page_response = self.api_client.get(
+            reverse("api:catalog_my_listings"),
+            {"page_size": "999"},
+            **self.auth_headers(self.seller),
+        )
+        keyword_response = self.api_client.get(
+            reverse("api:catalog_my_listings"),
+            {"q": "商" * 51},
+            **self.auth_headers(self.seller),
+        )
+
+        assert invalid_price_response.status_code == 400
+        assert "最高价格不得低于最低价格" in invalid_price_response.json()["message"]
+        assert invalid_time_response.status_code == 400
+        assert "更新时间截止不得早于更新时间起始" in invalid_time_response.json()["message"]
+        assert keyword_response.status_code == 400
+        assert "搜索关键词不能超过50个字符" in keyword_response.json()["message"]
+        assert page_response.status_code == 200
+        assert page_response.json()["page_size"] == 50
+        assert len(page_response.json()["results"]) == 50
+
+    def test_create_update_publish_deactivate_and_reactivate_listing(self):
+        create_response = self.api_client.post(
+            reverse("api:catalog_my_listings"),
+            data=self.listing_payload(),
+            format="json",
+            **self.auth_headers(self.seller),
+        )
+        assert create_response.status_code == 201
+        listing_id = create_response.json()["id"]
+        assert create_response.json()["status"] == Listing.Status.DRAFT
+
+        update_response = self.api_client.patch(
+            reverse("api:catalog_my_listing_detail", kwargs={"pk": listing_id}),
+            data={"title": "更新后的相机", "price": "399.00"},
+            format="json",
+            **self.auth_headers(self.seller),
+        )
+        assert update_response.status_code == 200
+        assert update_response.json()["title"] == "更新后的相机"
+
+        publish_response = self.api_client.post(
+            reverse("api:catalog_my_listing_publish", kwargs={"pk": listing_id}),
+            **self.auth_headers(self.seller),
+        )
+        assert publish_response.status_code == 200
+        assert publish_response.json()["status"] == Listing.Status.ACTIVE
+
+        deactivate_response = self.api_client.post(
+            reverse("api:catalog_my_listing_deactivate", kwargs={"pk": listing_id}),
+            **self.auth_headers(self.seller),
+        )
+        assert deactivate_response.status_code == 200
+        assert deactivate_response.json()["status"] == Listing.Status.WITHDRAWN
+
+        reactivate_response = self.api_client.post(
+            reverse("api:catalog_my_listing_reactivate", kwargs={"pk": listing_id}),
+            **self.auth_headers(self.seller),
+        )
+        assert reactivate_response.status_code == 200
+        assert reactivate_response.json()["status"] == Listing.Status.ACTIVE
+
+    def test_non_owner_cannot_mutate_listing(self):
+        listing = self.create_listing()
+
+        response = self.api_client.patch(
+            reverse("api:catalog_my_listing_detail", kwargs={"pk": listing.id}),
+            data={"title": "越权修改"},
+            format="json",
+            **self.auth_headers(self.other_user),
+        )
+
+        assert response.status_code == 403
+        listing.refresh_from_db()
+        assert listing.title != "越权修改"
+
+    def test_image_upload_reorder_delete_and_limit(self):
+        listing = self.create_listing(status=Listing.Status.DRAFT, published_at=None)
+
+        upload_response = self.api_client.post(
+            reverse("api:catalog_my_listing_images_upload", kwargs={"pk": listing.id}),
+            data={
+                "images": [
+                    build_png_image("first.png"),
+                    build_png_image("second.png"),
+                ]
+            },
+            format="multipart",
+            **self.auth_headers(self.seller),
+        )
+        assert upload_response.status_code == 201
+        image_ids = [image["id"] for image in upload_response.json()["images"]]
+        assert len(image_ids) == 2
+
+        reorder_response = self.api_client.post(
+            reverse("api:catalog_my_listing_images_reorder", kwargs={"pk": listing.id}),
+            data={"image_ids": list(reversed(image_ids))},
+            format="json",
+            **self.auth_headers(self.seller),
+        )
+        assert reorder_response.status_code == 200
+        assert [image["id"] for image in reorder_response.json()["images"]] == list(
+            reversed(image_ids)
+        )
+
+        delete_response = self.api_client.delete(
+            reverse(
+                "api:catalog_my_listing_images_delete",
+                kwargs={"pk": listing.id, "image_id": image_ids[0]},
+            ),
+            **self.auth_headers(self.seller),
+        )
+        assert delete_response.status_code == 204
+        assert ListingImage.objects.filter(pk=image_ids[0]).exists() is False
+
+        too_many_response = self.api_client.post(
+            reverse("api:catalog_my_listing_images_upload", kwargs={"pk": listing.id}),
+            data={"images": [build_png_image(f"extra-{index}.png") for index in range(6)]},
+            format="multipart",
+            **self.auth_headers(self.seller),
+        )
+        assert too_many_response.status_code == 400
+
+    def test_invalid_filter_returns_json_error(self):
+        response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {"min_price": "100", "max_price": "10"},
+        )
+
+        assert response.status_code == 400
+        assert "message" in response.json()
+        assert "最高价格不得低于最低价格" in response.json()["message"]
+
+    def test_invalid_published_range_returns_json_error(self):
+        response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {
+                "published_after": "2026-05-02T10:00",
+                "published_before": "2026-05-01T10:00",
+            },
+        )
+
+        assert response.status_code == 400
+        assert "发布时间截止不得早于发布时间起始" in response.json()["message"]
+
+    def test_public_listing_list_supports_published_range_filter(self):
+        old = self.create_listing(
+            title="较早发布",
+            published_at=timezone.now() - timezone.timedelta(days=5),
+        )
+        target = self.create_listing(
+            title="区间发布",
+            published_at=timezone.now() - timezone.timedelta(days=2),
+        )
+        new = self.create_listing(title="最新发布", published_at=timezone.now())
+
+        response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {
+                "published_after": (timezone.now() - timezone.timedelta(days=3)).strftime(
+                    "%Y-%m-%dT%H:%M"
+                ),
+                "published_before": (timezone.now() - timezone.timedelta(days=1)).strftime(
+                    "%Y-%m-%dT%H:%M"
+                ),
+            },
+        )
+
+        ids = [item["id"] for item in response.json()["results"]]
+        assert response.status_code == 200
+        assert target.id in ids
+        assert old.id not in ids
+        assert new.id not in ids
+
+    def test_blank_and_too_long_keyword_handling(self):
+        first = self.create_listing(title="蓝牙耳机")
+        second = self.create_listing(title="普通键盘")
+
+        blank_response = self.api_client.get(reverse("api:catalog_listings"), {"q": "   "})
+        long_response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {"q": "蓝" * 51},
+        )
+
+        ids = [item["id"] for item in blank_response.json()["results"]]
+        assert blank_response.status_code == 200
+        assert first.id in ids
+        assert second.id in ids
+        assert long_response.status_code == 400
+        assert "搜索关键词不能超过50个字符" in long_response.json()["message"]
+
+    def test_public_listing_page_size_is_capped_at_50(self):
+        for index in range(55):
+            self.create_listing(title=f"分页商品{index}")
+
+        response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {"page_size": "999"},
+        )
+
+        body = response.json()
+        assert response.status_code == 200
+        assert body["page_size"] == 50
+        assert len(body["results"]) == 50

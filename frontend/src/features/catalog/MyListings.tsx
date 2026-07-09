@@ -40,7 +40,9 @@ export const MyListings: React.FC = () => {
 
   // URL 参数是我的商品筛选和分页的唯一来源。
   const query = searchParams.get('q') || '';
-  const status = searchParams.get('status') || 'all';
+  const rawStatus = searchParams.get('status') || 'all';
+  // 已售出商品不进入我的商品管理，兼容旧链接中的 status=sold 参数。
+  const status = rawStatus === 'sold' ? 'all' : rawStatus;
   const category = searchParams.get('category') || 'all';
   const itemType = searchParams.get('item_type') || 'all';
   const minPrice = searchParams.get('min_price') || '';

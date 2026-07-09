@@ -30,19 +30,37 @@ def get_active_category_ids():
 
     cache_key = _active_category_ids_cache_key()
     category_ids = cache.get(cache_key)
-    if category_ids is None:
-        # 缓存未命中时只查询启用分类的主键，避免把模型实例直接写入缓存。
-        category_ids = list(
-            Category.objects.filter(is_active=True)
-            .order_by("id")
-            .values_list("id", flat=True)
-        )
-        cache.set(
-            cache_key,
-            category_ids,
-            CACHE_TIMEOUT_ACTIVE_CATEGORY_IDS,
-        )
+    if category_ids is None or _active_category_cache_is_stale(category_ids):
+        category_ids = _refresh_active_category_ids_cache(cache_key)
     return category_ids
+
+
+def _refresh_active_category_ids_cache(cache_key):
+    """从数据库刷新启用分类 ID 缓存。"""
+
+    # 缓存未命中或缓存陈旧时只查询启用分类的主键，避免把模型实例直接写入缓存。
+    category_ids = list(
+        Category.objects.filter(is_active=True)
+        .order_by("id")
+        .values_list("id", flat=True)
+    )
+    cache.set(
+        cache_key,
+        category_ids,
+        CACHE_TIMEOUT_ACTIVE_CATEGORY_IDS,
+    )
+    return category_ids
+
+
+def _active_category_cache_is_stale(category_ids):
+    """判断启用分类缓存是否已与数据库不一致。"""
+
+    cached_ids = set(category_ids or [])
+    # 兼容手工导入、测试清表或缓存服务残留导致的信号未触发场景。
+    current_ids = set(
+        Category.objects.filter(is_active=True).values_list("id", flat=True)
+    )
+    return cached_ids != current_ids
 
 
 def _active_category_ids_cache_key():
@@ -166,6 +184,8 @@ def get_owner_listing_queryset(user):
         return Listing.objects.none()
     return (
         Listing.objects.filter(owner=user)
+        # 已售出商品已进入订单履约闭环，不再出现在我的商品管理列表。
+        .exclude(status=Listing.Status.SOLD)
         .select_related("category", "owner", "owner__profile")
         .prefetch_related("images")
         .order_by("-updated_at", "-id")

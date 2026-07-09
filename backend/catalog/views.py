@@ -36,6 +36,8 @@ from catalog.services import (
     reorder_listing_images,
     update_listing_from_payload,
 )
+from interactions.selectors import annotate_listings_with_favorite_status
+from interactions.services import record_listing_view
 
 
 class CategoryListApiView(APIView):
@@ -56,6 +58,7 @@ class ListingListApiView(PageNumberPaginationMixin, APIView):
 
     def get(self, request):
         queryset = get_public_listing_queryset()
+        queryset = annotate_listings_with_favorite_status(queryset, request.user)
         filterset = ListingFilterSet(data=request.query_params, queryset=queryset)
         if not filterset.is_valid():
             raise ValidationError(filterset.errors)
@@ -75,13 +78,18 @@ class ListingDetailApiView(APIView):
     permission_classes = [AllowAny]
 
     def get_object(self, request, pk):
-        return get_object_or_404(
+        queryset = annotate_listings_with_favorite_status(
             get_visible_listing_detail_queryset(request.user),
+            request.user,
+        )
+        return get_object_or_404(
+            queryset,
             pk=pk,
         )
 
     def get(self, request, pk):
         listing = self.get_object(request, pk)
+        record_listing_view(request.user, listing)
         serializer = ListingDetailSerializer(listing, context={"request": request})
         return Response(serializer.data)
 
@@ -94,6 +102,7 @@ class MyListingListCreateApiView(PageNumberPaginationMixin, APIView):
 
     def get(self, request):
         queryset = get_owner_listing_queryset(request.user)
+        queryset = annotate_listings_with_favorite_status(queryset, request.user)
         filterset = MyListingFilterSet(data=request.query_params, queryset=queryset)
         if not filterset.is_valid():
             raise ValidationError(filterset.errors)
@@ -127,6 +136,7 @@ class _OwnedListingAPIView(APIView):
             Listing.objects.select_related("category", "owner", "owner__profile")
             .prefetch_related("images")
         )
+        queryset = annotate_listings_with_favorite_status(queryset, request.user)
         listing = get_object_or_404(queryset, pk=pk)
         self.check_object_permissions(request, listing)
         return listing

@@ -1,0 +1,146 @@
+/* 商品收藏与浏览历史页面 */
+.behavior-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.behavior-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.behavior-alert {
+  justify-content: space-between;
+}
+
+.behavior-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.behavior-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: var(--transition-normal);
+}
+
+.behavior-card:hover {
+  border-color: rgba(13, 148, 136, 0.32);
+  box-shadow: 0 16px 32px -16px rgba(15, 23, 42, 0.28);
+  transform: translateY(-3px);
+}
+
+.behavior-card-main {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  width: 100%;
+  min-height: 128px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.behavior-card-image-wrapper {
+  width: 128px;
+  height: 128px;
+  background-color: #f1f5f9;
+  overflow: hidden;
+}
+
+.behavior-card-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.behavior-card-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+}
+
+.behavior-card-content {
+  min-width: 0;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.behavior-card-category {
+  font-size: 0.78rem;
+  color: var(--primary-color);
+  font-weight: 700;
+}
+
+.behavior-card-content h2 {
+  color: var(--text-main);
+  font-size: 1.02rem;
+  line-height: 1.4;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.behavior-card-meta {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.behavior-card-price {
+  color: var(--price-color);
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+
+.behavior-remove-btn {
+  border-top: 1px solid var(--border-color);
+  border-radius: 0;
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .behavior-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .behavior-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .behavior-card-main {
+    grid-template-columns: 104px 1fr;
+    min-height: 112px;
+  }
+
+  .behavior-card-image-wrapper {
+    width: 104px;
+    height: 112px;
+  }
+}

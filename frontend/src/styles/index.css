@@ -20,5 +20,6 @@
 @import './address-manager.css';
 @import './order-address.css';
 @import './listing-form-overrides.css';
+@import './listing-behavior.css';
 @import './user-menu.css';
 @import './profiles.css';

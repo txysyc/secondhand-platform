@@ -5,12 +5,13 @@ from decimal import Decimal
 import pytest
 from django.contrib.admin.sites import site
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
 
 from catalog.models import Category, Listing
 from interactions.admin import CommentAdmin, ReplyStatusFilter
-from interactions.models import Comment
+from interactions.models import Comment, ListingFavorite, ListingViewHistory
 from interactions.selectors import get_listing_comments
 
 
@@ -126,5 +127,54 @@ class TestCommentModel:
         )
 
         assert str(comment) == comment.content[:20]
+
+
+class TestListingBehaviorModels:
+    """商品收藏和浏览历史模型基础行为测试。"""
+
+    def test_favorite_links_user_and_listing_once(self, comment_context):
+        favorite = ListingFavorite.objects.create(
+            user=comment_context["buyer"],
+            listing=comment_context["listing"],
+        )
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            ListingFavorite.objects.create(
+                user=comment_context["buyer"],
+                listing=comment_context["listing"],
+            )
+
+        assert str(favorite) == f"{comment_context['buyer']} 收藏 {comment_context['listing']}"
+        assert list(ListingFavorite.objects.all()) == [favorite]
+
+    def test_view_history_links_user_and_listing_once(self, comment_context):
+        history = ListingViewHistory.objects.create(
+            user=comment_context["buyer"],
+            listing=comment_context["listing"],
+        )
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            ListingViewHistory.objects.create(
+                user=comment_context["buyer"],
+                listing=comment_context["listing"],
+            )
+
+        assert str(history) == f"{comment_context['buyer']} 浏览 {comment_context['listing']}"
+        assert list(ListingViewHistory.objects.all()) == [history]
+
+    def test_behavior_records_are_removed_with_user_or_listing(self, comment_context):
+        favorite = ListingFavorite.objects.create(
+            user=comment_context["buyer"],
+            listing=comment_context["listing"],
+        )
+        history = ListingViewHistory.objects.create(
+            user=comment_context["buyer"],
+            listing=comment_context["listing"],
+        )
+
+        comment_context["listing"].delete()
+
+        assert ListingFavorite.objects.filter(pk=favorite.pk).exists() is False
+        assert ListingViewHistory.objects.filter(pk=history.pk).exists() is False
 
 

@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, AlertCircle, MessageCircle } from 'lucide-react';
-import { getListingDetail } from '../../api/endpoints/listings';
+import { ArrowLeft, AlertCircle, Heart, MessageCircle } from 'lucide-react';
+import {
+  favoriteListing,
+  getListingDetail,
+  unfavoriteListing,
+} from '../../api/endpoints/listings';
 import {
   getListingComments,
   createListingComment,
@@ -50,6 +54,7 @@ export const ListingDetail: React.FC = () => {
   // 操作反馈（替代 alert）
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [favoriteSubmitting, setFavoriteSubmitting] = useState(false);
 
   // 实体商品下单：地址选择面板
   const [showAddressPicker, setShowAddressPicker] = useState(false);
@@ -228,6 +233,30 @@ export const ListingDetail: React.FC = () => {
     }
   };
 
+  // 收藏和取消收藏商品，成功后直接更新当前详情状态。
+  const handleToggleFavorite = async () => {
+    if (!ensureLoggedIn()) return;
+    if (!listing) return;
+    // 卖家不能收藏自己发布的商品，前端同步拦截以避免无效请求。
+    if (user?.id === listing.owner.id) return;
+
+    setFavoriteSubmitting(true);
+    setActionError(null);
+    try {
+      if (listing.is_favorited) {
+        await unfavoriteListing(listing.id);
+        setListing((prev) => (prev ? { ...prev, is_favorited: false } : prev));
+      } else {
+        await favoriteListing(listing.id);
+        setListing((prev) => (prev ? { ...prev, is_favorited: true } : prev));
+      }
+    } catch (err) {
+      setActionError(getErrorMessage(err, '收藏操作失败，请稍后重试'));
+    } finally {
+      setFavoriteSubmitting(false);
+    }
+  };
+
   // 按钮登录拦截逻辑
   const handleActionIntercept = (actionType: 'buy' | 'message') => {
     if (!ensureLoggedIn()) return;
@@ -386,6 +415,20 @@ export const ListingDetail: React.FC = () => {
                 <AlertCircle size={18} />
                 <span>{actionError}</span>
               </div>
+            )}
+
+            {!isOwner && (
+              <Button
+                onClick={handleToggleFavorite}
+                variant={listing.is_favorited ? 'secondary' : 'outline'}
+                size="lg"
+                fullWidth
+                loading={favoriteSubmitting}
+                className={listing.is_favorited ? 'detail-favorite-btn active' : 'detail-favorite-btn'}
+              >
+                <Heart size={18} fill={listing.is_favorited ? 'currentColor' : 'none'} />
+                {listing.is_favorited ? '已收藏' : '收藏商品'}
+              </Button>
             )}
 
             {isOwner ? (

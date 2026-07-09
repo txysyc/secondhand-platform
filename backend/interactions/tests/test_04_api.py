@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from catalog.models import Category, Listing
 from interactions.admin import CommentAdmin, ReplyStatusFilter
-from interactions.models import Comment
+from interactions.models import Comment, ListingFavorite, ListingViewHistory
 from interactions.selectors import get_listing_comments
 
 
@@ -291,3 +291,169 @@ class TestInteractionsApi:
         )
 
         assert response.status_code == 404
+
+    def test_favorite_listing_requires_login_and_creates_favorite(
+        self,
+        api_client,
+        auth_headers,
+        interactions_api_context,
+    ):
+        guest_response = api_client.post(
+            reverse(
+                "api:listing_favorite",
+                kwargs={"listing_id": interactions_api_context["listing"].id},
+            )
+        )
+        user_response = api_client.post(
+            reverse(
+                "api:listing_favorite",
+                kwargs={"listing_id": interactions_api_context["listing"].id},
+            ),
+            **auth_headers(interactions_api_context["buyer"]),
+        )
+        repeat_response = api_client.post(
+            reverse(
+                "api:listing_favorite",
+                kwargs={"listing_id": interactions_api_context["listing"].id},
+            ),
+            **auth_headers(interactions_api_context["buyer"]),
+        )
+
+        assert guest_response.status_code == 401
+        assert user_response.status_code == 201
+        assert user_response.json()["is_favorited"] is True
+        assert repeat_response.status_code == 201
+        assert ListingFavorite.objects.count() == 1
+
+    def test_owner_cannot_favorite_own_listing(
+        self,
+        api_client,
+        auth_headers,
+        interactions_api_context,
+    ):
+        """卖家不能收藏自己发布的商品。"""
+
+        response = api_client.post(
+            reverse(
+                "api:listing_favorite",
+                kwargs={"listing_id": interactions_api_context["listing"].id},
+            ),
+            **auth_headers(interactions_api_context["seller"]),
+        )
+
+        assert response.status_code == 403
+        assert response.json()["message"] == "不能收藏自己发布的商品"
+        assert ListingFavorite.objects.count() == 0
+
+    def test_unfavorite_listing_is_idempotent(
+        self,
+        api_client,
+        auth_headers,
+        interactions_api_context,
+    ):
+        ListingFavorite.objects.create(
+            user=interactions_api_context["buyer"],
+            listing=interactions_api_context["listing"],
+        )
+
+        first_response = api_client.delete(
+            reverse(
+                "api:listing_favorite",
+                kwargs={"listing_id": interactions_api_context["listing"].id},
+            ),
+            **auth_headers(interactions_api_context["buyer"]),
+        )
+        second_response = api_client.delete(
+            reverse(
+                "api:listing_favorite",
+                kwargs={"listing_id": interactions_api_context["listing"].id},
+            ),
+            **auth_headers(interactions_api_context["buyer"]),
+        )
+
+        assert first_response.status_code == 204
+        assert second_response.status_code == 204
+        assert ListingFavorite.objects.count() == 0
+
+    def test_favorite_hidden_listing_returns_404(
+        self,
+        api_client,
+        auth_headers,
+        interactions_api_context,
+    ):
+        hidden = interactions_api_context["create_listing"](
+            status=Listing.Status.DRAFT,
+            published_at=None,
+        )
+
+        response = api_client.post(
+            reverse("api:listing_favorite", kwargs={"listing_id": hidden.id}),
+            **auth_headers(interactions_api_context["buyer"]),
+        )
+
+        assert response.status_code == 404
+        assert ListingFavorite.objects.count() == 0
+
+    def test_my_favorites_returns_paginated_visible_listing(
+        self,
+        api_client,
+        auth_headers,
+        interactions_api_context,
+    ):
+        hidden = interactions_api_context["create_listing"](
+            title="隐藏收藏",
+            status=Listing.Status.DRAFT,
+            published_at=None,
+        )
+        favorite = ListingFavorite.objects.create(
+            user=interactions_api_context["buyer"],
+            listing=interactions_api_context["listing"],
+        )
+        ListingFavorite.objects.create(
+            user=interactions_api_context["buyer"],
+            listing=hidden,
+        )
+
+        response = api_client.get(
+            reverse("api:my_favorites"),
+            {"page_size": "999"},
+            **auth_headers(interactions_api_context["buyer"]),
+        )
+
+        body = response.json()
+        assert response.status_code == 200
+        assert body["page_size"] == 50
+        assert body["count"] == 1
+        assert body["results"][0]["id"] == favorite.id
+        assert body["results"][0]["listing"]["is_favorited"] is True
+
+    def test_my_browse_history_returns_paginated_visible_listing(
+        self,
+        api_client,
+        auth_headers,
+        interactions_api_context,
+    ):
+        hidden = interactions_api_context["create_listing"](
+            title="隐藏历史",
+            status=Listing.Status.DRAFT,
+            published_at=None,
+        )
+        history = ListingViewHistory.objects.create(
+            user=interactions_api_context["buyer"],
+            listing=interactions_api_context["listing"],
+        )
+        ListingViewHistory.objects.create(
+            user=interactions_api_context["buyer"],
+            listing=hidden,
+        )
+
+        response = api_client.get(
+            reverse("api:my_browse_history"),
+            **auth_headers(interactions_api_context["buyer"]),
+        )
+
+        body = response.json()
+        assert response.status_code == 200
+        assert body["count"] == 1
+        assert body["results"][0]["id"] == history.id
+        assert body["results"][0]["listing"]["title"] == interactions_api_context["listing"].title

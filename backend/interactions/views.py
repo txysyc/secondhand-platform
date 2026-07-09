@@ -6,12 +6,29 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from api.mixins import PageNumberPaginationMixin
 from catalog.selectors import get_visible_listing_detail_queryset
 from interactions.permissions import IsCommentAuthor
-from interactions.serializers import CommentSerializer, CommentWriteSerializer
+from interactions.serializers import (
+    CommentSerializer,
+    CommentWriteSerializer,
+    FavoriteStateSerializer,
+    ListingFavoriteSerializer,
+    ListingViewHistorySerializer,
+)
 from interactions.models import Comment
-from interactions.selectors import get_listing_comments
-from interactions.services import create_comment, create_reply, delete_comment
+from interactions.selectors import (
+    get_listing_comments,
+    get_user_favorite_items,
+    get_user_view_history_items,
+)
+from interactions.services import (
+    create_comment,
+    create_reply,
+    delete_comment,
+    favorite_listing,
+    unfavorite_listing,
+)
 
 
 class _VisibleListingMixin:
@@ -103,4 +120,45 @@ class CommentDeleteApiView(_VisibleListingMixin, APIView):
         comment = self.get_object(request, comment_id)
         delete_comment(request.user, comment)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ListingFavoriteApiView(_VisibleListingMixin, APIView):
+    """商品收藏与取消收藏。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, listing_id):
+        listing = self.get_visible_listing_or_404(request, listing_id)
+        favorite_listing(request.user, listing)
+        serializer = FavoriteStateSerializer(
+            {"listing_id": listing.id, "is_favorited": True}
+        )
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, listing_id):
+        self.get_visible_listing_or_404(request, listing_id)
+        unfavorite_listing(request.user, listing_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MyFavoriteListApiView(PageNumberPaginationMixin, APIView):
+    """当前用户的商品收藏列表。"""
+
+    permission_classes = [IsAuthenticated]
+    max_page_size = 50
+
+    def get(self, request):
+        queryset = get_user_favorite_items(request.user)
+        return self.paginate(request, queryset, ListingFavoriteSerializer)
+
+
+class MyViewHistoryListApiView(PageNumberPaginationMixin, APIView):
+    """当前用户的浏览历史列表。"""
+
+    permission_classes = [IsAuthenticated]
+    max_page_size = 50
+
+    def get(self, request):
+        queryset = get_user_view_history_items(request.user)
+        return self.paginate(request, queryset, ListingViewHistorySerializer)
 

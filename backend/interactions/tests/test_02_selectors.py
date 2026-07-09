@@ -10,8 +10,13 @@ from django.utils import timezone
 
 from catalog.models import Category, Listing
 from interactions.admin import CommentAdmin, ReplyStatusFilter
-from interactions.models import Comment
-from interactions.selectors import get_listing_comments
+from interactions.models import Comment, ListingFavorite, ListingViewHistory
+from interactions.selectors import (
+    annotate_listings_with_favorite_status,
+    get_listing_comments,
+    get_user_favorite_items,
+    get_user_view_history_items,
+)
 
 
 pytestmark = pytest.mark.django_db
@@ -168,5 +173,88 @@ class TestCommentSelector:
 
         assert comments == [first, second]
         assert list(comments[0].replies.all()) == [first_reply, second_reply]
+
+
+class TestListingBehaviorSelectors:
+    """商品收藏和浏览历史读取查询测试。"""
+
+    def test_annotate_listings_with_favorite_status_marks_current_user(self, comment_context):
+        ListingFavorite.objects.create(
+            user=comment_context["buyer"],
+            listing=comment_context["listing"],
+        )
+
+        queryset = annotate_listings_with_favorite_status(
+            Listing.objects.order_by("id"),
+            comment_context["buyer"],
+        )
+        items = list(queryset)
+
+        assert items[0].is_favorited is True
+        assert items[1].is_favorited is False
+
+    def test_user_favorite_items_return_only_current_user_and_visible_listing(
+        self,
+        comment_context,
+    ):
+        hidden = comment_context["create_listing"](
+            title="不可见收藏",
+            status=Listing.Status.DRAFT,
+            published_at=None,
+        )
+        favorite = ListingFavorite.objects.create(
+            user=comment_context["buyer"],
+            listing=comment_context["listing"],
+        )
+        ListingFavorite.objects.create(
+            user=comment_context["other_user"],
+            listing=comment_context["other_listing"],
+        )
+        ListingFavorite.objects.create(user=comment_context["buyer"], listing=hidden)
+
+        favorites = list(get_user_favorite_items(comment_context["buyer"]))
+
+        assert favorites == [favorite]
+        assert favorites[0].listing.is_favorited is True
+
+    def test_user_view_history_items_return_only_current_user_and_visible_listing(
+        self,
+        comment_context,
+    ):
+        hidden = comment_context["create_listing"](
+            title="不可见历史",
+            status=Listing.Status.DRAFT,
+            published_at=None,
+        )
+        history = ListingViewHistory.objects.create(
+            user=comment_context["buyer"],
+            listing=comment_context["listing"],
+        )
+        ListingViewHistory.objects.create(
+            user=comment_context["other_user"],
+            listing=comment_context["other_listing"],
+        )
+        ListingViewHistory.objects.create(user=comment_context["buyer"], listing=hidden)
+
+        history_items = list(get_user_view_history_items(comment_context["buyer"]))
+
+        assert history_items == [history]
+        assert history_items[0].listing.is_favorited is False
+
+    def test_behavior_selectors_prefetch_listing_summary_data(
+        self,
+        comment_context,
+        django_assert_num_queries,
+    ):
+        ListingFavorite.objects.create(
+            user=comment_context["buyer"],
+            listing=comment_context["listing"],
+        )
+        favorites = list(get_user_favorite_items(comment_context["buyer"]))
+
+        with django_assert_num_queries(0):
+            assert favorites[0].listing.category.name == "留言分类"
+            assert favorites[0].listing.owner.profile.nickname == "公开卖家昵称"
+            assert list(favorites[0].listing.images.all()) == []
 
 

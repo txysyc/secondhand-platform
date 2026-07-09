@@ -9,7 +9,6 @@ export const MY_LISTING_STATUS_OPTIONS = [
   { value: 'draft', label: '草稿' },
   { value: 'active', label: '在售' },
   { value: 'reserved', label: '交易占用' },
-  { value: 'sold', label: '已售出' },
   { value: 'withdrawn', label: '已下架' },
 ];
 

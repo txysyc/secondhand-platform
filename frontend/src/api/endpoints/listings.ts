@@ -1,5 +1,11 @@
 import { apiClient } from '../client';
-import type { Category, Listing, PaginatedResponse } from '../../types/listings';
+import type {
+  BrowseHistoryItem,
+  Category,
+  FavoriteItem,
+  Listing,
+  PaginatedResponse,
+} from '../../types/listings';
 
 export interface ListingFilterParams {
   q?: string;
@@ -51,6 +57,40 @@ export const getListings = async (
  */
 export const getListingDetail = async (id: string | number): Promise<Listing> => {
   return apiClient.get(`/listings/${id}/`);
+};
+
+/**
+ * 收藏指定商品
+ */
+export const favoriteListing = async (
+  id: string | number
+): Promise<{ listing_id: number; is_favorited: boolean }> => {
+  return apiClient.post(`/listings/${id}/favorite/`);
+};
+
+/**
+ * 取消收藏指定商品
+ */
+export const unfavoriteListing = async (id: string | number): Promise<void> => {
+  return apiClient.delete(`/listings/${id}/favorite/`);
+};
+
+/**
+ * 获取当前登录用户的收藏商品列表
+ */
+export const getMyFavorites = async (
+  params?: { page?: string | number; page_size?: string | number }
+): Promise<PaginatedResponse<FavoriteItem>> => {
+  return apiClient.get('/my/favorites/', { params: params as ListingQueryParams });
+};
+
+/**
+ * 获取当前登录用户的浏览历史列表
+ */
+export const getBrowseHistory = async (
+  params?: { page?: string | number; page_size?: string | number }
+): Promise<PaginatedResponse<BrowseHistoryItem>> => {
+  return apiClient.get('/my/browse-history/', { params: params as ListingQueryParams });
 };
 
 /**

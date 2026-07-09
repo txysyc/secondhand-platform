@@ -29,6 +29,7 @@ from catalog.services import (
     delete_listing,
     publish_listing,
 )
+from interactions.models import ListingFavorite, ListingViewHistory
 from users.models import User
 
 
@@ -147,6 +148,35 @@ class TestCatalogApi:
         assert ok_response.status_code == 200
         assert ok_response.json()["title"] == "详情商品"
         assert hidden_response.status_code == 404
+
+    def test_detail_returns_favorite_state_and_records_view_history(self):
+        buyer = User.objects.create_user(
+            username="favbuyer",
+            email="favoritebuyer@example.com",
+            password="StrongPass123",
+        )
+        listing = self.create_listing(title="收藏详情")
+        ListingFavorite.objects.create(user=buyer, listing=listing)
+
+        response = self.api_client.get(
+            reverse("api:catalog_listing_detail", kwargs={"pk": listing.id}),
+            **self.auth_headers(buyer),
+        )
+
+        assert response.status_code == 200
+        assert response.json()["is_favorited"] is True
+        assert ListingViewHistory.objects.filter(user=buyer, listing=listing).exists()
+
+    def test_guest_detail_returns_not_favorited_and_does_not_record_history(self):
+        listing = self.create_listing(title="游客详情")
+
+        response = self.api_client.get(
+            reverse("api:catalog_listing_detail", kwargs={"pk": listing.id})
+        )
+
+        assert response.status_code == 200
+        assert response.json()["is_favorited"] is False
+        assert ListingViewHistory.objects.count() == 0
 
     def test_paid_buyer_and_seller_can_view_reserved_or_sold_detail(self):
         buyer = User.objects.create_user(
@@ -274,6 +304,11 @@ class TestCatalogApi:
             status=Listing.Status.ACTIVE,
             price=Decimal("88.00"),
         )
+        sold = self.create_listing(
+            title="已成交蓝牙耳机",
+            status=Listing.Status.SOLD,
+            price=Decimal("88.00"),
+        )
 
         response = self.api_client.get(
             reverse("api:catalog_my_listings"),
@@ -295,6 +330,29 @@ class TestCatalogApi:
         assert wrong_status.id not in ids
         assert too_expensive.id not in ids
         assert other_owner.id not in ids
+        assert sold.id not in ids
+
+    def test_my_listing_list_excludes_sold_listing_and_rejects_sold_filter(self):
+        """我的商品管理不展示已售出商品，也不接受已售出状态筛选。"""
+
+        active = self.create_listing(title="可管理商品", status=Listing.Status.ACTIVE)
+        sold = self.create_listing(title="已成交商品", status=Listing.Status.SOLD)
+
+        list_response = self.api_client.get(
+            reverse("api:catalog_my_listings"),
+            **self.auth_headers(self.seller),
+        )
+        sold_filter_response = self.api_client.get(
+            reverse("api:catalog_my_listings"),
+            {"status": Listing.Status.SOLD},
+            **self.auth_headers(self.seller),
+        )
+
+        ids = [item["id"] for item in list_response.json()["results"]]
+        assert list_response.status_code == 200
+        assert active.id in ids
+        assert sold.id not in ids
+        assert sold_filter_response.status_code == 400
 
     def test_my_listing_list_invalid_filter_and_page_size_cap(self):
         for index in range(55):

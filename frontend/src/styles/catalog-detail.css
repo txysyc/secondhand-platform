@@ -228,3 +228,9 @@
   gap: 14px;
 }
 
+.detail-favorite-btn.active {
+  color: var(--price-color);
+  border-color: rgba(239, 68, 68, 0.28);
+  background-color: rgba(254, 242, 242, 0.9);
+}
+

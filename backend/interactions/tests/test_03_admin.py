@@ -9,8 +9,13 @@ from django.urls import reverse
 from django.utils import timezone
 
 from catalog.models import Category, Listing
-from interactions.admin import CommentAdmin, ReplyStatusFilter
-from interactions.models import Comment
+from interactions.admin import (
+    CommentAdmin,
+    ListingFavoriteAdmin,
+    ListingViewHistoryAdmin,
+    ReplyStatusFilter,
+)
+from interactions.models import Comment, ListingFavorite, ListingViewHistory
 from interactions.selectors import get_listing_comments
 
 
@@ -162,5 +167,29 @@ class TestCommentAdmin:
         response = client.get(reverse("admin:interactions_comment_changelist"))
 
         assert response.status_code in [302, 403]
+
+
+class TestListingBehaviorAdmin:
+    """商品收藏和浏览历史后台配置测试。"""
+
+    def test_listing_behavior_models_registered_to_admin_site(self):
+        assert isinstance(site._registry[ListingFavorite], ListingFavoriteAdmin)
+        assert isinstance(site._registry[ListingViewHistory], ListingViewHistoryAdmin)
+
+    def test_listing_favorite_admin_exposes_required_config(self):
+        favorite_admin = site._registry[ListingFavorite]
+
+        assert favorite_admin.list_display == ["user", "listing", "created_at"]
+        assert favorite_admin.readonly_fields == ["user", "listing", "created_at"]
+        assert favorite_admin.search_fields == ["user__username", "listing__title"]
+        assert favorite_admin.list_select_related == ["user", "listing"]
+
+    def test_listing_view_history_admin_exposes_required_config(self):
+        history_admin = site._registry[ListingViewHistory]
+
+        assert history_admin.list_display == ["user", "listing", "viewed_at"]
+        assert history_admin.readonly_fields == ["user", "listing", "viewed_at"]
+        assert history_admin.search_fields == ["user__username", "listing__title"]
+        assert history_admin.list_select_related == ["user", "listing"]
 
 

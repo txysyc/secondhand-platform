@@ -9,6 +9,7 @@ import { ProfileEdit } from '../features/users/ProfileEdit';
 import { PublicProfile } from '../features/users/PublicProfile';
 import { AddressManager } from '../features/users/AddressManager';
 import { MyListings } from '../features/catalog/MyListings';
+import { BrowseHistory, MyFavorites } from '../features/catalog/ListingBehaviorList';
 import { ListingForm } from '../features/catalog/ListingForm';
 import { OrderList } from '../features/orders/OrderList';
 import { OrderDetail } from '../features/orders/OrderDetail';
@@ -103,6 +104,22 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute>
             <ListingForm />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'me/favorites',
+        element: (
+          <ProtectedRoute>
+            <MyFavorites />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'me/history',
+        element: (
+          <ProtectedRoute>
+            <BrowseHistory />
           </ProtectedRoute>
         ),
       },

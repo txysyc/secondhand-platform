@@ -182,9 +182,16 @@ class MyListingFilterForm(forms.Form):
 class MyListingFilterSet(django_filters.FilterSet):
     """当前用户自己的商品管理列表筛选参数。"""
 
+    # 我的商品管理列表不展示已售出商品，因此筛选项同步排除 sold。
+    MANAGEABLE_STATUS_CHOICES = [
+        status_choice
+        for status_choice in Listing.Status.choices
+        if status_choice[0] != Listing.Status.SOLD
+    ]
+
     q = django_filters.CharFilter(method="filter_q", required=False)
     status = django_filters.ChoiceFilter(
-        choices=Listing.Status.choices,
+        choices=MANAGEABLE_STATUS_CHOICES,
         required=False,
     )
     category = django_filters.ModelChoiceFilter(

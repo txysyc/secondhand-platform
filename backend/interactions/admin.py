@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from interactions.models import Comment
+from interactions.models import Comment, ListingFavorite, ListingViewHistory
 
 
 class ReplyStatusFilter(admin.SimpleListFilter):
@@ -62,3 +62,25 @@ class CommentAdmin(admin.ModelAdmin):
         """判断当前留言是否为回复。"""
 
         return obj.parent is not None
+
+
+@admin.register(ListingFavorite)
+class ListingFavoriteAdmin(admin.ModelAdmin):
+    """商品收藏后台管理配置。"""
+
+    list_display = ["user", "listing", "created_at"]
+    readonly_fields = ["user", "listing", "created_at"]
+    search_fields = ["user__username", "listing__title"]
+    list_filter = ["created_at", "listing"]
+    list_select_related = ["user", "listing"]
+
+
+@admin.register(ListingViewHistory)
+class ListingViewHistoryAdmin(admin.ModelAdmin):
+    """浏览历史后台管理配置。"""
+
+    list_display = ["user", "listing", "viewed_at"]
+    readonly_fields = ["user", "listing", "viewed_at"]
+    search_fields = ["user__username", "listing__title"]
+    list_filter = ["viewed_at", "listing"]
+    list_select_related = ["user", "listing"]

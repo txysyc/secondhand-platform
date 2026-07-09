@@ -33,6 +33,8 @@ export interface Listing {
   updated_at: string;
   published_at: string | null;
   images: ListingImage[];
+  // 当前登录用户是否已收藏该商品，游客固定为 false。
+  is_favorited: boolean;
 
   // 实体商品特有字段
   condition: ItemCondition | null;
@@ -50,4 +52,16 @@ export interface PaginatedResponse<T> {
   previous: string | null;
   page_size?: number;
   results: T[];
+}
+
+export interface FavoriteItem {
+  id: number;
+  created_at: string;
+  listing: Listing;
+}
+
+export interface BrowseHistoryItem {
+  id: number;
+  viewed_at: string;
+  listing: Listing;
 }

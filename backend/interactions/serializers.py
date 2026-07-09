@@ -2,7 +2,9 @@
 
 from rest_framework import serializers
 
+from catalog.serializers import ListingDetailSerializer
 from interactions.models import Comment
+from interactions.models import ListingFavorite, ListingViewHistory
 from users.models import Profile, User
 
 
@@ -72,3 +74,30 @@ class CommentSerializer(serializers.ModelSerializer):
             return []
         queryset = replies.all()
         return CommentSerializer(queryset, many=True, context=self.context).data
+
+
+class FavoriteStateSerializer(serializers.Serializer):
+    """商品收藏操作响应。"""
+
+    listing_id = serializers.IntegerField()
+    is_favorited = serializers.BooleanField()
+
+
+class ListingFavoriteSerializer(serializers.ModelSerializer):
+    """我的收藏列表响应。"""
+
+    listing = ListingDetailSerializer(read_only=True)
+
+    class Meta:
+        model = ListingFavorite
+        fields = ["id", "created_at", "listing"]
+
+
+class ListingViewHistorySerializer(serializers.ModelSerializer):
+    """我的浏览历史列表响应。"""
+
+    listing = ListingDetailSerializer(read_only=True)
+
+    class Meta:
+        model = ListingViewHistory
+        fields = ["id", "viewed_at", "listing"]

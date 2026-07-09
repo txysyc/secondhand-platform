@@ -10,6 +10,8 @@ import {
   User,
   LogOut,
   ChevronDown,
+  Clock,
+  Heart,
   MapPin,
 } from 'lucide-react';
 import { useAuth } from './providers';
@@ -151,6 +153,24 @@ export const Layout: React.FC = () => {
                     >
                       <User size={16} />
                       个人中心
+                    </Link>
+                    <Link
+                      to="/me/favorites"
+                      className="user-dropdown-item"
+                      onClick={() => setDropdownOpen(false)}
+                      role="menuitem"
+                    >
+                      <Heart size={16} />
+                      我的收藏
+                    </Link>
+                    <Link
+                      to="/me/history"
+                      className="user-dropdown-item"
+                      onClick={() => setDropdownOpen(false)}
+                      role="menuitem"
+                    >
+                      <Clock size={16} />
+                      浏览历史
                     </Link>
                     <Link
                       to="/me/addresses"

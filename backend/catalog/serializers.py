@@ -110,6 +110,7 @@ class ListingDetailSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
     owner = ListingOwnerSerializer(read_only=True)
     images = ListingImageSerializer(many=True, read_only=True)
+    is_favorited = serializers.SerializerMethodField()
     item_type_display = serializers.CharField(source="get_item_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     condition_display = serializers.CharField(
@@ -144,7 +145,13 @@ class ListingDetailSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "images",
+            "is_favorited",
         ]
+
+    def get_is_favorited(self, obj):
+        """返回当前请求用户是否已收藏该商品。"""
+
+        return bool(getattr(obj, "is_favorited", False))
 
 
 class ListingImageUploadSerializer(serializers.Serializer):

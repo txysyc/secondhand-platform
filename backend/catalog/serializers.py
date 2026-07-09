@@ -147,52 +147,6 @@ class ListingDetailSerializer(serializers.ModelSerializer):
         ]
 
 
-class ListingFilterSerializer(serializers.Serializer):
-    """公开商品列表筛选参数。"""
-
-    q = serializers.CharField(required=False, allow_blank=True)
-    category = serializers.PrimaryKeyRelatedField(
-        queryset=Category.objects.none(), required=False, allow_null=True
-    )
-    item_type = serializers.ChoiceField(
-        choices=Listing.ItemType.choices, required=False, allow_blank=True
-    )
-    min_price = serializers.DecimalField(
-        max_digits=8, decimal_places=2, required=False
-    )
-    max_price = serializers.DecimalField(
-        max_digits=8, decimal_places=2, required=False
-    )
-    sort = serializers.ChoiceField(
-        choices=[
-            ("newest", "newest"),
-            ("oldest", "oldest"),
-            ("price_asc", "price_asc"),
-            ("price_desc", "price_desc"),
-        ],
-        required=False,
-        allow_blank=True,
-    )
-    page = serializers.IntegerField(required=False, min_value=1)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # 筛选参数中的分类也限定为启用分类，避免公开列表暴露停用分类商品。
-        self.fields["category"].queryset = get_active_categories()
-
-    def validate_q(self, value):
-        return value.strip()
-
-    def validate(self, attrs):
-        min_price = attrs.get("min_price")
-        max_price = attrs.get("max_price")
-        if min_price is not None and max_price is not None and max_price < min_price:
-            raise serializers.ValidationError(
-                {"max_price": "最高价格不得低于最低价格"}
-            )
-        return attrs
-
-
 class ListingImageUploadSerializer(serializers.Serializer):
     """商品图片上传参数。"""
 

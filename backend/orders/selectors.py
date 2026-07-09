@@ -22,7 +22,7 @@ def get_buyer_orders(user):
     return (
         get_order_queryset()
         .filter(buyer=user)
-        .order_by("-created_at")
+        .order_by("-created_at", "-id")
     )
 
 
@@ -34,8 +34,23 @@ def get_seller_orders(user):
     return (
         get_order_queryset()
         .filter(seller=user)
-        .order_by("-created_at")
+        .order_by("-created_at", "-id")
     )
+
+
+def apply_order_list_sort(queryset, sort: str | None):
+    """按订单列表允许的排序白名单处理排序参数。"""
+
+    # 排序字段保持白名单匹配，避免把请求参数直接拼进 order_by。
+    match sort:
+        case "oldest":
+            return queryset.order_by("created_at", "id")
+        case "price_asc":
+            return queryset.order_by("order_price", "id")
+        case "price_desc":
+            return queryset.order_by("-order_price", "-id")
+        case _:
+            return queryset.order_by("-created_at", "-id")
 
 
 def get_order_viewer_role(order, user):

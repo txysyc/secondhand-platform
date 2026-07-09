@@ -14,6 +14,22 @@ class Order(models.Model):
             models.Index(fields=["seller", "status"]),
             models.Index(fields=["listing", "status"]),
             models.Index(fields=["status", "payment_deadline"]),
+            # 买家订单列表默认按创建时间倒序展示。
+            models.Index(fields=["buyer", "-created_at"], name="order_buyer_created_idx"),
+            # 卖家订单列表默认按创建时间倒序展示。
+            models.Index(fields=["seller", "-created_at"], name="order_seller_created_idx"),
+            # 买家订单状态筛选会叠加创建时间排序。
+            models.Index(
+                fields=["buyer", "status", "-created_at"],
+                name="order_buyer_status_idx",
+            ),
+            # 卖家订单状态筛选会叠加创建时间排序。
+            models.Index(
+                fields=["seller", "status", "-created_at"],
+                name="order_seller_status_idx",
+            ),
+            # 订单价格区间筛选和价格排序共用单列索引。
+            models.Index(fields=["order_price"], name="order_price_idx"),
         ]
 
     class OrderStatus(models.TextChoices):

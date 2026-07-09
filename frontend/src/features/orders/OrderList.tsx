@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { getBuyerOrders, getSellerOrders } from '../../api/endpoints/orders';
 import { useAuth } from '../../app/providers';
 import { resolveMediaUrl } from '../../utils/media';
@@ -8,64 +8,144 @@ import { Badge } from '../../components/ui/Badge';
 import { Loading } from '../../components/ui/Loading';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState } from '../../components/ui/ErrorState';
-import { Package, BookOpen, Shirt, CircleDot } from 'lucide-react';
+import { Button, Input, Select } from '../../components/ui';
+import { Package, BookOpen, Shirt, CircleDot, Search } from 'lucide-react';
 import type { Order } from '../../types/orders';
+
+const ORDER_PAGE_SIZE = 10;
+
+const ORDER_STATUS_OPTIONS = [
+  { value: 'all', label: '全部状态' },
+  { value: 'pending_payment', label: '待支付' },
+  { value: 'cancelled', label: '已取消' },
+  { value: 'awaiting_shipment', label: '待发货' },
+  { value: 'awaiting_receipt', label: '待收货' },
+  { value: 'signed', label: '已签收' },
+  { value: 'completed', label: '已完成' },
+];
+
+const ORDER_SORT_OPTIONS = [
+  { value: 'newest', label: '最新创建' },
+  { value: 'oldest', label: '最早创建' },
+  { value: 'price_asc', label: '金额从低到高' },
+  { value: 'price_desc', label: '金额从高到低' },
+];
 
 export const OrderList: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
 
-  // 根据当前路径判断是“我买到的” (buyer) 还是“我卖出的” (seller)
+  // 根据当前路径判断是“我买到的”还是“我卖出的”。
   const isSellerTab = location.pathname.includes('/orders/seller');
 
   const [orders, setOrders] = useState<Order[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // 加载订单列表（用于错误重试与手动刷新）
+  // URL 参数是订单列表筛选和分页的唯一来源，刷新页面后仍能恢复状态。
+  const query = searchParams.get('q') || '';
+  const status = searchParams.get('status') || 'all';
+  const minPrice = searchParams.get('min_price') || '';
+  const maxPrice = searchParams.get('max_price') || '';
+  const createdAfter = searchParams.get('created_after') || '';
+  const createdBefore = searchParams.get('created_before') || '';
+  const sort = searchParams.get('sort') || 'newest';
+  const currentPage = parseInt(searchParams.get('page') || '1', 10);
+
+  const [searchText, setSearchText] = useState(query);
+  const [tempMinPrice, setTempMinPrice] = useState(minPrice);
+  const [tempMaxPrice, setTempMaxPrice] = useState(maxPrice);
+  const [tempCreatedAfter, setTempCreatedAfter] = useState(createdAfter);
+  const [tempCreatedBefore, setTempCreatedBefore] = useState(createdBefore);
+
+  const buildApiParams = () => ({
+    q: query || undefined,
+    status: status !== 'all' ? status : undefined,
+    min_price: minPrice || undefined,
+    max_price: maxPrice || undefined,
+    created_after: createdAfter || undefined,
+    created_before: createdBefore || undefined,
+    sort,
+    page: currentPage,
+    page_size: ORDER_PAGE_SIZE,
+  });
+
+  // 加载订单列表（用于错误重试与 URL 参数变化后的自动刷新）。
   const fetchOrders = async () => {
     setLoading(true);
     setErrorMsg('');
     try {
-      const data = isSellerTab ? await getSellerOrders() : await getBuyerOrders();
+      const data = isSellerTab
+        ? await getSellerOrders(buildApiParams())
+        : await getBuyerOrders(buildApiParams());
       setOrders(data.results);
+      setTotalCount(data.count);
     } catch (err) {
-      console.error(`无法加载订单列表:`, err);
+      console.error('无法加载订单列表:', err);
       setErrorMsg('获取订单列表失败，请检查网络连接。');
     } finally {
       setLoading(false);
     }
   };
 
+  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
-    let cancel = false;
+    fetchOrders();
+  }, [isSellerTab, user, query, status, minPrice, maxPrice, createdAfter, createdBefore, sort, currentPage]);
+  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
-    Promise.resolve()
-      .then(() => {
-        if (cancel) return;
-        setLoading(true);
-        setErrorMsg('');
-        return isSellerTab ? getSellerOrders() : getBuyerOrders();
-      })
-      .then((data) => {
-        if (data && !cancel) setOrders(data.results);
-      })
-      .catch((err) => {
-        if (cancel) return;
-        console.error('无法加载订单列表:', err);
-        setErrorMsg('获取订单列表失败，请检查网络连接。');
-      })
-      .finally(() => {
-        if (!cancel) setLoading(false);
-      });
-
-    return () => {
-      cancel = true;
-    };
-  }, [isSellerTab, user]);
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    setSearchText(query);
+    setTempMinPrice(minPrice);
+    setTempMaxPrice(maxPrice);
+    setTempCreatedAfter(createdAfter);
+    setTempCreatedBefore(createdBefore);
+  }, [query, minPrice, maxPrice, createdAfter, createdBefore]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const orderList = orders;
+  const totalPages = Math.ceil(totalCount / ORDER_PAGE_SIZE);
+  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
+
+  // 更新筛选参数时默认回到第一页，避免旧页码造成空结果。
+  const updateQueryParam = (newParams: Record<string, string | number | null>) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (!('page' in newParams)) {
+      nextParams.set('page', '1');
+    }
+    Object.entries(newParams).forEach(([key, value]) => {
+      if (value === null || value === '' || value === 'all') {
+        nextParams.delete(key);
+      } else {
+        nextParams.set(key, String(value));
+      }
+    });
+    setSearchParams(nextParams);
+  };
+
+  const handleFilterSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    updateQueryParam({
+      q: searchText,
+      min_price: tempMinPrice,
+      max_price: tempMaxPrice,
+      created_after: tempCreatedAfter,
+      created_before: tempCreatedBefore,
+    });
+  };
+
+  const clearFilters = () => {
+    setSearchParams(new URLSearchParams());
+  };
+
+  const navigateOrderTab = (path: string) => {
+    const queryString = searchParams.toString();
+    navigate(queryString ? `${path}?${queryString}` : path);
+  };
 
   const getOrderImageUrl = (order: Order) => {
     if (order.listing_image_snapshot) {
@@ -77,7 +157,7 @@ export const OrderList: React.FC = () => {
     return resolveMediaUrl(firstImage?.image_url);
   };
 
-  // 商品分类占位图标
+  // 商品分类占位图标。
   const getCategoryIcon = (order: Order) => {
     const categoryId = order.listing?.category?.id;
     if (categoryId === 1) return <BookOpen size={28} />;
@@ -86,7 +166,7 @@ export const OrderList: React.FC = () => {
     return <Package size={28} />;
   };
 
-  // 订单状态 → Badge 变体映射
+  // 订单状态映射到统一 Badge 视觉。
   const getStatusVariant = (order: Order) => {
     if (order.is_expired) return 'error';
     switch (order.status) {
@@ -114,23 +194,83 @@ export const OrderList: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="orders-tabs">
         <button
           type="button"
-          onClick={() => navigate('/orders/buyer')}
+          onClick={() => navigateOrderTab('/orders/buyer')}
           className={`tab-btn ${!isSellerTab ? 'active' : ''}`}
         >
-          我买到的闲置 ({isSellerTab ? '查看' : orderList.length})
+          我买到的闲置 ({isSellerTab ? '查看' : totalCount})
         </button>
         <button
           type="button"
-          onClick={() => navigate('/orders/seller')}
+          onClick={() => navigateOrderTab('/orders/seller')}
           className={`tab-btn ${isSellerTab ? 'active' : ''}`}
         >
-          我卖出的闲置 ({isSellerTab ? orderList.length : '查看'})
+          我卖出的闲置 ({isSellerTab ? totalCount : '查看'})
         </button>
       </div>
+
+      <form className="order-filter-panel" onSubmit={handleFilterSubmit}>
+        <Input
+          id="order_search"
+          icon={<Search size={16} />}
+          label="搜索订单"
+          placeholder="订单号、商品或交易方"
+          value={searchText}
+          onChange={(event) => setSearchText(event.target.value)}
+        />
+        <Select
+          id="order_status"
+          label="订单状态"
+          options={ORDER_STATUS_OPTIONS}
+          value={status}
+          onChange={(event) => updateQueryParam({ status: event.target.value })}
+        />
+        <Select
+          id="order_sort"
+          label="排序"
+          options={ORDER_SORT_OPTIONS}
+          value={sort}
+          onChange={(event) => updateQueryParam({ sort: event.target.value })}
+        />
+        <Input
+          id="order_min_price"
+          label="最低金额"
+          type="number"
+          value={tempMinPrice}
+          onChange={(event) => setTempMinPrice(event.target.value)}
+        />
+        <Input
+          id="order_max_price"
+          label="最高金额"
+          type="number"
+          value={tempMaxPrice}
+          onChange={(event) => setTempMaxPrice(event.target.value)}
+        />
+        <Input
+          id="order_created_after"
+          label="创建起始"
+          type="datetime-local"
+          value={tempCreatedAfter}
+          onChange={(event) => setTempCreatedAfter(event.target.value)}
+        />
+        <Input
+          id="order_created_before"
+          label="创建截止"
+          type="datetime-local"
+          value={tempCreatedBefore}
+          onChange={(event) => setTempCreatedBefore(event.target.value)}
+        />
+        <div className="filter-actions-row">
+          <Button type="submit" size="sm">
+            应用筛选
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={clearFilters}>
+            清空
+          </Button>
+        </div>
+      </form>
 
       {loading ? (
         <Loading text="正在加载订单列表..." />
@@ -168,7 +308,6 @@ export const OrderList: React.FC = () => {
                 onClick={() => navigate(`/orders/${order.id}`)}
               >
                 <Card hover shadow="sm" className="order-card-inner">
-                  {/* 商品类占位图或实体首图 */}
                   <div className="order-thumb-wrapper">
                     {imageUrl ? (
                       <img
@@ -220,6 +359,38 @@ export const OrderList: React.FC = () => {
             );
           })}
         </div>
+      )}
+
+      {!loading && !errorMsg && totalPages > 1 && (
+        <nav className="pagination" aria-label="订单分页">
+          <button
+            disabled={currentPage === 1}
+            onClick={() => updateQueryParam({ page: currentPage - 1 })}
+            className="page-btn"
+            aria-label="上一页"
+          >
+            上页
+          </button>
+          {pageNumbers.map((page) => (
+            <button
+              key={page}
+              onClick={() => updateQueryParam({ page })}
+              className={`page-btn ${currentPage === page ? 'active' : ''}`}
+              aria-label={`第 ${page} 页`}
+              aria-current={currentPage === page ? 'page' : undefined}
+            >
+              {page}
+            </button>
+          ))}
+          <button
+            disabled={currentPage === totalPages}
+            onClick={() => updateQueryParam({ page: currentPage + 1 })}
+            className="page-btn"
+            aria-label="下一页"
+          >
+            下页
+          </button>
+        </nav>
       )}
     </div>
   );

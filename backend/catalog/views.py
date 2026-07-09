@@ -2,22 +2,25 @@
 
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.mixins import PageNumberPaginationMixin
+from catalog.filters import ListingFilterSet, MyListingFilterSet
 from catalog.permissions import IsListingOwner
 from catalog.serializers import (
     CategorySerializer,
     ListingDetailSerializer,
-    ListingFilterSerializer,
     ListingImageReorderSerializer,
     ListingImageUploadSerializer,
     ListingWriteSerializer,
 )
 from catalog.models import Listing
 from catalog.selectors import (
+    apply_owner_listing_sort,
+    apply_public_listing_sort,
     get_active_categories,
     get_owner_listing_queryset,
     get_public_listing_queryset,
@@ -49,11 +52,17 @@ class ListingListApiView(PageNumberPaginationMixin, APIView):
     """公开商品列表。"""
 
     permission_classes = [AllowAny]
+    max_page_size = 50
 
     def get(self, request):
-        serializer = ListingFilterSerializer(data=request.query_params)
-        serializer.is_valid(raise_exception=True)
-        queryset = get_public_listing_queryset(serializer.validated_data)
+        queryset = get_public_listing_queryset()
+        filterset = ListingFilterSet(data=request.query_params, queryset=queryset)
+        if not filterset.is_valid():
+            raise ValidationError(filterset.errors)
+        queryset = apply_public_listing_sort(
+            filterset.qs,
+            request.query_params.get("sort"),
+        )
         return self.paginate(request, queryset, ListingDetailSerializer)
 
 
@@ -81,9 +90,17 @@ class MyListingListCreateApiView(PageNumberPaginationMixin, APIView):
     """当前用户商品列表与草稿创建。"""
 
     permission_classes = [IsAuthenticated]
+    max_page_size = 50
 
     def get(self, request):
         queryset = get_owner_listing_queryset(request.user)
+        filterset = MyListingFilterSet(data=request.query_params, queryset=queryset)
+        if not filterset.is_valid():
+            raise ValidationError(filterset.errors)
+        queryset = apply_owner_listing_sort(
+            filterset.qs,
+            request.query_params.get("sort"),
+        )
         return self.paginate(request, queryset, ListingDetailSerializer)
 
     def post(self, request):

@@ -422,7 +422,7 @@ class TestMessagingApi:
         )
 
         assert list_response.status_code == 200
-        assert list_response.json()[0]["content"] == "历史消息"
+        assert list_response.json()["results"][0]["content"] == "历史消息"
         assert send_response.status_code == 201
         body = send_response.json()
         assert body["content"] == "HTTP API 私信"
@@ -448,10 +448,14 @@ class TestMessagingApi:
         )
 
         assert response.status_code == 200
-        contents = [item["content"] for item in response.json()]
+        body = response.json()
+        contents = [item["content"] for item in body["results"]]
         assert len(contents) == 20
         assert contents[0] == "历史消息 05"
         assert contents[-1] == "历史消息 24"
+        assert body["before_cursor"] is not None
+        assert body["after_cursor"] is not None
+        assert body["has_more_before"] is True
 
     def test_messages_api_returns_previous_window_before_id(
         self,
@@ -474,10 +478,13 @@ class TestMessagingApi:
         )
 
         assert response.status_code == 200
-        assert [item["content"] for item in response.json()] == [
+        body = response.json()
+        assert [item["content"] for item in body["results"]] == [
             "翻页消息 1",
             "翻页消息 2",
         ]
+        assert body["has_more_before"] is True
+        assert body["after_cursor"] == messages[2].pk
 
     def test_messages_api_returns_incremental_window_after_id(
         self,
@@ -499,10 +506,13 @@ class TestMessagingApi:
         )
 
         assert response.status_code == 200
-        assert [item["content"] for item in response.json()] == [
+        body = response.json()
+        assert [item["content"] for item in body["results"]] == [
             "新增消息一",
             "新增消息二",
         ]
+        assert body["before_cursor"] is not None
+        assert body["has_more_after"] is False
 
     def test_messages_api_rejects_conflicting_window_params(
         self,

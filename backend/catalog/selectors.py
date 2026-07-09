@@ -1,4 +1,3 @@
-from typing import Any
 from time import time_ns
 
 from django.core.cache import cache
@@ -77,11 +76,11 @@ def get_active_categories():
     return Category.objects.filter(id__in=category_ids).order_by("id")
 
 
-def get_public_listing_queryset(filters: dict[str, Any] | None = None):
+def get_public_listing_queryset():
     """构建公开商品列表 API 使用的商品查询。
 
-    默认只返回在售且所属分类仍启用的商品；传入已校验的筛选参数时，
-    继续叠加关键词、分类、类型、价格区间和排序条件。
+    默认只返回在售且所属分类仍启用的商品；具体筛选由 FilterSet 负责，
+    selector 只维护公开可见性、关联预取和默认排序。
     """
 
     active_category_ids = get_active_category_ids()
@@ -99,45 +98,22 @@ def get_public_listing_queryset(filters: dict[str, Any] | None = None):
         .prefetch_related("images")
         .order_by("-published_at", "-id")
     )
-    if not filters:
-        return listing_queryset
-
-    # 以下筛选条件来自 serializer 校验后的数据；空值保持默认公开列表。
-    q = filters.get("q")
-    if q:
-        listing_queryset = listing_queryset.filter(
-            Q(title__icontains=q) | Q(description__icontains=q)
-        )
-
-    category = filters.get("category")
-    if category is not None:
-        listing_queryset = listing_queryset.filter(category=category)
-
-    item_type = filters.get("item_type")
-    if item_type:
-        listing_queryset = listing_queryset.filter(item_type=item_type)
-
-    min_price = filters.get("min_price")
-    max_price = filters.get("max_price")
-    if min_price is not None:
-        listing_queryset = listing_queryset.filter(price__gte=min_price)
-    if max_price is not None:
-        listing_queryset = listing_queryset.filter(price__lte=max_price)
-
-    sort = filters.get("sort")
-    if sort:
-        # 排序字段保持白名单匹配，避免把请求参数直接拼进 order_by。
-        match sort:
-            case "newest":
-                listing_queryset = listing_queryset.order_by("-published_at")
-            case "oldest":
-                listing_queryset = listing_queryset.order_by("published_at")
-            case "price_asc":
-                listing_queryset = listing_queryset.order_by("price", "id")
-            case "price_desc":
-                listing_queryset = listing_queryset.order_by("-price", "-id")
-
     return listing_queryset
+
+
+def apply_public_listing_sort(queryset, sort: str | None):
+    """按公开列表允许的排序白名单处理排序参数。"""
+
+    # 排序字段保持白名单匹配，避免把请求参数直接拼进 order_by。
+    match sort:
+        case "oldest":
+            return queryset.order_by("published_at", "id")
+        case "price_asc":
+            return queryset.order_by("price", "id")
+        case "price_desc":
+            return queryset.order_by("-price", "-id")
+        case _:
+            return queryset.order_by("-published_at", "-id")
 
 
 def get_public_listing_detail_queryset():
@@ -194,3 +170,22 @@ def get_owner_listing_queryset(user):
         .prefetch_related("images")
         .order_by("-updated_at", "-id")
     )
+
+
+def apply_owner_listing_sort(queryset, sort: str | None):
+    """按我的商品管理允许的排序白名单处理排序参数。"""
+
+    # 排序字段保持白名单匹配，避免把请求参数直接拼进 order_by。
+    match sort:
+        case "updated_asc":
+            return queryset.order_by("updated_at", "id")
+        case "published_desc":
+            return queryset.order_by("-published_at", "-id")
+        case "published_asc":
+            return queryset.order_by("published_at", "id")
+        case "price_asc":
+            return queryset.order_by("price", "id")
+        case "price_desc":
+            return queryset.order_by("-price", "-id")
+        case _:
+            return queryset.order_by("-updated_at", "-id")

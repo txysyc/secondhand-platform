@@ -40,6 +40,7 @@ class ConversationAdmin(admin.ModelAdmin):
     ]
     list_filter = ["created_at", "updated_at"]
     list_select_related = ["participant_a", "participant_b"]
+    list_per_page = 20
     inlines = [PrivateMessageInline]
 
     @admin.display(description="消息数")
@@ -69,6 +70,7 @@ class PrivateMessageAdmin(admin.ModelAdmin):
     ]
     list_filter = ["sender", "read_at", "created_at"]
     list_select_related = ["conversation", "sender"]
+    list_per_page = 20
 
     @admin.display(description="内容摘要")
     def short_content(self, obj):

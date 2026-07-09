@@ -7,8 +7,25 @@ export interface ListingFilterParams {
   item_type?: string;
   min_price?: string | number;
   max_price?: string | number;
+  published_after?: string;
+  published_before?: string;
   sort?: string;
   page?: string | number;
+  page_size?: string | number;
+}
+
+export interface MyListingFilterParams {
+  q?: string;
+  status?: string;
+  category?: string | number;
+  item_type?: string;
+  min_price?: string | number;
+  max_price?: string | number;
+  updated_after?: string;
+  updated_before?: string;
+  sort?: string;
+  page?: string | number;
+  page_size?: string | number;
 }
 
 type ListingQueryParams = Record<string, string | number | boolean>;
@@ -46,8 +63,10 @@ export const getMyListingDetail = async (id: string | number): Promise<Listing> 
 /**
  * 获取当前登录用户的商品列表 (草稿、在售、下架等)
  */
-export const getMyListings = async (): Promise<PaginatedResponse<Listing>> => {
-  return apiClient.get('/my/listings/');
+export const getMyListings = async (
+  params?: MyListingFilterParams
+): Promise<PaginatedResponse<Listing>> => {
+  return apiClient.get('/my/listings/', { params: params as ListingQueryParams });
 };
 
 /**

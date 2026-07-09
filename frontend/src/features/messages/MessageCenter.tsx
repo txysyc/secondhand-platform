@@ -134,9 +134,9 @@ export const MessageCenter: React.FC = () => {
 
     try {
       const newMessages = await getConversationMessagesAfter(convId, latestMessageId);
-      if (newMessages.length > 0) {
+      if (newMessages.results.length > 0) {
         shouldScrollToBottomRef.current = true;
-        setMessages((prev) => mergeMessages([...prev, ...newMessages]));
+        setMessages((prev) => mergeMessages([...prev, ...newMessages.results]));
       }
     } catch (err) {
       console.error('增量同步新消息失败：', err);
@@ -149,8 +149,8 @@ export const MessageCenter: React.FC = () => {
     try {
       const data = await getConversationMessages(convId);
       shouldScrollToBottomRef.current = true;
-      setMessages(data);
-      setHasMoreHistory(data.length >= 20);
+      setMessages(data.results);
+      setHasMoreHistory(data.has_more_before);
       await handleMarkRead(convId);
     } catch (err) {
       console.error(`无法加载历史消息 (会话ID: ${convId})：`, err);
@@ -168,8 +168,8 @@ export const MessageCenter: React.FC = () => {
     try {
       const earlierMessages = await getConversationMessagesBefore(activeConvId, messages[0].id);
       shouldScrollToBottomRef.current = false;
-      setMessages((prev) => mergeMessages([...earlierMessages, ...prev]));
-      setHasMoreHistory(earlierMessages.length >= 20);
+      setMessages((prev) => mergeMessages([...earlierMessages.results, ...prev]));
+      setHasMoreHistory(earlierMessages.has_more_before);
     } catch (err) {
       console.error('加载更早历史消息失败：', err);
       alert('加载更早历史消息失败，请稍后重试。');

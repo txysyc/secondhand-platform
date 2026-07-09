@@ -2,6 +2,15 @@ import { apiClient } from '../client';
 import type { Conversation, Message } from '../../types/messages';
 import type { PaginatedResponse } from '../../types/listings';
 
+export interface CursorPaginatedMessages {
+  results: Message[];
+  before_cursor: number | null;
+  after_cursor: number | null;
+  has_more_before: boolean;
+  has_more_after: boolean;
+  page_size: number;
+}
+
 /**
  * 获取当前用户的会话列表
  */
@@ -24,7 +33,7 @@ export const createConversation = async (
 export const getConversationMessages = async (
   convId: string | number,
   limit = 20
-): Promise<Message[]> => {
+): Promise<CursorPaginatedMessages> => {
   return apiClient.get(`/conversations/${convId}/messages/?limit=${limit}`);
 };
 
@@ -35,7 +44,7 @@ export const getConversationMessagesBefore = async (
   convId: string | number,
   beforeId: string | number,
   limit = 20
-): Promise<Message[]> => {
+): Promise<CursorPaginatedMessages> => {
   return apiClient.get(`/conversations/${convId}/messages/?before_id=${beforeId}&limit=${limit}`);
 };
 
@@ -46,7 +55,7 @@ export const getConversationMessagesAfter = async (
   convId: string | number,
   afterId: string | number,
   limit = 100
-): Promise<Message[]> => {
+): Promise<CursorPaginatedMessages> => {
   return apiClient.get(`/conversations/${convId}/messages/?after_id=${afterId}&limit=${limit}`);
 };
 

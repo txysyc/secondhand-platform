@@ -6,6 +6,7 @@ from rest_framework.exceptions import PermissionDenied
 from messaging.models import Conversation, PrivateMessage
 
 DEFAULT_MESSAGE_WINDOW_SIZE = 20
+MAX_MESSAGE_WINDOW_SIZE = 100
 
 
 def get_user_conversations(user):
@@ -73,6 +74,37 @@ def get_conversation_message_window(
     return list(_base_message_queryset(conversation)[:limit])
 
 
+def get_conversation_message_cursor_page(
+    conversation,
+    *,
+    before_id=None,
+    after_id=None,
+    latest=False,
+    limit=DEFAULT_MESSAGE_WINDOW_SIZE,
+):
+    """读取一页游标消息，并返回前后游标元信息。"""
+
+    messages = get_conversation_message_window(
+        conversation,
+        before_id=before_id,
+        after_id=after_id,
+        latest=latest,
+        limit=limit,
+    )
+    normalized_limit = _normalize_message_window_limit(limit)
+    first_id = messages[0].id if messages else None
+    last_id = messages[-1].id if messages else None
+
+    return {
+        "results": messages,
+        "before_cursor": first_id,
+        "after_cursor": last_id,
+        "has_more_before": _has_message_before(conversation, first_id),
+        "has_more_after": _has_message_after(conversation, last_id),
+        "page_size": normalized_limit,
+    }
+
+
 def invalidate_conversation_message_cache(conversation_id):
     """清理会话最新消息窗口缓存，供新消息写入后调用。"""
 
@@ -135,6 +167,28 @@ def _latest_message_window(conversation, limit):
     return list(reversed(messages))
 
 
+def _has_message_before(conversation, message_id):
+    """判断指定消息之前是否还有更早历史。"""
+
+    if message_id is None:
+        return False
+    return PrivateMessage.objects.filter(
+        conversation=conversation,
+        id__lt=message_id,
+    ).exists()
+
+
+def _has_message_after(conversation, message_id):
+    """判断指定消息之后是否还有更新消息。"""
+
+    if message_id is None:
+        return False
+    return PrivateMessage.objects.filter(
+        conversation=conversation,
+        id__gt=message_id,
+    ).exists()
+
+
 def _latest_message_window_cache_key(conversation_id):
     """生成会话最新消息窗口缓存键。"""
 
@@ -148,4 +202,4 @@ def _normalize_message_window_limit(limit):
         limit = int(limit)
     except (TypeError, ValueError):
         limit = DEFAULT_MESSAGE_WINDOW_SIZE
-    return min(max(limit, 1), 100)
+    return min(max(limit, 1), MAX_MESSAGE_WINDOW_SIZE)

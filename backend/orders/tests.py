@@ -1258,6 +1258,84 @@ class TestOrdersApi:
             [buyer_order.id, seller_order.id]
         )
 
+    def test_order_list_filters_and_sorts_by_status_keyword_price_and_time(self):
+        target = self.create_order(
+            listing_title_snapshot="蓝牙耳机订单",
+            order_price=Decimal("88.00"),
+            status=Order.OrderStatus.AWAITING_SHIPMENT,
+        )
+        Order.objects.filter(pk=target.pk).update(
+            created_at=timezone.now() - timedelta(days=2)
+        )
+        wrong_status = self.create_order(
+            listing_title_snapshot="蓝牙键盘订单",
+            order_price=Decimal("90.00"),
+            status=Order.OrderStatus.PENDING_PAYMENT,
+        )
+        too_expensive = self.create_order(
+            listing_title_snapshot="蓝牙音箱订单",
+            order_price=Decimal("188.00"),
+            status=Order.OrderStatus.AWAITING_SHIPMENT,
+        )
+
+        response = self.api_client.get(
+            reverse("api:orders_buyer"),
+            {
+                "q": " 蓝牙 ",
+                "status": Order.OrderStatus.AWAITING_SHIPMENT,
+                "min_price": "50",
+                "max_price": "100",
+                "created_after": (timezone.now() - timedelta(days=3)).isoformat(),
+                "created_before": (timezone.now() - timedelta(days=1)).isoformat(),
+                "sort": "price_asc",
+            },
+            **self.auth_headers(self.buyer),
+        )
+
+        ids = [item["id"] for item in response.json()["results"]]
+        assert response.status_code == 200
+        assert ids == [target.id]
+        assert wrong_status.id not in ids
+        assert too_expensive.id not in ids
+
+    def test_order_list_invalid_filter_and_page_size_cap(self):
+        for index in range(55):
+            self.create_order(listing_title_snapshot=f"分页订单{index}")
+
+        invalid_price_response = self.api_client.get(
+            reverse("api:orders_buyer"),
+            {"min_price": "100", "max_price": "10"},
+            **self.auth_headers(self.buyer),
+        )
+        invalid_time_response = self.api_client.get(
+            reverse("api:orders_buyer"),
+            {
+                "created_after": "2026-05-02T10:00:00+08:00",
+                "created_before": "2026-05-01T10:00:00+08:00",
+            },
+            **self.auth_headers(self.buyer),
+        )
+        page_response = self.api_client.get(
+            reverse("api:orders_buyer"),
+            {"page_size": "999"},
+            **self.auth_headers(self.buyer),
+        )
+        keyword_response = self.api_client.get(
+            reverse("api:orders_buyer"),
+            {"q": "订" * 51},
+            **self.auth_headers(self.buyer),
+        )
+
+        assert invalid_price_response.status_code == 400
+        assert "最高价格不得低于最低价格" in invalid_price_response.json()["message"]
+        assert invalid_time_response.status_code == 400
+        assert "创建时间截止不得早于创建时间起始" in invalid_time_response.json()["message"]
+        assert keyword_response.status_code == 400
+        assert "搜索关键词不能超过50个字符" in keyword_response.json()["message"]
+        assert page_response.status_code == 200
+        assert page_response.json()["page_size"] == 50
+        assert len(page_response.json()["results"]) == 50
+
     def test_order_detail_requires_participant_and_exposes_display_fields(self):
         order = self.create_order()
 

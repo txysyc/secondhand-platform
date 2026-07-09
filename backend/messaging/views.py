@@ -19,7 +19,7 @@ from messaging.models import Conversation
 from messaging.selectors import (
     DEFAULT_MESSAGE_WINDOW_SIZE,
     get_conversation_for_user,
-    get_conversation_message_window,
+    get_conversation_message_cursor_page,
     get_user_conversations,
 )
 from messaging.services import (
@@ -34,6 +34,7 @@ class ConversationListCreateApiView(PageNumberPaginationMixin, APIView):
     """当前用户会话列表与发起会话。"""
 
     permission_classes = [IsAuthenticated]
+    max_page_size = 50
 
     def get(self, request):
         return self.paginate(
@@ -92,7 +93,7 @@ class ConversationMessageListCreateApiView(
     def get(self, request, pk):
         conversation = self.get_object(request, pk)
         try:
-            messages = get_conversation_message_window(
+            page = get_conversation_message_cursor_page(
                 conversation,
                 before_id=request.query_params.get("before_id"),
                 after_id=request.query_params.get("after_id"),
@@ -102,11 +103,18 @@ class ConversationMessageListCreateApiView(
         except ValueError as exc:
             raise ValidationError(str(exc))
         return Response(
-            PrivateMessageSerializer(
-                messages,
-                many=True,
-                context={"request": request},
-            ).data
+            {
+                "results": PrivateMessageSerializer(
+                    page["results"],
+                    many=True,
+                    context={"request": request},
+                ).data,
+                "before_cursor": page["before_cursor"],
+                "after_cursor": page["after_cursor"],
+                "has_more_before": page["has_more_before"],
+                "has_more_after": page["has_more_after"],
+                "page_size": page["page_size"],
+            }
         )
 
     def post(self, request, pk):

@@ -38,13 +38,17 @@ export const ListingList: React.FC = () => {
   const itemType = searchParams.get('item_type') || 'all';
   const minPrice = searchParams.get('min_price') || '';
   const maxPrice = searchParams.get('max_price') || '';
+  const publishedAfter = searchParams.get('published_after') || '';
+  const publishedBefore = searchParams.get('published_before') || '';
   const currentSort = searchParams.get('sort') || 'newest';
   const currentPage = parseInt(searchParams.get('page') || '1', 10);
 
-  // 临时输入的搜索文本和价格
+  // 临时输入的搜索文本、价格和发布时间区间
   const [searchText, setSearchText] = useState(query);
   const [tempMinPrice, setTempMinPrice] = useState(minPrice);
   const [tempMaxPrice, setTempMaxPrice] = useState(maxPrice);
+  const [tempPublishedAfter, setTempPublishedAfter] = useState(publishedAfter);
+  const [tempPublishedBefore, setTempPublishedBefore] = useState(publishedBefore);
 
   const ITEMS_PER_PAGE = 6;
 
@@ -94,7 +98,9 @@ export const ListingList: React.FC = () => {
     setSearchText(query);
     setTempMinPrice(minPrice);
     setTempMaxPrice(maxPrice);
-  }, [query, minPrice, maxPrice]);
+    setTempPublishedAfter(publishedAfter);
+    setTempPublishedBefore(publishedBefore);
+  }, [query, minPrice, maxPrice, publishedAfter, publishedBefore]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // 加载分类列表
@@ -127,6 +133,8 @@ export const ListingList: React.FC = () => {
       item_type: itemType !== 'all' ? itemType : undefined,
       min_price: minPrice || undefined,
       max_price: maxPrice || undefined,
+      published_after: publishedAfter || undefined,
+      published_before: publishedBefore || undefined,
       sort: currentSort,
       page: currentPage,
       page_size: ITEMS_PER_PAGE,
@@ -147,7 +155,17 @@ export const ListingList: React.FC = () => {
   /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
     fetchListings();
-  }, [query, currentCategory, itemType, minPrice, maxPrice, currentSort, currentPage]);
+  }, [
+    query,
+    currentCategory,
+    itemType,
+    minPrice,
+    maxPrice,
+    publishedAfter,
+    publishedBefore,
+    currentSort,
+    currentPage,
+  ]);
   /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   // 修改单个 URL 查询参数
@@ -182,6 +200,15 @@ export const ListingList: React.FC = () => {
     updateQueryParam({
       min_price: tempMinPrice,
       max_price: tempMaxPrice,
+    });
+  };
+
+  // 提交发布时间过滤
+  const handlePublishedSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateQueryParam({
+      published_after: tempPublishedAfter,
+      published_before: tempPublishedBefore,
     });
   };
 
@@ -305,6 +332,38 @@ export const ListingList: React.FC = () => {
               </div>
               <Button type="submit" variant="outline" size="sm" fullWidth className="price-apply-btn">
                 应用区间
+              </Button>
+            </form>
+          </div>
+
+          {/* 发布时间区间 */}
+          <div className="filter-section">
+            <h3 className="filter-section-title">发布时间</h3>
+            <form onSubmit={handlePublishedSubmit}>
+              <div className="published-range-inputs">
+                <label className="filter-field-label" htmlFor="published_after">
+                  起始时间
+                </label>
+                <input
+                  id="published_after"
+                  type="datetime-local"
+                  className="form-control"
+                  value={tempPublishedAfter}
+                  onChange={(e) => setTempPublishedAfter(e.target.value)}
+                />
+                <label className="filter-field-label" htmlFor="published_before">
+                  截止时间
+                </label>
+                <input
+                  id="published_before"
+                  type="datetime-local"
+                  className="form-control"
+                  value={tempPublishedBefore}
+                  onChange={(e) => setTempPublishedBefore(e.target.value)}
+                />
+              </div>
+              <Button type="submit" variant="outline" size="sm" fullWidth className="published-apply-btn">
+                应用时间
               </Button>
             </form>
           </div>

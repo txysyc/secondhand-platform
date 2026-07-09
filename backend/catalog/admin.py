@@ -45,7 +45,9 @@ class ListingAdmin(admin.ModelAdmin):
         "category",
         "owner",
         "item_type",
+        "published_at",
         "created_at",
+        "updated_at",
     ]
     list_select_related = ["owner", "category"]
     readonly_fields = ["created_at", "updated_at", "published_at"]

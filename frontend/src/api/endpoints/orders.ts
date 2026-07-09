@@ -2,6 +2,20 @@ import { apiClient } from '../client';
 import type { Order } from '../../types/orders';
 import type { PaginatedResponse } from '../../types/listings';
 
+export interface OrderFilterParams {
+  q?: string;
+  status?: string;
+  created_after?: string;
+  created_before?: string;
+  min_price?: string | number;
+  max_price?: string | number;
+  sort?: string;
+  page?: string | number;
+  page_size?: string | number;
+}
+
+type OrderQueryParams = Record<string, string | number | boolean>;
+
 /**
  * 创建订单。
  * 实体商品须传 address_id；后端要求携带 Idempotency-Key 请求头，
@@ -23,15 +37,19 @@ export const createOrder = async (
 /**
  * 获取买家订单列表
  */
-export const getBuyerOrders = async (): Promise<PaginatedResponse<Order>> => {
-  return apiClient.get('/orders/buyer/');
+export const getBuyerOrders = async (
+  params?: OrderFilterParams
+): Promise<PaginatedResponse<Order>> => {
+  return apiClient.get('/orders/buyer/', { params: params as OrderQueryParams });
 };
 
 /**
  * 获取卖家订单列表
  */
-export const getSellerOrders = async (): Promise<PaginatedResponse<Order>> => {
-  return apiClient.get('/orders/seller/');
+export const getSellerOrders = async (
+  params?: OrderFilterParams
+): Promise<PaginatedResponse<Order>> => {
+  return apiClient.get('/orders/seller/', { params: params as OrderQueryParams });
 };
 
 /**

@@ -40,6 +40,31 @@ class Listing(models.Model):
     class Meta:
         verbose_name = "商品列表"
         verbose_name_plural = "商品列表"
+        indexes = [
+            # 公开列表默认只看在售商品，并按发布时间倒序展示。
+            models.Index(
+                fields=["status", "-published_at"],
+                name="listing_status_pub_idx",
+            ),
+            # 分类页在公开列表中同样按发布时间倒序展示。
+            models.Index(fields=["category", "-published_at"], name="listing_cat_pub_idx"),
+            # 商品类型筛选会叠加发布时间排序。
+            models.Index(
+                fields=["item_type", "-published_at"],
+                name="listing_type_pub_idx",
+            ),
+            # 价格区间筛选和价格排序共用单列索引。
+            models.Index(fields=["price"], name="listing_price_idx"),
+            # 发布时间区间筛选和默认排序共用单列索引。
+            models.Index(fields=["published_at"], name="listing_pub_idx"),
+            # 我的商品管理默认按用户和更新时间倒序展示。
+            models.Index(fields=["owner", "-updated_at"], name="listing_owner_updated_idx"),
+            # 我的商品管理状态筛选会叠加更新时间排序。
+            models.Index(
+                fields=["owner", "status", "-updated_at"],
+                name="listing_owner_status_idx",
+            ),
+        ]
 
     class ItemType(models.TextChoices):
         """商品类型，独立于业务分类，避免把“实体/虚拟”混入分类。"""

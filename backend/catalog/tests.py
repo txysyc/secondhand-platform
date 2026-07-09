@@ -13,8 +13,10 @@ from PIL import Image
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from catalog.admin import CategoryAdmin, ListingAdmin
+from catalog.filters import ListingFilterSet
 from catalog.models import Category, Listing, ListingImage
 from catalog.selectors import (
+    apply_public_listing_sort,
     get_active_categories,
     get_public_listing_queryset,
     get_visible_listing_detail_queryset,
@@ -310,67 +312,6 @@ class TestPublicListingSelector:
 
         assert listings == [second_same_time, first_same_time, older]
 
-    def test_keyword_matches_title_or_description(self):
-        match_title = self.make_listing(title="蓝牙耳机", description="无关描述")
-        match_desc = self.make_listing(title="无关标题", description="蓝牙音箱描述")
-        no_match = self.make_listing(title="无关标题", description="无关描述")
-
-        results = list(get_public_listing_queryset({"q": "蓝牙"}))
-
-        assert match_title in results
-        assert match_desc in results
-        assert no_match not in results
-
-    def test_category_filter(self):
-        other_category = Category.objects.create(name="另一分类")
-        target = self.make_listing(title="目标分类商品", category=self.category)
-        other = self.make_listing(title="其他分类商品", category=other_category)
-
-        results = list(get_public_listing_queryset({"category": self.category}))
-
-        assert target in results
-        assert other not in results
-
-    def test_item_type_filter(self):
-        physical = self.make_listing(title="实体", item_type=Listing.ItemType.PHYSICAL)
-        virtual = self.make_listing(title="虚拟", item_type=Listing.ItemType.VIRTUAL)
-
-        results = list(get_public_listing_queryset({"item_type": "virtual"}))
-
-        assert physical not in results
-        assert virtual in results
-
-    def test_price_range_filter(self):
-        cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
-        mid = self.make_listing(title="中等", price=Decimal("50.00"))
-        expensive = self.make_listing(title="贵", price=Decimal("200.00"))
-
-        results = list(
-            get_public_listing_queryset({"min_price": Decimal("20"), "max_price": Decimal("100")})
-        )
-
-        assert cheap not in results
-        assert mid in results
-        assert expensive not in results
-
-    def test_min_price_filter_can_work_alone(self):
-        cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
-        mid = self.make_listing(title="中等", price=Decimal("50.00"))
-
-        results = list(get_public_listing_queryset({"min_price": Decimal("20")}))
-
-        assert cheap not in results
-        assert mid in results
-
-    def test_max_price_filter_can_work_alone(self):
-        cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
-        mid = self.make_listing(title="中等", price=Decimal("50.00"))
-
-        results = list(get_public_listing_queryset({"max_price": Decimal("20")}))
-
-        assert cheap in results
-        assert mid not in results
-
     def test_paid_buyer_can_view_reserved_or_sold_listing_detail_queryset(self):
         buyer = get_user_model().objects.create_user(
             username="paidbuy",
@@ -434,7 +375,7 @@ class TestPublicListingSelector:
         expensive = self.make_listing(title="贵", price=Decimal("200.00"))
         cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
 
-        results = list(get_public_listing_queryset({"sort": "price_asc"}))
+        results = list(apply_public_listing_sort(get_public_listing_queryset(), "price_asc"))
 
         assert results == [cheap, expensive]
 
@@ -442,7 +383,7 @@ class TestPublicListingSelector:
         cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
         expensive = self.make_listing(title="贵", price=Decimal("200.00"))
 
-        results = list(get_public_listing_queryset({"sort": "price_desc"}))
+        results = list(apply_public_listing_sort(get_public_listing_queryset(), "price_desc"))
 
         assert results == [expensive, cheap]
 
@@ -454,7 +395,7 @@ class TestPublicListingSelector:
             title="新", published_at=timezone.now() - timezone.timedelta(days=1)
         )
 
-        results = list(get_public_listing_queryset({"sort": "oldest"}))
+        results = list(apply_public_listing_sort(get_public_listing_queryset(), "oldest"))
 
         assert results == [older, newer]
 
@@ -468,9 +409,169 @@ class TestPublicListingSelector:
             published_at=timezone.now() - timezone.timedelta(days=1),
         )
 
-        results = list(get_public_listing_queryset({"sort": "invalid_sort"}))
+        results = list(apply_public_listing_sort(get_public_listing_queryset(), "invalid_sort"))
 
         assert results == [newer, older]
+
+
+class TestListingFilterSet:
+    """公开商品列表 FilterSet 测试。"""
+
+    @pytest.fixture(autouse=True)
+    def _setup_listing_filter_context(self):
+        """构造公开商品筛选测试需要的卖家和分类。"""
+
+        self.user = get_user_model().objects.create_user(
+            username="fltseller",
+            email="filter_seller@example.com",
+            password="StrongPass123",
+        )
+        self.category = Category.objects.create(name="筛选分类")
+        self.other_category = Category.objects.create(name="筛选另一分类")
+        self.inactive_category = Category.objects.create(name="筛选停用分类", is_active=False)
+
+    def make_listing(self, **overrides):
+        """创建默认可公开展示的筛选测试商品。"""
+
+        data = {
+            "owner": self.user,
+            "category": self.category,
+            "title": "筛选商品",
+            "item_type": Listing.ItemType.PHYSICAL,
+            "status": Listing.Status.ACTIVE,
+            "price": Decimal("30.00"),
+            "condition": Listing.Condition.GOOD,
+            "description": "公开展示商品",
+            "delivery_notes": "面交",
+            "physical_delivery_method": Listing.PhysicalDeliveryMethod.MEETUP,
+            "published_at": timezone.now(),
+        }
+        data.update(overrides)
+        return Listing.objects.create(**data)
+
+    def filter_results(self, params):
+        """用公开基础查询执行 FilterSet，并返回筛选后的商品列表。"""
+
+        filterset = ListingFilterSet(data=params, queryset=get_public_listing_queryset())
+        assert filterset.is_valid(), filterset.errors
+        return list(filterset.qs)
+
+    def test_keyword_matches_title_or_description(self):
+        match_title = self.make_listing(title="蓝牙耳机", description="无关描述")
+        match_desc = self.make_listing(title="无关标题", description="蓝牙音箱描述")
+        no_match = self.make_listing(title="无关标题", description="无关描述")
+
+        results = self.filter_results({"q": " 蓝牙 "})
+
+        assert match_title in results
+        assert match_desc in results
+        assert no_match not in results
+
+    def test_blank_keyword_equals_no_search(self):
+        first = self.make_listing(title="蓝牙耳机")
+        second = self.make_listing(title="普通键盘")
+
+        results = self.filter_results({"q": "   "})
+
+        assert first in results
+        assert second in results
+
+    def test_too_long_keyword_returns_chinese_error(self):
+        filterset = ListingFilterSet(
+            data={"q": "蓝" * 51},
+            queryset=get_public_listing_queryset(),
+        )
+
+        assert filterset.is_valid() is False
+        assert "搜索关键词不能超过50个字符" in str(filterset.errors)
+
+    def test_category_filter(self):
+        target = self.make_listing(title="目标分类商品", category=self.category)
+        other = self.make_listing(title="其他分类商品", category=self.other_category)
+
+        results = self.filter_results({"category": self.category.id})
+
+        assert target in results
+        assert other not in results
+
+    def test_item_type_filter(self):
+        physical = self.make_listing(title="实体", item_type=Listing.ItemType.PHYSICAL)
+        virtual = self.make_listing(title="虚拟", item_type=Listing.ItemType.VIRTUAL)
+
+        results = self.filter_results({"item_type": "virtual"})
+
+        assert physical not in results
+        assert virtual in results
+
+    def test_price_range_filter(self):
+        cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
+        mid = self.make_listing(title="中等", price=Decimal("50.00"))
+        expensive = self.make_listing(title="贵", price=Decimal("200.00"))
+
+        results = self.filter_results({"min_price": "20", "max_price": "100"})
+
+        assert cheap not in results
+        assert mid in results
+        assert expensive not in results
+
+    def test_published_range_filter(self):
+        old = self.make_listing(
+            title="旧商品",
+            published_at=timezone.now() - timezone.timedelta(days=5),
+        )
+        mid = self.make_listing(
+            title="中间商品",
+            published_at=timezone.now() - timezone.timedelta(days=2),
+        )
+        new = self.make_listing(title="新商品", published_at=timezone.now())
+
+        results = self.filter_results({
+            "published_after": (timezone.now() - timezone.timedelta(days=3)).strftime(
+                "%Y-%m-%dT%H:%M"
+            ),
+            "published_before": (timezone.now() - timezone.timedelta(days=1)).strftime(
+                "%Y-%m-%dT%H:%M"
+            ),
+        })
+
+        assert old not in results
+        assert mid in results
+        assert new not in results
+
+    def test_published_before_date_includes_whole_day(self):
+        target_day = timezone.localdate() - timezone.timedelta(days=1)
+        target_time = timezone.make_aware(
+            timezone.datetime.combine(target_day, timezone.datetime.min.time()),
+            timezone.get_current_timezone(),
+        )
+        target = self.make_listing(
+            title="当天商品",
+            published_at=target_time.replace(hour=18, minute=30, second=0),
+        )
+
+        results = self.filter_results({
+            "published_before": target.published_at.strftime("%Y-%m-%d"),
+        })
+
+        assert target in results
+
+    def test_invalid_price_or_published_range_returns_chinese_error(self):
+        price_filterset = ListingFilterSet(
+            data={"min_price": "100", "max_price": "10"},
+            queryset=get_public_listing_queryset(),
+        )
+        time_filterset = ListingFilterSet(
+            data={
+                "published_after": "2026-05-02T10:00",
+                "published_before": "2026-05-01T10:00",
+            },
+            queryset=get_public_listing_queryset(),
+        )
+
+        assert price_filterset.is_valid() is False
+        assert "最高价格不得低于最低价格" in str(price_filterset.errors)
+        assert time_filterset.is_valid() is False
+        assert "发布时间截止不得早于发布时间起始" in str(time_filterset.errors)
 
     def test_combined_filters(self):
         target = self.make_listing(
@@ -489,13 +590,13 @@ class TestPublicListingSelector:
             price=Decimal("500.00"),
         )
 
-        results = list(
-            get_public_listing_queryset({
+        results = self.filter_results(
+            {
                 "q": "蓝牙",
                 "item_type": "physical",
-                "min_price": Decimal("10"),
-                "max_price": Decimal("100"),
-            })
+                "min_price": "10",
+                "max_price": "100",
+            }
         )
 
         assert results == [target]
@@ -851,6 +952,93 @@ class TestCatalogApi:
 
         assert response.status_code == 403
 
+    def test_my_listing_list_filters_and_sorts_own_listings(self):
+        target = self.create_listing(
+            title="我的蓝牙耳机",
+            description="轻微使用痕迹",
+            status=Listing.Status.ACTIVE,
+            price=Decimal("88.00"),
+        )
+        Listing.objects.filter(pk=target.pk).update(
+            updated_at=timezone.now() - timezone.timedelta(days=2)
+        )
+        wrong_status = self.create_listing(
+            title="我的蓝牙草稿",
+            status=Listing.Status.DRAFT,
+            price=Decimal("80.00"),
+            published_at=None,
+        )
+        too_expensive = self.create_listing(
+            title="我的蓝牙音箱",
+            status=Listing.Status.ACTIVE,
+            price=Decimal("188.00"),
+        )
+        other_owner = self.create_listing(
+            owner=self.other_user,
+            title="别人的蓝牙耳机",
+            status=Listing.Status.ACTIVE,
+            price=Decimal("88.00"),
+        )
+
+        response = self.api_client.get(
+            reverse("api:catalog_my_listings"),
+            {
+                "q": " 蓝牙 ",
+                "status": Listing.Status.ACTIVE,
+                "min_price": "50",
+                "max_price": "100",
+                "updated_after": (timezone.now() - timezone.timedelta(days=3)).isoformat(),
+                "updated_before": (timezone.now() - timezone.timedelta(days=1)).isoformat(),
+                "sort": "price_asc",
+            },
+            **self.auth_headers(self.seller),
+        )
+
+        ids = [item["id"] for item in response.json()["results"]]
+        assert response.status_code == 200
+        assert ids == [target.id]
+        assert wrong_status.id not in ids
+        assert too_expensive.id not in ids
+        assert other_owner.id not in ids
+
+    def test_my_listing_list_invalid_filter_and_page_size_cap(self):
+        for index in range(55):
+            self.create_listing(title=f"我的分页商品{index}")
+
+        invalid_price_response = self.api_client.get(
+            reverse("api:catalog_my_listings"),
+            {"min_price": "100", "max_price": "10"},
+            **self.auth_headers(self.seller),
+        )
+        invalid_time_response = self.api_client.get(
+            reverse("api:catalog_my_listings"),
+            {
+                "updated_after": "2026-05-02T10:00:00+08:00",
+                "updated_before": "2026-05-01T10:00:00+08:00",
+            },
+            **self.auth_headers(self.seller),
+        )
+        page_response = self.api_client.get(
+            reverse("api:catalog_my_listings"),
+            {"page_size": "999"},
+            **self.auth_headers(self.seller),
+        )
+        keyword_response = self.api_client.get(
+            reverse("api:catalog_my_listings"),
+            {"q": "商" * 51},
+            **self.auth_headers(self.seller),
+        )
+
+        assert invalid_price_response.status_code == 400
+        assert "最高价格不得低于最低价格" in invalid_price_response.json()["message"]
+        assert invalid_time_response.status_code == 400
+        assert "更新时间截止不得早于更新时间起始" in invalid_time_response.json()["message"]
+        assert keyword_response.status_code == 400
+        assert "搜索关键词不能超过50个字符" in keyword_response.json()["message"]
+        assert page_response.status_code == 200
+        assert page_response.json()["page_size"] == 50
+        assert len(page_response.json()["results"]) == 50
+
     def test_create_update_publish_deactivate_and_reactivate_listing(self):
         create_response = self.api_client.post(
             reverse("api:catalog_my_listings"),
@@ -961,6 +1149,76 @@ class TestCatalogApi:
 
         assert response.status_code == 400
         assert "message" in response.json()
+        assert "最高价格不得低于最低价格" in response.json()["message"]
 
+    def test_invalid_published_range_returns_json_error(self):
+        response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {
+                "published_after": "2026-05-02T10:00",
+                "published_before": "2026-05-01T10:00",
+            },
+        )
 
+        assert response.status_code == 400
+        assert "发布时间截止不得早于发布时间起始" in response.json()["message"]
 
+    def test_public_listing_list_supports_published_range_filter(self):
+        old = self.create_listing(
+            title="较早发布",
+            published_at=timezone.now() - timezone.timedelta(days=5),
+        )
+        target = self.create_listing(
+            title="区间发布",
+            published_at=timezone.now() - timezone.timedelta(days=2),
+        )
+        new = self.create_listing(title="最新发布", published_at=timezone.now())
+
+        response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {
+                "published_after": (timezone.now() - timezone.timedelta(days=3)).strftime(
+                    "%Y-%m-%dT%H:%M"
+                ),
+                "published_before": (timezone.now() - timezone.timedelta(days=1)).strftime(
+                    "%Y-%m-%dT%H:%M"
+                ),
+            },
+        )
+
+        ids = [item["id"] for item in response.json()["results"]]
+        assert response.status_code == 200
+        assert target.id in ids
+        assert old.id not in ids
+        assert new.id not in ids
+
+    def test_blank_and_too_long_keyword_handling(self):
+        first = self.create_listing(title="蓝牙耳机")
+        second = self.create_listing(title="普通键盘")
+
+        blank_response = self.api_client.get(reverse("api:catalog_listings"), {"q": "   "})
+        long_response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {"q": "蓝" * 51},
+        )
+
+        ids = [item["id"] for item in blank_response.json()["results"]]
+        assert blank_response.status_code == 200
+        assert first.id in ids
+        assert second.id in ids
+        assert long_response.status_code == 400
+        assert "搜索关键词不能超过50个字符" in long_response.json()["message"]
+
+    def test_public_listing_page_size_is_capped_at_50(self):
+        for index in range(55):
+            self.create_listing(title=f"分页商品{index}")
+
+        response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {"page_size": "999"},
+        )
+
+        body = response.json()
+        assert response.status_code == 200
+        assert body["page_size"] == 50
+        assert len(body["results"]) == 50

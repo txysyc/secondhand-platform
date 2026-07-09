@@ -10,9 +10,15 @@ from rest_framework.views import APIView
 
 from api.mixins import PageNumberPaginationMixin
 from catalog.models import Listing
+from orders.filters import OrderFilterSet
 from orders.permissions import IsOrderParticipant
 from orders.serializers import OrderSerializer
-from orders.selectors import get_buyer_orders, get_order_queryset, get_seller_orders
+from orders.selectors import (
+    apply_order_list_sort,
+    get_buyer_orders,
+    get_order_queryset,
+    get_seller_orders,
+)
 from orders.services import (
     confirm_order_delivery,
     confirm_order_receipt,
@@ -89,9 +95,11 @@ class BuyerOrderListApiView(PageNumberPaginationMixin, APIView):
 
     permission_classes = [IsAuthenticated]
     serializer_class = OrderSerializer
+    max_page_size = 50
 
     def get(self, request):
-        return self.paginate(request, get_buyer_orders(request.user))
+        queryset = _filter_and_sort_orders(request, get_buyer_orders(request.user))
+        return self.paginate(request, queryset)
 
 
 class SellerOrderListApiView(PageNumberPaginationMixin, APIView):
@@ -99,9 +107,20 @@ class SellerOrderListApiView(PageNumberPaginationMixin, APIView):
 
     permission_classes = [IsAuthenticated]
     serializer_class = OrderSerializer
+    max_page_size = 50
 
     def get(self, request):
-        return self.paginate(request, get_seller_orders(request.user))
+        queryset = _filter_and_sort_orders(request, get_seller_orders(request.user))
+        return self.paginate(request, queryset)
+
+
+def _filter_and_sort_orders(request, queryset):
+    """校验订单列表筛选参数，并按白名单排序返回 QuerySet。"""
+
+    filterset = OrderFilterSet(data=request.query_params, queryset=queryset)
+    if not filterset.is_valid():
+        raise ValidationError(filterset.errors)
+    return apply_order_list_sort(filterset.qs, request.query_params.get("sort"))
 
 
 class _OrderParticipantApiView(APIView):

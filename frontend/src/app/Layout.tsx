@@ -10,6 +10,7 @@ import {
   User,
   LogOut,
   ChevronDown,
+  MapPin,
 } from 'lucide-react';
 import { useAuth } from './providers';
 import { Avatar } from '../components/ui/Avatar';
@@ -150,6 +151,15 @@ export const Layout: React.FC = () => {
                     >
                       <User size={16} />
                       个人中心
+                    </Link>
+                    <Link
+                      to="/me/addresses"
+                      className="user-dropdown-item"
+                      onClick={() => setDropdownOpen(false)}
+                      role="menuitem"
+                    >
+                      <MapPin size={16} />
+                      我的地址
                     </Link>
                     <button
                       type="button"

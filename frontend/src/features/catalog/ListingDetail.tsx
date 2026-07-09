@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, AlertCircle, ImageIcon, MessageCircle } from 'lucide-react';
+import { ArrowLeft, AlertCircle, ImageIcon, MessageCircle, MapPin, Star } from 'lucide-react';
 import { getListingDetail } from '../../api/endpoints/listings';
 import {
   getListingComments,
@@ -9,12 +9,14 @@ import {
   deleteComment,
 } from '../../api/endpoints/comments';
 import { createOrder } from '../../api/endpoints/orders';
+import { getAddresses } from '../../api/endpoints/addresses';
 import { createConversation } from '../../api/endpoints/messages';
 import { useAuth } from '../../app/providers';
 import { resolveAvatarUrl, resolveMediaUrl } from '../../utils/media';
 import { Button, Card, TextArea, ErrorState, Loading } from '../../components/ui';
 import type { Listing } from '../../types/listings';
 import type { Comment } from '../../types/comments';
+import type { UserAddress } from '../../types/address';
 
 const getErrorMessage = (err: unknown, fallback: string): string => {
   if (err instanceof Error) return err.message;
@@ -45,6 +47,13 @@ export const ListingDetail: React.FC = () => {
   // 操作反馈（替代 alert）
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // 实体商品下单：地址选择面板
+  const [showAddressPicker, setShowAddressPicker] = useState(false);
+  const [addresses, setAddresses] = useState<UserAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
+  const [loadingAddresses, setLoadingAddresses] = useState(false);
+  const [buySubmitting, setBuySubmitting] = useState(false);
 
   // 获取商品详情
   useEffect(() => {
@@ -156,11 +165,50 @@ export const ListingDetail: React.FC = () => {
   const handleBuy = async () => {
     if (!ensureLoggedIn()) return;
 
+    // 虚拟商品：直接下单
+    if (listing!.item_type === 'virtual') {
+      try {
+        const data = await createOrder(listing!.id);
+        navigate(`/orders/${data.id}`);
+      } catch (err) {
+        setActionError(getErrorMessage(err, '创建订单失败，请稍后重试'));
+      }
+      return;
+    }
+
+    // 实体商品：展示地址选择面板
+    setLoadingAddresses(true);
+    setShowAddressPicker(true);
+    setActionError(null);
     try {
-      const data = await createOrder(listing!.id);
+      const data = await getAddresses();
+      setAddresses(data);
+      // 自动选中默认地址
+      const defaultAddr = data.find((a) => a.is_default);
+      setSelectedAddressId(defaultAddr?.id ?? (data[0]?.id ?? null));
+    } catch {
+      setActionError('获取收货地址失败，请稍后重试');
+      setShowAddressPicker(false);
+    } finally {
+      setLoadingAddresses(false);
+    }
+  };
+
+  // 确认地址后提交订单
+  const handleConfirmBuy = async () => {
+    if (!selectedAddressId) {
+      setActionError('请先选择收货地址');
+      return;
+    }
+    setBuySubmitting(true);
+    setActionError(null);
+    try {
+      const data = await createOrder(listing!.id, { address_id: selectedAddressId });
       navigate(`/orders/${data.id}`);
     } catch (err) {
       setActionError(getErrorMessage(err, '创建订单失败，请稍后重试'));
+    } finally {
+      setBuySubmitting(false);
     }
   };
 
@@ -391,27 +439,103 @@ export const ListingDetail: React.FC = () => {
 
             {isOwner ? (
               <div className="owner-notice">
-                这是您发布的商品。您可以到“我的商品”中进行编辑或下架管理。
+                这是您发布的商品。您可以到"我的商品"中进行编辑或下架管理。
               </div>
             ) : (
               <>
-                <Button
-                  onClick={() => handleActionIntercept('buy')}
-                  disabled={listing.status !== 'active'}
-                  size="lg"
-                  fullWidth
-                >
-                  {listing.status === 'active' ? '立即购买' : `商品已${listing.status_display}`}
-                </Button>
-                <Button
-                  onClick={() => handleActionIntercept('message')}
-                  variant="outline"
-                  size="lg"
-                  fullWidth
-                >
-                  <MessageCircle size={18} />
-                  联系卖家
-                </Button>
+                {/* 实体商品地址选择面板 */}
+                {showAddressPicker && (
+                  <div className="address-picker">
+                    <h4 className="address-picker-title">
+                      <MapPin size={16} />
+                      选择收货地址
+                    </h4>
+                    {loadingAddresses ? (
+                      <div className="address-picker-loading">正在加载地址…</div>
+                    ) : addresses.length === 0 ? (
+                      <div className="address-picker-empty">
+                        <p>您还没有收货地址</p>
+                        <Link to="/me/addresses" className="btn-link">
+                          前往添加
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className="address-picker-list">
+                        {addresses.map((addr) => (
+                          <label
+                            key={addr.id}
+                            className={`address-picker-item ${selectedAddressId === addr.id ? 'selected' : ''}`}
+                          >
+                            <input
+                              type="radio"
+                              name="address"
+                              value={addr.id}
+                              checked={selectedAddressId === addr.id}
+                              onChange={() => setSelectedAddressId(addr.id)}
+                            />
+                            <div className="address-picker-info">
+                              <span className="address-picker-recipient">
+                                {addr.recipient_name}
+                                <span className="address-picker-phone">{addr.phone}</span>
+                                {addr.is_default && (
+                                  <span className="address-default-badge">
+                                    <Star size={11} />
+                                    默认
+                                  </span>
+                                )}
+                              </span>
+                              <span className="address-picker-text">
+                                {addr.province} {addr.city} {addr.district} {addr.detail_address}
+                              </span>
+                            </div>
+                          </label>
+                        ))}
+                        <Link to="/me/addresses" className="btn-link address-picker-manage">
+                          管理地址
+                        </Link>
+                      </div>
+                    )}
+                    <div className="address-picker-actions">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowAddressPicker(false)}
+                      >
+                        取消
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleConfirmBuy}
+                        loading={buySubmitting}
+                        disabled={!selectedAddressId || loadingAddresses}
+                      >
+                        确认下单
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {!showAddressPicker && (
+                  <>
+                    <Button
+                      onClick={() => handleActionIntercept('buy')}
+                      disabled={listing.status !== 'active'}
+                      size="lg"
+                      fullWidth
+                    >
+                      {listing.status === 'active' ? '立即购买' : `商品已${listing.status_display}`}
+                    </Button>
+                    <Button
+                      onClick={() => handleActionIntercept('message')}
+                      variant="outline"
+                      size="lg"
+                      fullWidth
+                    >
+                      <MessageCircle size={18} />
+                      联系卖家
+                    </Button>
+                  </>
+                )}
               </>
             )}
           </div>

@@ -13,7 +13,7 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Loading } from '../../components/ui/Loading';
 import { ErrorState } from '../../components/ui/ErrorState';
-import { ArrowLeft, Package, Check, CreditCard, Truck, PartyPopper } from 'lucide-react';
+import { ArrowLeft, Package, Check, CreditCard, Truck, PartyPopper, MapPin } from 'lucide-react';
 import type { Order } from '../../types/orders';
 
 export const OrderDetail: React.FC = () => {
@@ -298,6 +298,32 @@ export const OrderDetail: React.FC = () => {
               </div>
             </div>
           </Card>
+
+          {/* 收货地址快照（仅实体商品有地址快照） */}
+          {order.shipping_address_snapshot && (
+            <Card className="order-shipping-card" shadow="sm">
+              <h3 className="order-section-title">
+                <MapPin size={16} />
+                收货地址
+              </h3>
+              <div className="order-shipping-body">
+                <div className="order-shipping-recipient">
+                  <span className="order-shipping-name">
+                    {order.shipping_address_snapshot.recipient_name}
+                  </span>
+                  <span className="order-shipping-phone">
+                    {order.shipping_address_snapshot.phone}
+                  </span>
+                </div>
+                <p className="order-shipping-address">
+                  {order.shipping_address_snapshot.province}{' '}
+                  {order.shipping_address_snapshot.city}{' '}
+                  {order.shipping_address_snapshot.district}{' '}
+                  {order.shipping_address_snapshot.detail_address}
+                </p>
+              </div>
+            </Card>
+          )}
         </div>
 
         {/* 右侧：交易结算面板与动作推进 */}

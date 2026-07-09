@@ -3,12 +3,21 @@ import type { Order } from '../../types/orders';
 import type { PaginatedResponse } from '../../types/listings';
 
 /**
- * 创建订单
+ * 创建订单。
+ * 实体商品须传 address_id；后端要求携带 Idempotency-Key 请求头，
+ * 未传时由前端自动生成一次性随机 UUID。
  */
 export const createOrder = async (
-  listingId: string | number
+  listingId: string | number,
+  payload?: { address_id?: number },
+  idempotencyKey?: string
 ): Promise<Order> => {
-  return apiClient.post(`/listings/${listingId}/orders/`);
+  const key = idempotencyKey || crypto.randomUUID();
+  return apiClient.post(
+    `/listings/${listingId}/orders/`,
+    payload ?? {},
+    { headers: { 'Idempotency-Key': key } }
+  );
 };
 
 /**

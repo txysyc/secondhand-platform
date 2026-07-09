@@ -1,5 +1,14 @@
 import type { ListingImage } from './listings';
 
+export interface ShippingAddressSnapshot {
+  recipient_name: string;
+  phone: string;
+  province: string;
+  city: string;
+  district: string;
+  detail_address: string;
+}
+
 export interface OrderUser {
   id: number;
   username: string;
@@ -44,6 +53,7 @@ export interface Order {
   signed_at: string | null;
   completed_at: string | null;
   cancelled_at: string | null;
+  shipping_address_snapshot: ShippingAddressSnapshot | null;
   created_at: string;
   updated_at: string;
   viewer_role: 'buyer' | 'seller';

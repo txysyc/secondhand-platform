@@ -7,6 +7,7 @@ import { ListingList } from '../features/catalog/ListingList';
 import { ListingDetail } from '../features/catalog/ListingDetail';
 import { ProfileEdit } from '../features/users/ProfileEdit';
 import { PublicProfile } from '../features/users/PublicProfile';
+import { AddressManager } from '../features/users/AddressManager';
 import { MyListings } from '../features/catalog/MyListings';
 import { ListingForm } from '../features/catalog/ListingForm';
 import { OrderList } from '../features/orders/OrderList';
@@ -102,6 +103,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute>
             <ListingForm />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'me/addresses',
+        element: (
+          <ProtectedRoute>
+            <AddressManager />
           </ProtectedRoute>
         ),
       },

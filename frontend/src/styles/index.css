@@ -3338,6 +3338,377 @@ a:hover {
   color: var(--text-muted);
 }
 
+/* ==========================================
+   Address Manager
+   ========================================== */
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: var(--transition-fast);
+}
+
+.back-link:hover {
+  color: var(--primary-color);
+}
+
+.address-manager {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.address-manager-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.address-manager-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.address-add-btn {
+  align-self: flex-start;
+  margin-bottom: var(--space-4);
+}
+
+.address-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-4);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.address-empty p {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.address-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.address-card {
+  transition: var(--transition-fast);
+}
+
+.address-card.is-default {
+  border-left: 3px solid var(--primary-color);
+}
+
+.address-card-body {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.address-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.address-card-recipient {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.address-recipient-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.address-recipient-phone {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.address-default-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background-color: var(--primary-light);
+  color: var(--primary-color);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.address-card-text {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.address-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+/* Address form panel */
+
+.address-form-card {
+  margin-bottom: var(--space-4);
+}
+
+.address-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.address-form-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0 0 var(--space-2);
+}
+
+.address-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.form-field-wide {
+  grid-column: span 2;
+}
+
+.form-field-checkbox {
+  grid-column: span 2;
+}
+
+.form-error {
+  font-size: 0.8rem;
+  color: var(--error-color);
+}
+
+.form-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.address-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+@media (max-width: 480px) {
+  .address-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-field-wide,
+  .form-field-checkbox {
+    grid-column: span 1;
+  }
+
+  .address-card-body {
+    flex-direction: column;
+  }
+
+  .address-card-actions {
+    align-self: flex-end;
+  }
+}
+
+/* ==========================================
+   Order Shipping Address Snapshot
+   ========================================== */
+
+.order-shipping-card {
+  overflow: hidden;
+}
+
+.order-section-title svg {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: var(--space-2);
+}
+
+.order-shipping-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.order-shipping-recipient {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.order-shipping-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.order-shipping-phone {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.order-shipping-address {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ==========================================
+   Listing Detail — Address Picker
+   ========================================== */
+
+.address-picker {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  background-color: var(--bg-elevated);
+}
+
+.address-picker-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0 0 var(--space-3);
+}
+
+.address-picker-loading,
+.address-picker-empty {
+  padding: var(--space-4) 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.address-picker-empty p {
+  margin: 0;
+}
+
+.address-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.address-picker-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-card);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.address-picker-item input[type="radio"] {
+  margin-top: 3px;
+  accent-color: var(--primary-color);
+  flex-shrink: 0;
+}
+
+.address-picker-item.selected {
+  border-color: var(--primary-color);
+  background-color: var(--primary-light);
+}
+
+.address-picker-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.address-picker-recipient {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-main);
+}
+
+.address-picker-phone {
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.address-picker-text {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.address-picker-manage {
+  display: block;
+  font-size: 0.85rem;
+  text-align: right;
+  padding: var(--space-1) 0;
+}
+
+.address-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-color);
+}
+
 .comments-section-title {
   display: flex;
   align-items: center;

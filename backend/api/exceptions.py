@@ -30,8 +30,13 @@ def api_exception_handler(exc, context):
     if response is None:
         return response
 
+    if response.status_code == 429:
+        message = "请求过于频繁，请稍后再试。"
+    else:
+        message = _extract_message(response.data)
+
     response.data = {
-        "message": _extract_message(response.data),
+        "message": message,
         "errors": response.data,
     }
     return response

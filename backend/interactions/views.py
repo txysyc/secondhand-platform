@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.mixins import PageNumberPaginationMixin
+from api.throttles import MethodScopedThrottleMixin
 from catalog.selectors import get_visible_listing_detail_queryset
 from interactions.permissions import IsCommentAuthor
 from interactions.serializers import (
@@ -61,8 +62,10 @@ class _VisibleListingMixin:
         return comment
 
 
-class ListingCommentApiView(_VisibleListingMixin, APIView):
+class ListingCommentApiView(MethodScopedThrottleMixin, _VisibleListingMixin, APIView):
     """商品评论列表和顶层评论创建。"""
+
+    method_throttle_scopes = {"POST": "comment_write"}
 
     def get_permissions(self):
         if self.request.method == "GET":
@@ -92,6 +95,7 @@ class CommentReplyApiView(_VisibleListingMixin, APIView):
     """评论回复创建。"""
 
     permission_classes = [IsAuthenticated]
+    throttle_scope = "comment_write"
 
     def post(self, request, comment_id):
         parent_comment = self.get_visible_comment_or_404(request, comment_id)

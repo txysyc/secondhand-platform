@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from users.serializers import (
     CurrentUserSerializer,
@@ -22,6 +23,7 @@ class RegisterApiView(APIView):
     """注册用户。"""
 
     permission_classes = [AllowAny]
+    throttle_scope = "auth_register"
 
     def post(self, request):
         serializer = UserRegisterSerializer(data=request.data)
@@ -37,6 +39,7 @@ class TokenPairApiView(APIView):
     """使用用户名或邮箱获取 JWT token。"""
 
     permission_classes = [AllowAny]
+    throttle_scope = "auth_login"
 
     def post(self, request):
         serializer = TokenPairSerializer(
@@ -45,6 +48,12 @@ class TokenPairApiView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         return Response(serializer.validated_data)
+
+
+class ThrottledTokenRefreshView(TokenRefreshView):
+    """带限流保护的 JWT refresh token 接口。"""
+
+    throttle_scope = "auth_refresh"
 
 
 class CurrentUserApiView(APIView):

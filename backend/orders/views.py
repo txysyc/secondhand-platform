@@ -39,6 +39,7 @@ class ListingOrderCreateApiView(APIView):
     """为指定商品创建待支付订单。"""
 
     permission_classes = [IsAuthenticated]
+    throttle_scope = "order_create"
     idempotency_ttl_seconds = 15 * 60
 
     def _validate_idempotency_key(self, request):

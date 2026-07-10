@@ -14,6 +14,7 @@ import { ListingForm } from '../features/catalog/ListingForm';
 import { OrderList } from '../features/orders/OrderList';
 import { OrderDetail } from '../features/orders/OrderDetail';
 import { MessageCenter } from '../features/messages/MessageCenter';
+import { NotificationCenter } from '../features/notifications/NotificationCenter';
 
 const NotFoundPage = () => (
   <div className="placeholder-card error-card fade-in">
@@ -56,6 +57,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute>
             <MessageCenter />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'notifications',
+        element: (
+          <ProtectedRoute>
+            <NotificationCenter />
           </ProtectedRoute>
         ),
       },

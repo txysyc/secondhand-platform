@@ -1,6 +1,9 @@
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from django.conf import settings
+from django.core.cache import cache
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.throttling import SimpleRateThrottle
 
 from messaging.selectors import get_conversation_for_user
 from messaging.services import (
@@ -42,6 +45,11 @@ class PrivateMessageConsumer(AsyncJsonWebsocketConsumer):
         """接收前端消息内容，创建私信并广播给会话双方。"""
 
         message_content = content.get("content", "")
+        if not await self._allow_message_send(self.user.pk):
+            await self.send_json(
+                {"type": "error", "message": "请求过于频繁，请稍后再试。"}
+            )
+            return
         try:
             message = await self._create_message(
                 self.user.pk,
@@ -89,3 +97,39 @@ class PrivateMessageConsumer(AsyncJsonWebsocketConsumer):
         conversation = get_conversation_for_user(user, conversation_id)
         message = create_private_message(user, conversation, content)
         return serialize_private_message(message)
+
+    @database_sync_to_async
+    def _allow_message_send(self, user_id):
+        """在线程池中按用户维度校验 WebSocket 私信发送限流。"""
+
+        rate = settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["message_send"]
+        num_requests, duration = _parse_throttle_rate(rate)
+        cache_key = f"throttle_message_send_ws_user:{user_id}"
+        history = cache.get(cache_key, [])
+        now = SimpleRateThrottle.timer()
+        history = [item for item in history if item > now - duration]
+        if len(history) >= num_requests:
+            cache.set(cache_key, history, duration)
+            return False
+        history.insert(0, now)
+        cache.set(cache_key, history, duration)
+        return True
+
+
+def _parse_throttle_rate(rate):
+    """解析 DRF 风格限流频率配置。"""
+
+    num, period = rate.split("/")
+    duration_map = {
+        "s": 1,
+        "sec": 1,
+        "second": 1,
+        "m": 60,
+        "min": 60,
+        "minute": 60,
+        "h": 60 * 60,
+        "hour": 60 * 60,
+        "d": 24 * 60 * 60,
+        "day": 24 * 60 * 60,
+    }
+    return int(num), duration_map[period]

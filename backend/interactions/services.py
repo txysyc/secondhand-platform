@@ -2,13 +2,27 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from users.models import User
 from catalog.models import Listing
 from interactions.models import Comment, ListingFavorite, ListingViewHistory
+from notifications.models import Notification
+from notifications.services import create_notification_after_commit
 
 MAX_VIEW_HISTORY_PER_USER = 100
 
 
 def create_comment(user: User, listing: Listing, content: str):
     """创建顶层留言"""
-    return _create_comment(user=user, listing=listing, content=content, parent=None)
+    comment = _create_comment(user=user, listing=listing, content=content, parent=None)
+    create_notification_after_commit(
+        recipient=listing.owner,
+        actor=user,
+        type=Notification.NotificationType.LISTING_COMMENTED,
+        title="商品收到新评论",
+        content=f"{user.username} 评论了你的商品《{listing.title}》",
+        target_type=Notification.TargetType.LISTING,
+        target_id=listing.pk,
+        target_url=f"/listings/{listing.pk}",
+        payload={"listing_id": listing.pk, "comment_id": comment.pk},
+    )
+    return comment
 
 
 def create_reply(user: User, parent_comment: Comment, content: str):
@@ -18,12 +32,28 @@ def create_reply(user: User, parent_comment: Comment, content: str):
     if parent_comment.parent_id is not None:
         raise ValidationError("不得创建多级留言")
 
-    return _create_comment(
+    reply = _create_comment(
         user=user,
         listing=parent_comment.listing,
         content=content,
         parent=parent_comment,
     )
+    create_notification_after_commit(
+        recipient=parent_comment.author,
+        actor=user,
+        type=Notification.NotificationType.COMMENT_REPLIED,
+        title="评论收到回复",
+        content=f"{user.username} 回复了你在《{parent_comment.listing.title}》下的评论",
+        target_type=Notification.TargetType.LISTING,
+        target_id=parent_comment.listing_id,
+        target_url=f"/listings/{parent_comment.listing_id}",
+        payload={
+            "listing_id": parent_comment.listing_id,
+            "comment_id": parent_comment.pk,
+            "reply_id": reply.pk,
+        },
+    )
+    return reply
 
 
 def delete_comment(user: User, comment: Comment):

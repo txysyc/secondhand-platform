@@ -8,6 +8,8 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from users.models import User, UserAddress
 from catalog.models import Listing
 from orders.models import Order
+from notifications.models import Notification
+from notifications.services import create_notification_after_commit
 
 
 def create_order(buyer: User, listing: Listing, address_id=None) -> Order:
@@ -75,6 +77,17 @@ def create_order(buyer: User, listing: Listing, address_id=None) -> Order:
                 }
             )
         order = Order.objects.create(**kwargs)
+        create_notification_after_commit(
+            recipient=seller,
+            actor=buyer,
+            type=Notification.NotificationType.ORDER_CREATED,
+            title="收到新的订单",
+            content=f"{buyer.username} 创建了《{listing.title}》的订单",
+            target_type=Notification.TargetType.ORDER,
+            target_id=order.pk,
+            target_url=f"/orders/{order.pk}",
+            payload={"order_id": order.pk, "listing_id": listing.pk},
+        )
 
     return order
 
@@ -115,6 +128,17 @@ def pay_order(buyer, order_id):
 
         order.save(update_fields=["status", "paid_at", "updated_at"])
         listing.save(update_fields=["status"])
+        create_notification_after_commit(
+            recipient=order.seller,
+            actor=buyer,
+            type=Notification.NotificationType.ORDER_PAID,
+            title="订单已支付",
+            content=f"{buyer.username} 已支付《{order.listing_title_snapshot}》的订单",
+            target_type=Notification.TargetType.ORDER,
+            target_id=order.pk,
+            target_url=f"/orders/{order.pk}",
+            payload={"order_id": order.pk, "listing_id": order.listing_id},
+        )
         return order
 
 
@@ -174,6 +198,17 @@ def confirm_order_delivery(seller, order_id):
                 "updated_at",
             ]
         )
+        create_notification_after_commit(
+            recipient=order.buyer,
+            actor=seller,
+            type=Notification.NotificationType.ORDER_DELIVERED,
+            title="卖家已发货或交付",
+            content=f"《{order.listing_title_snapshot}》已发货或交付，请及时确认收货",
+            target_type=Notification.TargetType.ORDER,
+            target_id=order.pk,
+            target_url=f"/orders/{order.pk}",
+            payload={"order_id": order.pk, "listing_id": order.listing_id},
+        )
 
 
 def confirm_order_receipt(buyer, order_id):
@@ -214,6 +249,17 @@ def confirm_order_receipt(buyer, order_id):
 
         order.save(update_fields=["status", "completed_at", "updated_at"])
         listing.save(update_fields=["status", "updated_at"])
+        create_notification_after_commit(
+            recipient=order.seller,
+            actor=buyer,
+            type=Notification.NotificationType.ORDER_COMPLETED,
+            title="订单已完成",
+            content=f"{buyer.username} 已确认收货，《{order.listing_title_snapshot}》订单完成",
+            target_type=Notification.TargetType.ORDER,
+            target_id=order.pk,
+            target_url=f"/orders/{order.pk}",
+            payload={"order_id": order.pk, "listing_id": order.listing_id},
+        )
 
 
 def mark_due_physical_orders_signed(now=None):

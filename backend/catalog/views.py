@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.mixins import PageNumberPaginationMixin
+from api.throttles import MethodScopedThrottleMixin
 from catalog.filters import ListingFilterSet, MyListingFilterSet
 from catalog.permissions import IsListingOwner
 from catalog.serializers import (
@@ -94,10 +95,11 @@ class ListingDetailApiView(APIView):
         return Response(serializer.data)
 
 
-class MyListingListCreateApiView(PageNumberPaginationMixin, APIView):
+class MyListingListCreateApiView(MethodScopedThrottleMixin, PageNumberPaginationMixin, APIView):
     """当前用户商品列表与草稿创建。"""
 
     permission_classes = [IsAuthenticated]
+    method_throttle_scopes = {"POST": "listing_write"}
     max_page_size = 50
 
     def get(self, request):
@@ -181,6 +183,8 @@ class MyListingDetailApiView(_OwnedListingAPIView):
 class ListingPublishApiView(_OwnedListingAPIView):
     """发布自己的草稿商品。"""
 
+    throttle_scope = "listing_write"
+
     def post(self, request, pk):
         listing = self.get_object(request, pk)
         listing = publish_listing_for_user(request.user, listing)
@@ -193,6 +197,8 @@ class ListingPublishApiView(_OwnedListingAPIView):
 
 class ListingDeactivateApiView(_OwnedListingAPIView):
     """下架自己的在售商品。"""
+
+    throttle_scope = "listing_write"
 
     def post(self, request, pk):
         listing = self.get_object(request, pk)
@@ -211,6 +217,8 @@ class ListingDeactivateApiView(_OwnedListingAPIView):
 class ListingReactivateApiView(_OwnedListingAPIView):
     """重新上架自己的已下架商品。"""
 
+    throttle_scope = "listing_write"
+
     def post(self, request, pk):
         listing = self.get_object(request, pk)
         listing = change_listing_status_for_user(
@@ -227,6 +235,8 @@ class ListingReactivateApiView(_OwnedListingAPIView):
 
 class ListingImageUploadApiView(_OwnedListingAPIView):
     """上传商品图片。"""
+
+    throttle_scope = "image_upload"
 
     def post(self, request, pk):
         listing = self.get_object(request, pk)

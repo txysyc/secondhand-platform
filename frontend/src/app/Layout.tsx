@@ -4,6 +4,7 @@ import {
   Recycle,
   Menu,
   X,
+  Bell,
   MessageSquare,
   ShoppingBag,
   Package,
@@ -15,8 +16,17 @@ import {
   MapPin,
 } from 'lucide-react';
 import { useAuth } from './providers';
+import { getNotificationUnreadCount } from '../api/endpoints/notifications';
 import { Avatar } from '../components/ui/Avatar';
 import { Button } from '../components/ui/Button';
+import type { NotificationSocketEvent } from '../types/notifications';
+
+interface NavigationItem {
+  to: string;
+  label: string;
+  icon: React.ReactNode;
+  unreadCount?: number;
+}
 
 export const Layout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -24,12 +34,18 @@ export const Layout: React.FC = () => {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const notificationSocketRef = useRef<WebSocket | null>(null);
+  const notificationReconnectTimerRef = useRef<number | null>(null);
 
   const handleLogout = () => {
     logout();
     setDropdownOpen(false);
     setMenuOpen(false);
+    setNotificationUnreadCount(0);
+    notificationSocketRef.current?.close();
+    notificationSocketRef.current = null;
     navigate('/login');
   };
 
@@ -52,9 +68,99 @@ export const Layout: React.FC = () => {
     };
   }, [dropdownOpen]);
 
-  const publicNav = [{ to: '/', label: '商品浏览', icon: <Package size={18} /> }];
+  useEffect(() => {
+    let cancelled = false;
 
-  const authenticatedNav = [
+    const clearReconnectTimer = () => {
+      // 组件卸载或用户退出时清理重连定时器，避免旧用户状态继续重连。
+      if (notificationReconnectTimerRef.current) {
+        window.clearTimeout(notificationReconnectTimerRef.current);
+        notificationReconnectTimerRef.current = null;
+      }
+    };
+
+    const refreshUnreadCount = async () => {
+      try {
+        const data = await getNotificationUnreadCount();
+        if (!cancelled) {
+          setNotificationUnreadCount(data.unread_count);
+        }
+      } catch {
+        if (!cancelled) {
+          setNotificationUnreadCount(0);
+        }
+      }
+    };
+
+    const connectNotificationSocket = () => {
+      const token = localStorage.getItem('access_token');
+      if (!token || cancelled) return;
+
+      try {
+        const fallbackWsBaseUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
+        const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL || fallbackWsBaseUrl;
+        const socket = new WebSocket(
+          `${wsBaseUrl}/ws/notifications/?token=${encodeURIComponent(token)}`
+        );
+        notificationSocketRef.current = socket;
+
+        socket.onmessage = (event) => {
+          if (notificationSocketRef.current !== socket) return;
+          const data = JSON.parse(event.data) as NotificationSocketEvent;
+          if (
+            data.type === 'notification.created' ||
+            data.type === 'notification.unread_count'
+          ) {
+            setNotificationUnreadCount(data.unread_count ?? 0);
+          }
+        };
+
+        socket.onclose = () => {
+          if (cancelled || notificationSocketRef.current !== socket) return;
+          notificationSocketRef.current = null;
+          clearReconnectTimer();
+          notificationReconnectTimerRef.current = window.setTimeout(() => {
+            refreshUnreadCount();
+            connectNotificationSocket();
+          }, 5000);
+        };
+
+        socket.onerror = () => {
+          socket.close();
+        };
+      } catch {
+        clearReconnectTimer();
+        notificationReconnectTimerRef.current = window.setTimeout(() => {
+          refreshUnreadCount();
+          connectNotificationSocket();
+        }, 5000);
+      }
+    };
+
+    if (user) {
+      refreshUnreadCount();
+      connectNotificationSocket();
+    } else {
+      setNotificationUnreadCount(0);
+    }
+
+    return () => {
+      cancelled = true;
+      clearReconnectTimer();
+      notificationSocketRef.current?.close();
+      notificationSocketRef.current = null;
+    };
+  }, [user]);
+
+  const publicNav: NavigationItem[] = [{ to: '/', label: '商品浏览', icon: <Package size={18} /> }];
+
+  const authenticatedNav: NavigationItem[] = [
+    {
+      to: '/notifications',
+      label: '通知',
+      icon: <Bell size={18} />,
+      unreadCount: notificationUnreadCount,
+    },
     { to: '/messages', label: '消息', icon: <MessageSquare size={18} /> },
     { to: '/orders/buyer', label: '订单', icon: <ShoppingBag size={18} /> },
     { to: '/me/listings', label: '我的商品', icon: <Package size={18} /> },
@@ -106,13 +212,22 @@ export const Layout: React.FC = () => {
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+                  className={({ isActive }) =>
+                    `${isActive ? 'nav-item active' : 'nav-item'}${
+                      item.to === '/notifications' ? ' notification-nav-link' : ''
+                    }`
+                  }
                   onClick={() => setMenuOpen(false)}
                 >
                   <span className="nav-item-icon" aria-hidden="true">
                     {item.icon}
                   </span>
                   {item.label}
+                  {typeof item.unreadCount === 'number' && item.unreadCount > 0 && (
+                    <span className="notification-badge" aria-label={`未读通知 ${item.unreadCount} 条`}>
+                      {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                    </span>
+                  )}
                 </NavLink>
               ))}
           </nav>

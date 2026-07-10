@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "orders.apps.OrdersConfig",
     "interactions.apps.InteractionsConfig",
     "messaging.apps.MessagingConfig",
+    "notifications.apps.NotificationsConfig",
 ]
 
 MIDDLEWARE = [
@@ -172,6 +173,21 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
     # 默认异常处理器
     "EXCEPTION_HANDLER": "api.exceptions.api_exception_handler",
+    # 默认限流类，业务视图通过 throttle_scope 精确启用。
+    "DEFAULT_THROTTLE_CLASSES": (
+        "rest_framework.throttling.ScopedRateThrottle",
+    ),
+    # 关键写接口限流频率。
+    "DEFAULT_THROTTLE_RATES": {
+        "auth_register": "5/hour",
+        "auth_login": "10/min",
+        "auth_refresh": "30/min",
+        "listing_write": "30/hour",
+        "image_upload": "30/hour",
+        "order_create": "20/hour",
+        "comment_write": "30/min",
+        "message_send": "60/min",
+    },
 }
 
 # JWT设置

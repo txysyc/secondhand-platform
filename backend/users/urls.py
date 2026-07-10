@@ -1,12 +1,12 @@
 """users 应用 API 路由。"""
 
 from django.urls import path
-from rest_framework_simplejwt.views import TokenRefreshView
 
 from users.views import (
     CurrentUserApiView,
     PublicUserApiView,
     RegisterApiView,
+    ThrottledTokenRefreshView,
     TokenPairApiView,
     UserAddressDetailApiView,
     UserAddressListCreateApiView,
@@ -16,7 +16,11 @@ from users.views import (
 urlpatterns = [
     path("auth/register/", RegisterApiView.as_view(), name="auth_register"),
     path("auth/token/", TokenPairApiView.as_view(), name="auth_token"),
-    path("auth/token/refresh/", TokenRefreshView.as_view(), name="auth_token_refresh"),
+    path(
+        "auth/token/refresh/",
+        ThrottledTokenRefreshView.as_view(),
+        name="auth_token_refresh",
+    ),
     path("users/me/", CurrentUserApiView.as_view(), name="users_me"),
     path(
         "users/me/addresses/",

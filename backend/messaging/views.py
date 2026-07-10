@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.mixins import PageNumberPaginationMixin
+from api.throttles import MethodScopedThrottleMixin
 from messaging.permissions import IsConversationParticipant
 from messaging.serializers import (
     ConversationCreateSerializer,
@@ -30,10 +31,11 @@ from messaging.services import (
 )
 
 
-class ConversationListCreateApiView(PageNumberPaginationMixin, APIView):
+class ConversationListCreateApiView(MethodScopedThrottleMixin, PageNumberPaginationMixin, APIView):
     """当前用户会话列表与发起会话。"""
 
     permission_classes = [IsAuthenticated]
+    method_throttle_scopes = {"POST": "message_send"}
     max_page_size = 50
 
     def get(self, request):
@@ -86,9 +88,12 @@ class ConversationDetailApiView(_ConversationParticipantApiView):
 
 
 class ConversationMessageListCreateApiView(
+    MethodScopedThrottleMixin,
     _ConversationParticipantApiView,
 ):
     """会话消息列表与 HTTP 发送消息。"""
+
+    method_throttle_scopes = {"POST": "message_send"}
 
     def get(self, request, pk):
         conversation = self.get_object(request, pk)

@@ -12,7 +12,7 @@ from api.mixins import PageNumberPaginationMixin
 from catalog.models import Listing
 from orders.filters import OrderFilterSet
 from orders.permissions import IsOrderParticipant
-from orders.serializers import OrderSerializer
+from orders.serializers import OrderRatingWriteSerializer, OrderSerializer
 from orders.selectors import (
     apply_order_list_sort,
     get_buyer_orders,
@@ -23,6 +23,7 @@ from orders.services import (
     confirm_order_delivery,
     confirm_order_receipt,
     create_order,
+    create_order_rating,
     pay_order,
 )
 
@@ -177,4 +178,27 @@ class OrderConfirmReceiptApiView(_OrderParticipantApiView):
         order = self.get_object(request, pk)
         serializer = OrderSerializer(order, context={"request": request})
         return Response(serializer.data)
+
+
+class OrderRatingApiView(_OrderParticipantApiView):
+    """买家为已完成订单提交一次星级评分。"""
+
+    throttle_scope = "rating_write"
+
+    def post(self, request, pk):
+        # 先复用订单参与者权限门禁，再由服务层校验买家身份和订单完成状态。
+        self.get_object(request, pk)
+        serializer = OrderRatingWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        _, created = create_order_rating(
+            request.user,
+            pk,
+            serializer.validated_data["score"],
+        )
+        order = self.get_object(request, pk)
+        response_serializer = OrderSerializer(order, context={"request": request})
+        return Response(
+            response_serializer.data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 

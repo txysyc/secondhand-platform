@@ -14,6 +14,11 @@ export interface OrderUser {
   username: string;
 }
 
+export interface OrderRating {
+  score: number;
+  created_at: string;
+}
+
 export interface OrderListingCategory {
   id: number;
   name: string;
@@ -58,5 +63,6 @@ export interface Order {
   updated_at: string;
   viewer_role: 'buyer' | 'seller';
   is_expired: boolean;
-  available_actions: ('pay' | 'confirm_delivery' | 'confirm_receipt')[];
+  available_actions: ('pay' | 'confirm_delivery' | 'confirm_receipt' | 'rate')[];
+  buyer_rating: OrderRating | null;
 }

@@ -1,3 +1,4 @@
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from django.conf import settings
@@ -133,3 +134,30 @@ class Order(models.Model):
         """返回后台和调试输出中展示的订单摘要。"""
 
         return f"#{self.pk} {self.listing_title_snapshot}"
+
+
+class OrderRating(models.Model):
+    """买家对已完成订单卖家的不可修改星级评分。"""
+
+    class Meta:
+        verbose_name = "订单评分"
+        verbose_name_plural = "订单评分"
+        ordering = ["-created_at", "-id"]
+
+    # 一对一约束从数据库层保证同一订单最多只能评分一次。
+    order = models.OneToOneField(
+        Order,
+        on_delete=models.CASCADE,
+        related_name="buyer_rating",
+        verbose_name="订单",
+    )
+    score = models.PositiveSmallIntegerField(
+        verbose_name="星级评分",
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+    )
+    created_at = models.DateTimeField(verbose_name="评分时间", auto_now_add=True)
+
+    def __str__(self):
+        """返回后台和调试输出中展示的评分摘要。"""
+
+        return f"订单#{self.order_id}：{self.score}星"

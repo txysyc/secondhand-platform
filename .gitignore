@@ -11,6 +11,10 @@ build/
 
 .playwright-mcp/
 
+# 一键性能测试生成的 CSV、HTML、JWT 配置与报告均为本地测试产物。
+performance/中间文件/
+performance/测试结果/
+
 AGENTS.md
 
 docs/

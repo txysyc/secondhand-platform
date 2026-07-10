@@ -400,6 +400,60 @@
   gap: var(--space-3);
 }
 
+/* 已完成订单的星级评分控件保持紧凑，避免挤压结算动作区域。 */
+.order-rating-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+.order-rating-label {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.order-rating-stars,
+.order-rating-result-stars {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: #f59e0b;
+}
+
+.order-rating-star {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0;
+  color: var(--border-color);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.order-rating-star:hover,
+.order-rating-star:focus-visible,
+.order-rating-star.is-selected {
+  color: #f59e0b;
+}
+
+.order-rating-star:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.order-rating-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
 @media (max-width: 768px) {
   .order-detail-layout {
     grid-template-columns: 1fr;

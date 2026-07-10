@@ -1,5 +1,6 @@
 """catalog 应用 API 类视图。"""
 
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
@@ -9,6 +10,7 @@ from rest_framework.views import APIView
 
 from api.mixins import PageNumberPaginationMixin
 from api.throttles import MethodScopedThrottleMixin
+from catalog.cache import get_active_category_payload, get_cached_public_listing_detail
 from catalog.filters import ListingFilterSet, MyListingFilterSet
 from catalog.permissions import IsListingOwner
 from catalog.serializers import (
@@ -24,6 +26,7 @@ from catalog.selectors import (
     apply_public_listing_sort,
     get_active_categories,
     get_owner_listing_queryset,
+    get_public_listing_detail_queryset,
     get_public_listing_queryset,
     get_visible_listing_detail_queryset,
 )
@@ -47,8 +50,7 @@ class CategoryListApiView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        serializer = CategorySerializer(get_active_categories(), many=True)
-        return Response(serializer.data)
+        return Response(get_active_category_payload())
 
 
 class ListingListApiView(PageNumberPaginationMixin, APIView):
@@ -89,10 +91,27 @@ class ListingDetailApiView(APIView):
         )
 
     def get(self, request, pk):
+        if not request.user.is_authenticated:
+            payload = get_cached_public_listing_detail(
+                pk,
+                lambda: self._build_public_detail_payload(pk, request),
+            )
+            if payload is None:
+                raise Http404("商品不存在或暂不可见")
+            return Response(payload)
+
         listing = self.get_object(request, pk)
         record_listing_view(request.user, listing)
         serializer = ListingDetailSerializer(listing, context={"request": request})
         return Response(serializer.data)
+
+    def _build_public_detail_payload(self, pk, request):
+        """构建仅供匿名访客复用的公开商品详情快照。"""
+
+        listing = get_public_listing_detail_queryset().filter(pk=pk).first()
+        if listing is None:
+            return None
+        return ListingDetailSerializer(listing, context={"request": request}).data
 
 
 class MyListingListCreateApiView(MethodScopedThrottleMixin, PageNumberPaginationMixin, APIView):

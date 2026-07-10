@@ -7,7 +7,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from users.models import User, UserAddress
 from catalog.models import Listing
-from orders.models import Order
+from orders.models import Order, OrderRating
 from notifications.models import Notification
 from notifications.services import create_notification_after_commit
 
@@ -90,6 +90,30 @@ def create_order(buyer: User, listing: Listing, address_id=None) -> Order:
         )
 
     return order
+
+
+def create_order_rating(buyer: User, order_id: int, score: int):
+    """为已完成订单创建不可修改评分，并兼容同分网络重试。"""
+
+    with transaction.atomic():
+        try:
+            order = Order.objects.select_for_update().get(pk=order_id)
+        except Order.DoesNotExist:
+            raise ValidationError("该订单不存在")
+
+        if order.buyer_id != buyer.id:
+            raise PermissionDenied("只有买家可以为订单评分")
+        if order.status != Order.OrderStatus.COMPLETED:
+            raise ValidationError("只有已完成订单可以评分")
+
+        existing_rating = OrderRating.objects.filter(order=order).first()
+        if existing_rating is not None:
+            if existing_rating.score == score:
+                return existing_rating, False
+            raise ValidationError("该订单已评分，不能修改")
+
+        rating = OrderRating.objects.create(order=order, score=score)
+        return rating, True
 
 
 def pay_order(buyer, order_id):

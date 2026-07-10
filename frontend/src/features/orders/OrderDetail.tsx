@@ -5,6 +5,7 @@ import {
   payOrder,
   confirmOrderDelivery,
   confirmOrderReceipt,
+  rateOrder,
 } from '../../api/endpoints/orders';
 import { useAuth } from '../../app/providers';
 import { resolveMediaUrl } from '../../utils/media';
@@ -13,7 +14,7 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Loading } from '../../components/ui/Loading';
 import { ErrorState } from '../../components/ui/ErrorState';
-import { ArrowLeft, Package, Check, CreditCard, Truck, PartyPopper, MapPin } from 'lucide-react';
+import { ArrowLeft, Package, Check, CreditCard, Truck, PartyPopper, MapPin, Star } from 'lucide-react';
 import type { Order } from '../../types/orders';
 
 export const OrderDetail: React.FC = () => {
@@ -27,6 +28,7 @@ export const OrderDetail: React.FC = () => {
 
   // 提交状态
   const [submittingAction, setSubmittingAction] = useState(false);
+  const [selectedScore, setSelectedScore] = useState(0);
 
   useEffect(() => {
     let cancel = false;
@@ -102,6 +104,21 @@ export const OrderDetail: React.FC = () => {
       alert('确认收货成功！这笔二货交易已经圆满完成。');
     } catch (err: Error | unknown) {
       alert(err instanceof Error ? err.message : '确认收货失败，请重试');
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
+  // 动作处理：提交订单星级评分。
+  const handleRateOrder = async () => {
+    if (!order || selectedScore < 1) return;
+    setSubmittingAction(true);
+    try {
+      const data = await rateOrder(order.id, selectedScore);
+      setOrder(data);
+      alert('评分已提交，感谢你的反馈。');
+    } catch (err: Error | unknown) {
+      alert(err instanceof Error ? err.message : '评分提交失败，请重试');
     } finally {
       setSubmittingAction(false);
     }
@@ -373,6 +390,53 @@ export const OrderDetail: React.FC = () => {
               >
                 确认收货
               </Button>
+            )}
+
+            {/* 动作 4：买家对已完成订单提交一次星级评分 */}
+            {isBuyer && available_actions.includes('rate') && (
+              <div className="order-rating-form">
+                <p className="order-rating-label">为本次交易评分</p>
+                <div className="order-rating-stars" role="radiogroup" aria-label="订单评分">
+                  {[1, 2, 3, 4, 5].map((score) => (
+                    <button
+                      key={score}
+                      type="button"
+                      className={`order-rating-star ${score <= selectedScore ? 'is-selected' : ''}`}
+                      onClick={() => setSelectedScore(score)}
+                      role="radio"
+                      aria-checked={score === selectedScore}
+                      aria-label={`${score} 星`}
+                      title={`${score} 星`}
+                    >
+                      <Star size={24} fill="currentColor" aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+                <Button
+                  fullWidth
+                  onClick={handleRateOrder}
+                  loading={submittingAction}
+                  disabled={selectedScore < 1}
+                >
+                  提交评分
+                </Button>
+              </div>
+            )}
+
+            {order.buyer_rating && (
+              <div className="order-rating-result" aria-label={`买家评分 ${order.buyer_rating.score} 星`}>
+                <span>买家评分</span>
+                <span className="order-rating-result-stars">
+                  {[1, 2, 3, 4, 5].map((score) => (
+                    <Star
+                      key={score}
+                      size={16}
+                      fill={score <= order.buyer_rating!.score ? 'currentColor' : 'none'}
+                      aria-hidden="true"
+                    />
+                  ))}
+                </span>
+              </div>
             )}
 
             {/* 过渡状态提示 */}

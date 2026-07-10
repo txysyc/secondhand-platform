@@ -18,6 +18,10 @@ export interface PublicProfileResponse {
     avatar_url: string | null;
     bio: string;
   };
+  rating_summary: {
+    rating_count: number;
+    average_score: number | null;
+  };
   listings: PublicProfileListingSummary[];
 }
 

@@ -9,6 +9,7 @@ from django.contrib import admin
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import RequestFactory
@@ -34,6 +35,14 @@ def default_group():
 
 class TestUsersApi:
     """用户与认证 API 测试。"""
+
+    @pytest.fixture(autouse=True)
+    def _clear_throttle_cache(self):
+        """隔离认证限流计数，避免其他 API 用例污染本模块断言。"""
+
+        cache.clear()
+        yield
+        cache.clear()
 
     def test_register_creates_user_profile_and_default_group(
         self,

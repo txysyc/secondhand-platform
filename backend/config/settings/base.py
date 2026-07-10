@@ -187,6 +187,7 @@ REST_FRAMEWORK = {
         "order_create": "20/hour",
         "comment_write": "30/min",
         "message_send": "60/min",
+        "rating_write": "20/min",
     },
 }
 

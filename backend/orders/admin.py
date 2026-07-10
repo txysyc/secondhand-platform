@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from orders.models import Order
+from orders.models import Order, OrderRating
 
 
 @admin.register(Order)
@@ -41,3 +41,13 @@ class OrderAdmin(admin.ModelAdmin):
         "shipping_phone",
     ]
     list_select_related = ["buyer", "seller", "listing"]
+
+
+@admin.register(OrderRating)
+class OrderRatingAdmin(admin.ModelAdmin):
+    """订单评分后台只读展示。"""
+
+    list_display = ["id", "order", "score", "created_at"]
+    readonly_fields = ["order", "score", "created_at"]
+    list_select_related = ["order"]
+    search_fields = ["order__id", "order__seller_display_name"]

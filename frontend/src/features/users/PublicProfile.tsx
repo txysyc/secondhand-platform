@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { PackageOpen, Monitor, BookOpen, Shirt, Gift } from 'lucide-react';
+import { PackageOpen, Monitor, BookOpen, Shirt, Gift, Star } from 'lucide-react';
 import { getUserPublicProfile } from '../../api/endpoints/users';
 import { resolveMediaUrl } from '../../utils/media';
 import { Card } from '../../components/ui/Card';
@@ -106,6 +106,19 @@ export const PublicProfile: React.FC = () => {
             <p className="profile-bio">
               {profileData.profile.bio || '尚未设置个人简介'}
             </p>
+            <div className="profile-rating-summary" aria-label="卖家信用评分">
+              <Star size={17} fill="currentColor" aria-hidden="true" />
+              {profileData.rating_summary.rating_count > 0 ? (
+                <span>
+                  {profileData.rating_summary.average_score?.toFixed(1)} / 5
+                  <span className="profile-rating-count">
+                    {profileData.rating_summary.rating_count} 人评分
+                  </span>
+                </span>
+              ) : (
+                <span>暂无评分</span>
+              )}
+            </div>
           </div>
         </div>
       </Card>

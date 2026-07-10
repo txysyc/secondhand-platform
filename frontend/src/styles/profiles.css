@@ -81,6 +81,22 @@
   line-height: 1.6;
 }
 
+.profile-rating-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  color: #b45309;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.profile-rating-count {
+  margin-left: var(--space-2);
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
 .profile-listings-section {
   margin-top: var(--space-8);
 }

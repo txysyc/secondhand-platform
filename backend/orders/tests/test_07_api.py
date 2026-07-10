@@ -496,7 +496,8 @@ class TestOrdersApi:
 
         assert response.status_code == 200
         assert response.json()["status"] == Order.OrderStatus.COMPLETED
-        assert response.json()["available_actions"] == []
+        # 已完成且未评分的买家订单应暴露一次性评分动作。
+        assert response.json()["available_actions"] == ["rate"]
         self.listing.refresh_from_db()
         assert self.listing.status == Listing.Status.SOLD
         assert invalid_response.status_code == 400

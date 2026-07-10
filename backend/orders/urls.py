@@ -9,6 +9,7 @@ from orders.views import (
     OrderConfirmReceiptApiView,
     OrderDetailApiView,
     OrderPayApiView,
+    OrderRatingApiView,
     SellerOrderListApiView,
 )
 
@@ -31,6 +32,11 @@ urlpatterns = [
         "orders/<int:pk>/confirm-receipt/",
         OrderConfirmReceiptApiView.as_view(),
         name="orders_confirm_receipt",
+    ),
+    path(
+        "orders/<int:pk>/rating/",
+        OrderRatingApiView.as_view(),
+        name="orders_rating",
     ),
 ]
 

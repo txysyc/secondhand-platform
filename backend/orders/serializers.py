@@ -8,7 +8,7 @@ from catalog.serializers import (
     ListingOwnerSerializer,
 )
 from catalog.models import Listing
-from orders.models import Order
+from orders.models import Order, OrderRating
 from orders.selectors import (
     get_order_available_actions,
     get_order_viewer_role,
@@ -47,6 +47,20 @@ class OrderUserSerializer(serializers.Serializer):
     username = serializers.CharField()
 
 
+class OrderRatingSerializer(serializers.ModelSerializer):
+    """订单评分响应。"""
+
+    class Meta:
+        model = OrderRating
+        fields = ["score", "created_at"]
+
+
+class OrderRatingWriteSerializer(serializers.Serializer):
+    """订单评分写入参数。"""
+
+    score = serializers.IntegerField(min_value=1, max_value=5)
+
+
 class OrderSerializer(serializers.ModelSerializer):
     """订单详情和列表响应。"""
 
@@ -58,6 +72,7 @@ class OrderSerializer(serializers.ModelSerializer):
     is_expired = serializers.SerializerMethodField()
     available_actions = serializers.SerializerMethodField()
     shipping_address_snapshot = serializers.SerializerMethodField()
+    buyer_rating = OrderRatingSerializer(read_only=True)
 
     class Meta:
         model = Order
@@ -86,6 +101,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "viewer_role",
             "is_expired",
             "available_actions",
+            "buyer_rating",
         ]
 
     def get_viewer_role(self, obj):

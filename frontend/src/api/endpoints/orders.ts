@@ -87,3 +87,13 @@ export const confirmOrderReceipt = async (
 ): Promise<Order> => {
   return apiClient.post(`/orders/${id}/confirm-receipt/`);
 };
+
+/**
+ * 买家为已完成订单提交一次星级评分。
+ */
+export const rateOrder = async (
+  id: string | number,
+  score: number
+): Promise<Order> => {
+  return apiClient.post(`/orders/${id}/rating/`, { score });
+};

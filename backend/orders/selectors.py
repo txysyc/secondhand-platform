@@ -1,4 +1,6 @@
-from orders.models import Order
+from django.db.models import Avg, Count
+
+from orders.models import Order, OrderRating
 
 
 def get_order_queryset():
@@ -11,6 +13,7 @@ def get_order_queryset():
         "listing__category",
         "listing__owner",
         "listing__owner__profile",
+        "buyer_rating",
     ).prefetch_related("listing__images")
 
 
@@ -92,8 +95,30 @@ def get_order_available_actions(order, user, now=None):
             Order.OrderStatus.SIGNED,
         ]:
             return ["confirm_receipt"]
+        if (
+            order.status == Order.OrderStatus.COMPLETED
+            and getattr(order, "buyer_rating", None) is None
+        ):
+            return ["rate"]
 
     if role == "seller" and order.status == Order.OrderStatus.AWAITING_SHIPMENT:
         return ["confirm_delivery"]
 
     return []
+
+
+def get_seller_rating_summary(user):
+    """聚合指定卖家的订单评分数量和平均星级。"""
+
+    summary = OrderRating.objects.filter(order__seller=user).aggregate(
+        rating_count=Count("id"),
+        average_score=Avg("score"),
+    )
+    return {
+        "rating_count": summary["rating_count"],
+        "average_score": (
+            float(summary["average_score"])
+            if summary["average_score"] is not None
+            else None
+        ),
+    }

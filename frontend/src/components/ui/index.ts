@@ -13,3 +13,7 @@ export { Loading } from './Loading';
 export { EmptyState } from './EmptyState';
 export { ErrorState } from './ErrorState';
 export { Avatar } from './Avatar';
+export { PageHeader } from './PageHeader';
+export { Tabs } from './Tabs';
+export type { TabItem } from './Tabs';
+export { Pagination } from './Pagination';

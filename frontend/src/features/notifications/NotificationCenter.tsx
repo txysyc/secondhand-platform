@@ -7,11 +7,12 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from '../../api/endpoints/notifications';
-import { Button, EmptyState, Loading } from '../../components/ui';
+import { Button, EmptyState, Loading, Pagination } from '../../components/ui';
 import type {
   NotificationItem,
   NotificationStatusFilter,
 } from '../../types/notifications';
+import { dispatchNotificationUnreadCountUpdate } from '../../utils/notificationEvents';
 
 const PAGE_SIZE = 10;
 
@@ -71,6 +72,8 @@ export const NotificationCenter: React.FC = () => {
     setErrorMsg('');
     try {
       await markAllNotificationsRead();
+      // 当前页面立即清空导航徽标，WebSocket 随后会推送服务端准确值。
+      dispatchNotificationUnreadCountUpdate({ unreadCount: 0 });
       await fetchNotifications(1, status);
       setCurrentPage(1);
     } catch (err) {
@@ -84,6 +87,8 @@ export const NotificationCenter: React.FC = () => {
     try {
       if (!item.is_read) {
         await markNotificationRead(item.id);
+        // 单条通知首次标记已读后，要求全局导航重新读取服务端准确计数。
+        dispatchNotificationUnreadCountUpdate({});
       }
       if (item.target_url) {
         navigate(item.target_url);
@@ -96,7 +101,6 @@ export const NotificationCenter: React.FC = () => {
   };
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
 
   if (loading) {
     return <Loading text="正在加载通知..." />;
@@ -175,37 +179,12 @@ export const NotificationCenter: React.FC = () => {
             ))}
           </div>
 
-          {totalPages > 1 && (
-            <nav className="pagination" aria-label="通知分页">
-              <button
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                className="page-btn"
-                aria-label="上一页"
-              >
-                上页
-              </button>
-              {pageNumbers.map((pageNumber) => (
-                <button
-                  key={pageNumber}
-                  onClick={() => setCurrentPage(pageNumber)}
-                  className={`page-btn ${currentPage === pageNumber ? 'active' : ''}`}
-                  aria-label={`第 ${pageNumber} 页`}
-                  aria-current={currentPage === pageNumber ? 'page' : undefined}
-                >
-                  {pageNumber}
-                </button>
-              ))}
-              <button
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                className="page-btn"
-                aria-label="下一页"
-              >
-                下页
-              </button>
-            </nav>
-          )}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            ariaLabel="通知分页"
+          />
         </>
       )}
     </div>

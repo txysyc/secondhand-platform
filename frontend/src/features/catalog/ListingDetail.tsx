@@ -17,13 +17,15 @@ import { getAddresses } from '../../api/endpoints/addresses';
 import { createConversation } from '../../api/endpoints/messages';
 import { useAuth } from '../../app/providers';
 import { resolveAvatarUrl, resolveMediaUrl } from '../../utils/media';
-import { Button, Card, ErrorState, Loading } from '../../components/ui';
+import { Button, Card, ErrorState, Loading, Tabs } from '../../components/ui';
 import { AddressPickerPanel } from './detail/AddressPickerPanel';
 import { ListingCommentsSection } from './detail/ListingCommentsSection';
 import { ListingGallery } from './detail/ListingGallery';
 import type { Listing } from '../../types/listings';
 import type { Comment } from '../../types/comments';
 import type { UserAddress } from '../../types/address';
+
+type DetailTab = 'description' | 'comments';
 
 const getErrorMessage = (err: unknown, fallback: string): string => {
   if (err instanceof Error) return err.message;
@@ -41,6 +43,7 @@ export const ListingDetail: React.FC = () => {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
+  const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('description');
 
   // 评论相关状态
   const [comments, setComments] = useState<Comment[]>([]);
@@ -361,22 +364,6 @@ export const ListingDetail: React.FC = () => {
             )}
           </div>
 
-          {/* 商品描述 */}
-          <div className="detail-description-section">
-            <h3 className="detail-section-title">商品描述</h3>
-            <p className="detail-description-text">{listing.description}</p>
-          </div>
-
-          {/* 卖家交易说明 */}
-          {listing.delivery_notes && (
-            <div className="detail-description-section">
-              <h3 className="detail-section-title">交易说明</h3>
-              <p className="detail-description-text detail-description-muted">
-                {listing.delivery_notes}
-              </p>
-            </div>
-          )}
-
           {/* 卖家发布者信息卡片 */}
           <Link to={`/users/${listing.owner.id}`} className="detail-owner-widget">
             <img
@@ -477,26 +464,61 @@ export const ListingDetail: React.FC = () => {
         </Card>
       </div>
 
-      <ListingCommentsSection
-        listing={listing}
-        comments={comments}
-        totalCommentsCount={totalCommentsCount}
-        user={user}
-        actionError={actionError}
-        loadingComments={loadingComments}
-        newCommentContent={newCommentContent}
-        replyTargetId={replyTargetId}
-        replyContent={replyContent}
-        submittingComment={submittingComment}
-        submittingReply={submittingReply}
-        onNewCommentContentChange={setNewCommentContent}
-        onReplyTargetIdChange={setReplyTargetId}
-        onReplyContentChange={setReplyContent}
-        onCreateComment={handleCreateComment}
-        onCreateReply={handleCreateReply}
-        onDeleteComment={handleDeleteComment}
-        onLoginClick={() => navigate('/login', { state: { from: { pathname: `/listings/${id}` } } })}
-      />
+      {/* 描述和评论保持在同一内容层级，避免评论被长描述推到页面底部。 */}
+      <section className="detail-content-area">
+        <Tabs<DetailTab>
+          items={[
+            { value: 'description', label: '商品详情' },
+            { value: 'comments', label: '留言互动', count: totalCommentsCount },
+          ]}
+          value={activeDetailTab}
+          onChange={setActiveDetailTab}
+          ariaLabel="商品详情内容"
+          className="detail-content-tabs"
+        />
+
+        {activeDetailTab === 'description' ? (
+          <div className="detail-description-panel" role="tabpanel">
+            <div className="detail-description-section">
+              <h2 className="detail-content-title">商品描述</h2>
+              <p className="detail-description-text">{listing.description}</p>
+            </div>
+            {listing.delivery_notes && (
+              <div className="detail-description-section detail-delivery-section">
+                <h2 className="detail-content-title">交易说明</h2>
+                <p className="detail-description-text detail-description-muted">
+                  {listing.delivery_notes}
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div role="tabpanel">
+            <ListingCommentsSection
+              listing={listing}
+              comments={comments}
+              totalCommentsCount={totalCommentsCount}
+              user={user}
+              actionError={actionError}
+              loadingComments={loadingComments}
+              newCommentContent={newCommentContent}
+              replyTargetId={replyTargetId}
+              replyContent={replyContent}
+              submittingComment={submittingComment}
+              submittingReply={submittingReply}
+              onNewCommentContentChange={setNewCommentContent}
+              onReplyTargetIdChange={setReplyTargetId}
+              onReplyContentChange={setReplyContent}
+              onCreateComment={handleCreateComment}
+              onCreateReply={handleCreateReply}
+              onDeleteComment={handleDeleteComment}
+              onLoginClick={() =>
+                navigate('/login', { state: { from: { pathname: `/listings/${id}` } } })
+              }
+            />
+          </div>
+        )}
+      </section>
     </div>
   );
 };

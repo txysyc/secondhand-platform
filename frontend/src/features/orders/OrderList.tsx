@@ -3,12 +3,11 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { getBuyerOrders, getSellerOrders } from '../../api/endpoints/orders';
 import { useAuth } from '../../app/providers';
 import { resolveMediaUrl } from '../../utils/media';
-import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Loading } from '../../components/ui/Loading';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState } from '../../components/ui/ErrorState';
-import { Button, Input, Select } from '../../components/ui';
+import { Button, Input, Pagination, Select } from '../../components/ui';
 import { Package, BookOpen, Shirt, CircleDot, Search } from 'lucide-react';
 import type { Order } from '../../types/orders';
 
@@ -109,7 +108,6 @@ export const OrderList: React.FC = () => {
 
   const orderList = orders;
   const totalPages = Math.ceil(totalCount / ORDER_PAGE_SIZE);
-  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
 
   // 更新筛选参数时默认回到第一页，避免旧页码造成空结果。
   const updateQueryParam = (newParams: Record<string, string | number | null>) => {
@@ -307,7 +305,7 @@ export const OrderList: React.FC = () => {
                 className="order-card-wrapper"
                 onClick={() => navigate(`/orders/${order.id}`)}
               >
-                <Card hover shadow="sm" className="order-card-inner">
+                <article className="order-card-inner">
                   <div className="order-thumb-wrapper">
                     {imageUrl ? (
                       <img
@@ -354,43 +352,20 @@ export const OrderList: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                </Card>
+                </article>
               </div>
             );
           })}
         </div>
       )}
 
-      {!loading && !errorMsg && totalPages > 1 && (
-        <nav className="pagination" aria-label="订单分页">
-          <button
-            disabled={currentPage === 1}
-            onClick={() => updateQueryParam({ page: currentPage - 1 })}
-            className="page-btn"
-            aria-label="上一页"
-          >
-            上页
-          </button>
-          {pageNumbers.map((page) => (
-            <button
-              key={page}
-              onClick={() => updateQueryParam({ page })}
-              className={`page-btn ${currentPage === page ? 'active' : ''}`}
-              aria-label={`第 ${page} 页`}
-              aria-current={currentPage === page ? 'page' : undefined}
-            >
-              {page}
-            </button>
-          ))}
-          <button
-            disabled={currentPage === totalPages}
-            onClick={() => updateQueryParam({ page: currentPage + 1 })}
-            className="page-btn"
-            aria-label="下一页"
-          >
-            下页
-          </button>
-        </nav>
+      {!loading && !errorMsg && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={(page) => updateQueryParam({ page })}
+          ariaLabel="订单分页"
+        />
       )}
     </div>
   );

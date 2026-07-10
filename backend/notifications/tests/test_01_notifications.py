@@ -21,7 +21,7 @@ from interactions.models import Comment
 from interactions.services import create_comment, create_reply
 from notifications.models import Notification
 from notifications.routing import websocket_urlpatterns
-from notifications.services import create_notification
+from notifications.services import create_notification, mark_notification_read
 from orders.models import Order
 from orders.services import (
     confirm_order_delivery,
@@ -326,6 +326,13 @@ def _create_websocket_notification(user):
 
 
 @database_sync_to_async
+def _mark_websocket_notification_read(user, notification):
+    """在线程池中标记通知已读并触发未读数推送。"""
+
+    return mark_notification_read(user, notification)
+
+
+@database_sync_to_async
 def _access_token_for(user):
     """在线程池中签发 access token。"""
 
@@ -353,12 +360,18 @@ class TestNotificationConsumer:
         connected, _ = await communicator.connect()
         assert connected is True
 
-        await _create_websocket_notification(user)
+        notification = await _create_websocket_notification(user)
         response = await communicator.receive_json_from()
 
         assert response["type"] == "notification.created"
         assert response["notification"]["title"] == "实时通知"
         assert response["unread_count"] == 1
+
+        await _mark_websocket_notification_read(user, notification)
+        unread_response = await communicator.receive_json_from()
+
+        assert unread_response["type"] == "notification.unread_count"
+        assert unread_response["unread_count"] == 0
         await communicator.disconnect()
 
     async def test_anonymous_user_cannot_connect(self, websocket_settings):

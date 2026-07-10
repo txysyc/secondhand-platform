@@ -20,6 +20,10 @@ import { getNotificationUnreadCount } from '../api/endpoints/notifications';
 import { Avatar } from '../components/ui/Avatar';
 import { Button } from '../components/ui/Button';
 import type { NotificationSocketEvent } from '../types/notifications';
+import {
+  NOTIFICATION_UNREAD_COUNT_EVENT,
+  type NotificationUnreadCountUpdate,
+} from '../utils/notificationEvents';
 
 interface NavigationItem {
   to: string;
@@ -92,6 +96,17 @@ export const Layout: React.FC = () => {
       }
     };
 
+    const handleLocalUnreadCountUpdate = (event: Event) => {
+      // 通知页读操作先在当前页面同步，避免等待 WebSocket 往返期间徽标残留。
+      const update = (event as CustomEvent<NotificationUnreadCountUpdate>).detail;
+      if (typeof update.unreadCount === 'number') {
+        setNotificationUnreadCount(Math.max(0, update.unreadCount));
+        return;
+      }
+      // 单条已读不做本地递减，直接读取准确值以避免与 WebSocket 推送重复扣减。
+      refreshUnreadCount();
+    };
+
     const connectNotificationSocket = () => {
       const token = localStorage.getItem('access_token');
       if (!token || cancelled) return;
@@ -138,15 +153,15 @@ export const Layout: React.FC = () => {
     };
 
     if (user) {
+      window.addEventListener(NOTIFICATION_UNREAD_COUNT_EVENT, handleLocalUnreadCountUpdate);
       refreshUnreadCount();
       connectNotificationSocket();
-    } else {
-      setNotificationUnreadCount(0);
     }
 
     return () => {
       cancelled = true;
       clearReconnectTimer();
+      window.removeEventListener(NOTIFICATION_UNREAD_COUNT_EVENT, handleLocalUnreadCountUpdate);
       notificationSocketRef.current?.close();
       notificationSocketRef.current = null;
     };

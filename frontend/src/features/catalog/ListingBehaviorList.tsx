@@ -7,7 +7,7 @@ import {
   getMyFavorites,
   unfavoriteListing,
 } from '../../api/endpoints/listings';
-import { Button, EmptyState, Loading } from '../../components/ui';
+import { Button, EmptyState, Loading, Pagination } from '../../components/ui';
 import type {
   BrowseHistoryItem,
   FavoriteItem,
@@ -102,7 +102,6 @@ export const ListingBehaviorList: React.FC<ListingBehaviorListProps> = ({ mode }
   };
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
 
   if (loading) {
     return <Loading text={`正在加载${title}...`} />;
@@ -190,37 +189,12 @@ export const ListingBehaviorList: React.FC<ListingBehaviorListProps> = ({ mode }
             })}
           </div>
 
-          {totalPages > 1 && (
-            <nav className="pagination" aria-label={`${title}分页`}>
-              <button
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                className="page-btn"
-                aria-label="上一页"
-              >
-                上页
-              </button>
-              {pageNumbers.map((pageNumber) => (
-                <button
-                  key={pageNumber}
-                  onClick={() => setCurrentPage(pageNumber)}
-                  className={`page-btn ${currentPage === pageNumber ? 'active' : ''}`}
-                  aria-label={`第 ${pageNumber} 页`}
-                  aria-current={currentPage === pageNumber ? 'page' : undefined}
-                >
-                  {pageNumber}
-                </button>
-              ))}
-              <button
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                className="page-btn"
-                aria-label="下一页"
-              >
-                下页
-              </button>
-            </nav>
-          )}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            ariaLabel={`${title}分页`}
+          />
         </>
       )}
     </div>

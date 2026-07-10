@@ -1,0 +1,1455 @@
+/* =========================================================
+   全站高密度视觉系统
+   方向：清爽、可信、可快速扫描的生活交易平台
+   ========================================================= */
+
+/* 统一设计令牌，兼容现有组件变量。 */
+:root {
+  --font-display: 'Outfit', 'Noto Sans SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', sans-serif;
+  --font-body: 'Noto Sans SC', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --primary-color: #087f72;
+  --primary-hover: #06675e;
+  --primary-active: #07554f;
+  --primary-light: #e8f5f2;
+  --primary-gradient: #087f72;
+  --accent-color: #d9560b;
+  --accent-hover: #b94708;
+  --accent-light: #fff1e8;
+  --text-main: #202521;
+  --text-secondary: #4f5953;
+  --text-muted: #737d77;
+  --text-light: #8d9691;
+  --text-placeholder: #9ca5a0;
+  --bg-main: #f5f7f5;
+  --bg-card: #ffffff;
+  --bg-elevated: #eff3f0;
+  --bg-hover: #f7f9f7;
+  --border-color: #dfe5e1;
+  --border-light: #edf1ee;
+  --danger-color: #c93636;
+  --price-color: #d9560b;
+  --shadow-sm: 0 1px 2px rgba(28, 38, 31, 0.04);
+  --shadow-md: 0 7px 20px rgba(28, 38, 31, 0.07);
+  --shadow-lg: 0 14px 36px rgba(28, 38, 31, 0.1);
+  --shadow-xl: 0 22px 48px rgba(28, 38, 31, 0.12);
+  --transition-fast: 0.14s ease;
+  --transition-normal: 0.2s ease;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+  --border-radius: 8px;
+  --container-max: 1320px;
+  --navbar-height: 60px;
+}
+
+/* 页面背景保持克制，移除旧版装饰光晕。 */
+body {
+  background: var(--bg-main);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+body::before,
+body::after {
+  display: none;
+}
+
+/* 全局焦点样式确保键盘操作清晰可见。 */
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary-color) 65%, white);
+  outline-offset: 2px;
+}
+
+/* 主框架扩大有效宽度并压缩纵向留白。 */
+.navbar {
+  background-color: rgba(255, 255, 255, 0.96);
+  box-shadow: none;
+}
+
+.navbar-container,
+.content-container,
+.footer-container {
+  max-width: var(--container-max);
+}
+
+.navbar-brand {
+  gap: 10px;
+  font-size: 1.12rem;
+  letter-spacing: 0;
+}
+
+.brand-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: var(--primary-color);
+}
+
+.navbar-links {
+  gap: 2px;
+}
+
+.nav-item {
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+}
+
+.nav-item.active {
+  box-shadow: inset 0 0 0 1px rgba(8, 127, 114, 0.12);
+}
+
+.main-content {
+  padding: 24px 0 32px;
+}
+
+.footer {
+  padding: 16px 0;
+}
+
+/* 页面标题采用紧凑编辑式层级。 */
+.page-header,
+.page-header-component {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.page-header-copy {
+  min-width: 0;
+}
+
+.page-header-eyebrow {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--primary-color);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.page-header h1,
+.page-header-component h1 {
+  margin: 0;
+  font-size: 1.55rem;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.page-header p,
+.page-header-component p {
+  margin-top: 4px;
+  font-size: 0.88rem;
+}
+
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+/* 标签页使用底部指示线，减少额外容器感。 */
+.ui-tabs {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.ui-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 2px;
+  border: 0;
+  color: var(--text-muted);
+  background: transparent;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.ui-tab::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--primary-color);
+  content: '';
+  opacity: 0;
+  transform: scaleX(0.6);
+  transition: var(--transition-fast);
+}
+
+.ui-tab:hover,
+.ui-tab.active {
+  color: var(--primary-color);
+}
+
+.ui-tab.active::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.ui-tab-count {
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+/* 卡片和按钮减少厚重阴影与过大圆角。 */
+.card {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.card-padding-sm {
+  padding: 12px;
+}
+
+.card-padding-md {
+  padding: 18px;
+}
+
+.card-padding-lg {
+  padding: 22px;
+}
+
+.card-hover:hover {
+  border-color: rgba(8, 127, 114, 0.35);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.btn {
+  min-height: 36px;
+  padding: 7px 14px;
+  border-radius: 7px;
+  font-size: 0.88rem;
+  letter-spacing: 0;
+}
+
+.btn-sm {
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 0.82rem;
+}
+
+.btn-lg {
+  min-height: 42px;
+  padding: 9px 18px;
+  font-size: 0.94rem;
+}
+
+.btn-primary,
+.btn-primary:hover {
+  background: var(--primary-color);
+}
+
+.btn-primary {
+  box-shadow: 0 3px 8px rgba(8, 127, 114, 0.16);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 5px 12px rgba(8, 127, 114, 0.2);
+  transform: translateY(-1px);
+}
+
+.btn-outline {
+  box-shadow: none;
+}
+
+/* 表单控件压缩高度，仍保留清楚的标签和反馈。 */
+.form-group {
+  margin-bottom: 14px;
+}
+
+.form-group label,
+.form-label {
+  margin-bottom: 5px;
+  font-size: 0.8rem;
+}
+
+.form-control {
+  min-height: 38px;
+  padding: 8px 11px;
+  border-radius: 7px;
+  box-shadow: none;
+  font-size: 0.88rem;
+}
+
+textarea.form-control {
+  min-height: 92px;
+}
+
+.input-with-icon .form-control,
+.form-control.has-icon {
+  padding-left: 36px;
+}
+
+.input-icon {
+  left: 11px;
+}
+
+.invalid-feedback,
+.form-helper {
+  margin-top: 4px;
+  font-size: 0.76rem;
+}
+
+/* =========================================================
+   商品列表
+   ========================================================= */
+
+.catalog-result-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.catalog-result-count strong {
+  color: var(--text-main);
+  font-size: 1.3rem;
+}
+
+.catalog-mobile-toolbar {
+  display: none;
+}
+
+.catalog-layout {
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: 22px;
+}
+
+.catalog-filter-shell {
+  min-width: 0;
+}
+
+.filter-panel {
+  position: sticky;
+  top: 76px;
+  max-height: calc(100vh - 92px);
+  overflow-y: auto;
+  padding: 17px;
+  border-radius: 8px;
+  box-shadow: none;
+  scrollbar-width: thin;
+}
+
+.filter-section {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+}
+
+.filter-section-title {
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+}
+
+.category-list {
+  gap: 1px;
+}
+
+.category-item-btn {
+  padding: 7px 9px;
+  border-radius: 5px;
+  font-size: 0.82rem;
+}
+
+.segmented-control {
+  padding: 3px;
+  border-radius: 7px;
+  background: var(--bg-elevated);
+}
+
+.segment-btn {
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 0.78rem;
+}
+
+.listings-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.listing-card {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.listing-card:hover {
+  border-color: rgba(8, 127, 114, 0.42) !important;
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.listing-card-image-wrapper {
+  aspect-ratio: 16 / 10;
+  background: var(--bg-elevated);
+}
+
+.listing-card-content {
+  padding: 13px 14px 10px;
+}
+
+.listing-card-category {
+  margin-bottom: 3px;
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+}
+
+.listing-card-title {
+  height: 2.7em;
+  margin-bottom: 6px;
+  font-size: 0.94rem;
+  line-height: 1.35;
+}
+
+.listing-card-price-row {
+  padding-top: 8px;
+}
+
+.listing-card-price {
+  font-size: 1.12rem;
+}
+
+.listing-card-condition {
+  font-size: 0.72rem;
+}
+
+.listing-card-footer {
+  padding: 8px 14px;
+  background: #fbfcfb;
+  font-size: 0.74rem;
+}
+
+.listing-card-avatar {
+  width: 20px;
+  height: 20px;
+}
+
+.listing-card-badges,
+.card-badge-status {
+  top: 9px;
+}
+
+.listing-card-badges {
+  left: 9px;
+}
+
+.card-badge-status {
+  right: 9px;
+}
+
+.card-badge {
+  padding: 3px 7px;
+  border-radius: 5px;
+  box-shadow: none;
+  font-size: 0.66rem;
+}
+
+.pagination {
+  gap: 6px;
+  margin-top: 24px;
+}
+
+.page-btn {
+  min-width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  box-shadow: none;
+  font-size: 0.8rem;
+}
+
+.page-btn.active {
+  background: var(--primary-color);
+  box-shadow: none;
+}
+
+/* 分页省略号保持固定宽度，避免切页时布局跳动。 */
+.pagination-ellipsis {
+  display: inline-grid;
+  min-width: 24px;
+  height: 34px;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+/* =========================================================
+   商品详情与评论
+   ========================================================= */
+
+.detail-container {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.detail-back-action {
+  margin-bottom: 12px;
+}
+
+.detail-layout {
+  grid-template-columns: minmax(0, 5fr) minmax(420px, 7fr);
+  gap: 28px;
+}
+
+.detail-gallery {
+  gap: 12px;
+}
+
+.gallery-preview-wrapper {
+  max-height: 430px;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.gallery-thumbnails {
+  gap: 8px;
+}
+
+.gallery-thumb-btn {
+  width: 62px;
+  height: 62px;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.detail-info {
+  padding: 22px !important;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.detail-category {
+  margin-bottom: 10px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 0.7rem;
+}
+
+.detail-title {
+  margin-bottom: 10px;
+  font-size: 1.55rem;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+.detail-price {
+  margin-bottom: 16px;
+  font-size: 2rem;
+  letter-spacing: 0;
+}
+
+.detail-specs-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 18px;
+  margin-bottom: 16px;
+  padding: 13px 15px;
+  border-radius: 7px;
+  background: var(--bg-main);
+}
+
+.spec-item {
+  gap: 2px;
+}
+
+.spec-label {
+  font-size: 0.72rem;
+}
+
+.spec-value {
+  font-size: 0.88rem;
+}
+
+.detail-owner-widget {
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 11px 12px;
+  border-radius: 7px;
+  box-shadow: none;
+}
+
+.owner-widget-avatar {
+  width: 40px;
+  height: 40px;
+}
+
+.owner-widget-name {
+  font-size: 0.9rem;
+}
+
+.owner-widget-meta {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.74rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.detail-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.detail-actions > .alert,
+.detail-actions > .owner-notice,
+.detail-actions > .address-picker-panel {
+  grid-column: 1 / -1;
+}
+
+/* 购买是详情页主操作，独占整行；收藏与联系卖家并排展示。 */
+.detail-actions > .btn-primary {
+  grid-column: 1 / -1;
+  order: -1;
+}
+
+.detail-content-area {
+  margin-top: 22px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+.detail-content-tabs {
+  padding: 0 20px;
+}
+
+.detail-description-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  gap: 28px;
+  padding: 20px;
+}
+
+.detail-description-section {
+  margin: 0;
+}
+
+.detail-content-title {
+  margin-bottom: 9px;
+  font-size: 0.95rem;
+}
+
+.detail-description-text {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.75;
+}
+
+.detail-delivery-section {
+  padding-left: 20px;
+  border-left: 1px solid var(--border-color);
+}
+
+.comments-section {
+  margin-top: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.comments-section-title {
+  font-size: 0.98rem;
+}
+
+.comment-form {
+  padding: 12px;
+}
+
+.comment-item,
+.reply-item {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+/* =========================================================
+   订单列表与订单详情
+   ========================================================= */
+
+.orders-container,
+.order-detail-container {
+  max-width: 1180px;
+}
+
+.orders-tabs {
+  margin-bottom: 12px;
+}
+
+.orders-tabs .tab-btn {
+  padding: 8px 18px;
+  font-size: 0.88rem;
+}
+
+.order-filter-panel,
+.my-listing-filter-panel {
+  grid-template-columns: 1.35fr repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 13px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.order-filter-panel .form-group,
+.my-listing-filter-panel .form-group {
+  margin-bottom: 0;
+}
+
+.orders-list {
+  gap: 8px;
+}
+
+.order-card-wrapper {
+  display: block;
+  padding: 0;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.order-card-wrapper:hover {
+  border-color: rgba(8, 127, 114, 0.4);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.order-card-inner {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  min-height: 92px;
+  padding: 9px 12px;
+}
+
+.order-thumb-wrapper {
+  width: 74px;
+  height: 74px;
+  border-radius: 6px;
+}
+
+.order-card-body {
+  gap: 4px;
+}
+
+.order-card-id,
+.order-card-meta {
+  font-size: 0.76rem;
+}
+
+.order-card-title {
+  font-size: 0.94rem;
+}
+
+.order-card-price {
+  font-size: 1.05rem;
+}
+
+.order-detail-topbar {
+  margin-bottom: 12px;
+}
+
+.order-timeline-card {
+  margin-bottom: 16px;
+  padding: 14px 18px !important;
+}
+
+.order-timeline-card .order-section-title {
+  margin-bottom: 8px;
+}
+
+.order-timeline {
+  padding-bottom: 4px;
+}
+
+.timeline-marker {
+  width: 32px;
+  height: 32px;
+  border-width: 2px;
+  line-height: 28px;
+}
+
+.order-timeline::before,
+.timeline-progress {
+  top: 24px;
+}
+
+.timeline-label {
+  font-size: 0.78rem;
+}
+
+.timeline-date {
+  font-size: 0.68rem;
+}
+
+.order-detail-layout {
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 18px;
+}
+
+.order-detail-main {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.order-detail-main > .card {
+  padding: 16px;
+}
+
+.order-detail-main > .order-snapshot-card {
+  grid-column: 1 / -1;
+}
+
+.order-section-title {
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+}
+
+.order-parties-list {
+  gap: 10px;
+}
+
+.order-party-label,
+.order-party-value {
+  font-size: 0.82rem;
+}
+
+.order-actions-card {
+  top: 76px;
+  padding: 17px !important;
+}
+
+.order-price-block,
+.order-actions-divider {
+  margin-bottom: 14px;
+}
+
+/* =========================================================
+   个人中心与管理页面
+   ========================================================= */
+
+.account-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.account-sidebar {
+  position: sticky;
+  top: 76px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+.account-sidebar-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 15px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.account-sidebar-heading span {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.account-sidebar-heading strong {
+  font-size: 1rem;
+}
+
+.account-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px;
+}
+
+.account-navigation-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.account-navigation-item:hover,
+.account-navigation-item.active {
+  color: var(--primary-color);
+  background: var(--primary-light);
+}
+
+.account-content {
+  min-width: 0;
+}
+
+.account-content > .fade-in {
+  animation: none;
+}
+
+.account-content .my-listings-container,
+.account-content .address-manager,
+.account-content .profile-card,
+.account-content .form-card {
+  max-width: none;
+}
+
+.account-content .profile-card,
+.account-content .form-card {
+  padding: 22px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.account-content .auth-title {
+  font-size: 1.35rem;
+  text-align: left;
+}
+
+.account-content .auth-subtitle {
+  margin-bottom: 20px;
+  text-align: left;
+}
+
+.account-content .avatar-upload-section {
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.account-content .avatar-preview-wrapper {
+  width: 76px;
+  height: 76px;
+}
+
+.my-listings-page-header {
+  margin-bottom: 14px;
+}
+
+.my-listings-list {
+  gap: 8px;
+}
+
+.my-listing-row {
+  gap: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.my-listing-thumb-wrapper {
+  width: 88px;
+  height: 66px;
+  border-radius: 6px;
+}
+
+.my-listing-title-row {
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.my-listing-title {
+  font-size: 0.94rem;
+}
+
+.my-listing-meta {
+  gap: 12px;
+  font-size: 0.78rem;
+}
+
+.my-listing-actions {
+  gap: 6px;
+}
+
+.behavior-page {
+  gap: 14px;
+}
+
+.behavior-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.behavior-card {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.behavior-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.behavior-card-main {
+  grid-template-columns: 104px 1fr;
+  min-height: 104px;
+}
+
+.behavior-card-image-wrapper {
+  width: 104px;
+  height: 104px;
+}
+
+.behavior-card-content {
+  gap: 4px;
+  padding: 12px;
+}
+
+.address-manager-header {
+  margin-bottom: 14px;
+}
+
+.address-add-btn {
+  margin-bottom: 10px;
+}
+
+.address-list {
+  gap: 8px;
+}
+
+.address-card {
+  padding: 13px !important;
+}
+
+.address-form-card {
+  padding: 16px !important;
+}
+
+.address-form {
+  gap: 10px;
+}
+
+.address-form-grid {
+  gap: 10px 14px;
+}
+
+.form-specs-section {
+  margin-bottom: 18px;
+  padding: 16px;
+  border-radius: 7px;
+  background: var(--bg-main);
+}
+
+.image-manager-section {
+  margin-bottom: 20px;
+}
+
+.image-manager-grid {
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.image-manager-item,
+.image-manager-upload-card {
+  border-radius: 7px;
+}
+
+/* =========================================================
+   消息、通知、资料与认证页面
+   ========================================================= */
+
+.messages-layout-wrapper {
+  width: 100%;
+  max-width: 1220px;
+  height: calc(100vh - 132px);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.messages-sidebar {
+  width: 300px;
+}
+
+.messages-sidebar-header {
+  padding: 14px 16px;
+}
+
+.conversation-item {
+  gap: 10px;
+  padding: 10px 14px;
+}
+
+.conversation-avatar {
+  width: 38px;
+  height: 38px;
+}
+
+.chat-header {
+  padding: 11px 16px;
+}
+
+.chat-messages-container {
+  gap: 13px;
+  padding: 16px 20px;
+}
+
+.chat-input-form {
+  gap: 10px;
+  padding: 11px 16px;
+}
+
+.notification-list {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.notification-row {
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 11px;
+  padding: 11px 13px;
+}
+
+.notification-row-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+}
+
+.notification-row-title {
+  font-size: 0.86rem;
+}
+
+.notification-row-content,
+.notification-row-time {
+  font-size: 0.78rem;
+}
+
+.auth-wrapper {
+  min-height: calc(100vh - 180px);
+  padding: 18px;
+}
+
+.auth-card {
+  max-width: 420px;
+  padding: 30px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+}
+
+.auth-title {
+  font-size: 1.55rem;
+  letter-spacing: 0;
+}
+
+.auth-subtitle {
+  margin-bottom: 22px;
+}
+
+.public-profile-container {
+  max-width: 1040px;
+}
+
+.profile-header-card {
+  margin-bottom: 18px;
+  padding: 18px !important;
+}
+
+.profile-listings-section {
+  margin-top: 18px;
+}
+
+.public-profile-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+/* =========================================================
+   响应式密度：桌面紧凑，移动端保留触控空间
+   ========================================================= */
+
+@media (max-width: 1180px) {
+  .listings-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .order-filter-panel,
+  .my-listing-filter-panel {
+    grid-template-columns: repeat(3, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 992px) {
+  .navbar-container,
+  .content-container {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .catalog-mobile-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+  }
+
+  .catalog-layout {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .catalog-filter-shell {
+    display: none;
+  }
+
+  .catalog-filter-shell.is-open {
+    display: block;
+  }
+
+  .filter-panel {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 18px;
+    max-height: none;
+  }
+
+  .filter-section {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .category-list {
+    max-height: 150px;
+    overflow-y: auto;
+  }
+
+  .detail-layout {
+    grid-template-columns: minmax(0, 5fr) minmax(360px, 7fr);
+    gap: 18px;
+  }
+
+  .gallery-preview-wrapper {
+    max-height: 360px;
+  }
+
+  .account-layout {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .account-sidebar {
+    position: static;
+    overflow-x: auto;
+  }
+
+  .account-sidebar-heading {
+    display: none;
+  }
+
+  .account-navigation {
+    flex-direction: row;
+    min-width: max-content;
+  }
+
+  .account-navigation-item {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    padding: 16px 0 24px;
+  }
+
+  .page-header,
+  .page-header-component {
+    align-items: flex-start;
+    margin-bottom: 14px;
+  }
+
+  .page-header h1,
+  .page-header-component h1 {
+    font-size: 1.35rem;
+  }
+
+  .page-header-actions,
+  .catalog-result-count {
+    display: none;
+  }
+
+  .detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .gallery-preview-wrapper {
+    max-height: none;
+  }
+
+  .detail-info {
+    padding: 17px !important;
+  }
+
+  .detail-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .detail-description-panel {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .detail-delivery-section {
+    padding-top: 16px;
+    padding-left: 0;
+    border-top: 1px solid var(--border-color);
+    border-left: 0;
+  }
+
+  .order-detail-layout,
+  .order-detail-main {
+    grid-template-columns: 1fr;
+  }
+
+  .order-detail-main > .order-snapshot-card {
+    grid-column: auto;
+  }
+
+  .order-actions-card {
+    order: -1;
+  }
+
+  .messages-layout-wrapper {
+    height: calc(100vh - 92px);
+    border-radius: 0;
+  }
+
+  .public-profile-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .navbar-brand {
+    font-size: 1rem;
+  }
+
+  .auth-buttons .btn:first-child {
+    display: none;
+  }
+
+  .filter-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .listings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .listing-card-content {
+    padding: 10px;
+  }
+
+  .listing-card-footer {
+    padding: 7px 10px;
+  }
+
+  .listing-card-owner span {
+    max-width: 70px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .order-filter-panel,
+  .my-listing-filter-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .order-card-inner {
+    grid-template-columns: 64px minmax(0, 1fr);
+    min-height: 82px;
+    padding: 8px;
+  }
+
+  .order-thumb-wrapper {
+    width: 64px;
+    height: 64px;
+  }
+
+  .order-card-row,
+  .order-card-footer {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .order-card-meta {
+    max-width: 70%;
+  }
+
+  .order-card-meta span:not(:first-child) {
+    display: none;
+  }
+
+  .my-listing-row {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .my-listing-thumb-wrapper {
+    width: 72px;
+    height: 58px;
+  }
+
+  .my-listing-actions {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+  }
+
+  .behavior-grid,
+  .public-profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-card {
+    padding: 22px;
+  }
+
+  .notification-row {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .notification-row-time {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 420px) {
+  .listings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-specs-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ui-tabs {
+    gap: 16px;
+  }
+}

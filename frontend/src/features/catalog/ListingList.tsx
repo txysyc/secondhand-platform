@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, AlertCircle } from 'lucide-react';
+import { Search, AlertCircle, SlidersHorizontal } from 'lucide-react';
 import { getCategories, getListings } from '../../api/endpoints/listings';
-import { Button, EmptyState } from '../../components/ui';
+import { Button, EmptyState, PageHeader, Pagination } from '../../components/ui';
 import { ListingGrid } from './list/ListingGrid';
 import { ListingListFilterPanel } from './list/ListingListFilterPanel';
 import type { Category, Listing } from '../../types/listings';
@@ -25,6 +25,7 @@ export const ListingList: React.FC = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // 解析 URL 参数用于筛选
   const query = searchParams.get('q') || '';
@@ -44,7 +45,8 @@ export const ListingList: React.FC = () => {
   const [tempPublishedAfter, setTempPublishedAfter] = useState(publishedAfter);
   const [tempPublishedBefore, setTempPublishedBefore] = useState(publishedBefore);
 
-  const ITEMS_PER_PAGE = 6;
+  // 桌面端四列网格使用 12 条数据，减少分页频率并提高浏览效率。
+  const ITEMS_PER_PAGE = 12;
 
   const readCachedCategories = () => {
     try {
@@ -208,37 +210,59 @@ export const ListingList: React.FC = () => {
 
   // 渲染分页器
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
-  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
 
   return (
     <div className="catalog-container fade-in">
-      <div className="page-header">
-        <h1>商品浏览</h1>
-        <p>发现优质闲置二手好物</p>
+      <PageHeader
+        eyebrow="闲置市集"
+        title="发现值得再次使用的好物"
+        description="按类别、价格和发布时间快速筛选，找到更适合你的闲置商品。"
+        actions={
+          <span className="catalog-result-count">
+            <strong>{loading ? '—' : totalCount}</strong>
+            件商品
+          </span>
+        }
+      />
+
+      {/* 小屏幕通过按钮展开筛选，桌面端筛选栏始终可见。 */}
+      <div className="catalog-mobile-toolbar">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen((current) => !current)}
+        >
+          <SlidersHorizontal size={16} />
+          {filtersOpen ? '收起筛选' : '筛选与排序'}
+        </Button>
+        <span>共 {totalCount} 件</span>
       </div>
 
       <div className="catalog-layout">
-        {/* 侧边栏筛选面板：小屏幕下会随 catalog-layout 自动堆叠 */}
-        <ListingListFilterPanel
-          categories={categories}
-          searchText={searchText}
-          currentCategory={currentCategory}
-          itemType={itemType}
-          tempMinPrice={tempMinPrice}
-          tempMaxPrice={tempMaxPrice}
-          tempPublishedAfter={tempPublishedAfter}
-          tempPublishedBefore={tempPublishedBefore}
-          currentSort={currentSort}
-          onSearchTextChange={setSearchText}
-          onTempMinPriceChange={setTempMinPrice}
-          onTempMaxPriceChange={setTempMaxPrice}
-          onTempPublishedAfterChange={setTempPublishedAfter}
-          onTempPublishedBeforeChange={setTempPublishedBefore}
-          onSearchSubmit={handleSearchSubmit}
-          onPriceSubmit={handlePriceSubmit}
-          onPublishedSubmit={handlePublishedSubmit}
-          onUpdateQueryParam={updateQueryParam}
-        />
+        <div className={`catalog-filter-shell ${filtersOpen ? 'is-open' : ''}`}>
+          <ListingListFilterPanel
+            categories={categories}
+            searchText={searchText}
+            currentCategory={currentCategory}
+            itemType={itemType}
+            tempMinPrice={tempMinPrice}
+            tempMaxPrice={tempMaxPrice}
+            tempPublishedAfter={tempPublishedAfter}
+            tempPublishedBefore={tempPublishedBefore}
+            currentSort={currentSort}
+            onSearchTextChange={setSearchText}
+            onTempMinPriceChange={setTempMinPrice}
+            onTempMaxPriceChange={setTempMaxPrice}
+            onTempPublishedAfterChange={setTempPublishedAfter}
+            onTempPublishedBeforeChange={setTempPublishedBefore}
+            onSearchSubmit={handleSearchSubmit}
+            onPriceSubmit={handlePriceSubmit}
+            onPublishedSubmit={handlePublishedSubmit}
+            onUpdateQueryParam={updateQueryParam}
+          />
+        </div>
 
         {/* 右侧商品网格 */}
         <main className="catalog-main">
@@ -270,39 +294,12 @@ export const ListingList: React.FC = () => {
               <ListingGrid listings={listings} onOpenListing={(listingId) => navigate(`/listings/${listingId}`)} />
 
               {/* 分页 */}
-              {totalPages > 1 && (
-                <nav className="pagination" aria-label="商品分页">
-                  <button
-                    disabled={currentPage === 1}
-                    onClick={() => updateQueryParam({ page: currentPage - 1 })}
-                    className="page-btn"
-                    aria-label="上一页"
-                  >
-                    上页
-                  </button>
-
-                  {pageNumbers.map((num) => (
-                    <button
-                      key={num}
-                      onClick={() => updateQueryParam({ page: num })}
-                      className={`page-btn ${currentPage === num ? 'active' : ''}`}
-                      aria-label={`第 ${num} 页`}
-                      aria-current={currentPage === num ? 'page' : undefined}
-                    >
-                      {num}
-                    </button>
-                  ))}
-
-                  <button
-                    disabled={currentPage === totalPages}
-                    onClick={() => updateQueryParam({ page: currentPage + 1 })}
-                    className="page-btn"
-                    aria-label="下一页"
-                  >
-                    下页
-                  </button>
-                </nav>
-              )}
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={(page) => updateQueryParam({ page })}
+                ariaLabel="商品分页"
+              />
             </>
           )}
         </main>

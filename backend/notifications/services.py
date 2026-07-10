@@ -6,7 +6,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from notifications.models import Notification
-from notifications.realtime import push_notification_created
+from notifications.realtime import (
+    push_notification_created,
+    push_notification_unread_count,
+)
 from notifications.selectors import get_unread_notification_count
 from notifications.serializers import NotificationSerializer
 
@@ -70,13 +73,23 @@ def mark_notification_read(user, notification):
     if notification.read_at is None:
         notification.read_at = timezone.now()
         notification.save(update_fields=["read_at"])
+        push_notification_unread_count(
+            user.pk,
+            get_unread_notification_count(user),
+        )
     return notification
 
 
 def mark_all_notifications_read(user):
     """把当前用户全部未读通知标记为已读。"""
 
-    return Notification.objects.filter(
+    updated_count = Notification.objects.filter(
         recipient=user,
         read_at__isnull=True,
     ).update(read_at=timezone.now())
+    if updated_count:
+        push_notification_unread_count(
+            user.pk,
+            get_unread_notification_count(user),
+        )
+    return updated_count

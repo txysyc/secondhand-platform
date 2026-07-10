@@ -10,7 +10,7 @@ import {
   deleteListing,
 } from '../../api/endpoints/listings';
 import { useAuth } from '../../app/providers';
-import { Button, EmptyState, Loading, ErrorState } from '../../components/ui';
+import { Button, EmptyState, Loading, ErrorState, Pagination } from '../../components/ui';
 import { MyListingsFilterPanel } from './my/MyListingsFilterPanel';
 import { MyListingsRows } from './my/MyListingsRows';
 import type { Category, Listing } from '../../types/listings';
@@ -113,7 +113,6 @@ export const MyListings: React.FC = () => {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const totalPages = Math.ceil(totalCount / MY_LISTING_PAGE_SIZE);
-  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
 
   const updateQueryParam = (newParams: Record<string, string | number | null>) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -254,37 +253,12 @@ export const MyListings: React.FC = () => {
             onAction={handleAction}
           />
 
-          {totalPages > 1 && (
-            <nav className="pagination" aria-label="我的商品分页">
-              <button
-                disabled={currentPage === 1}
-                onClick={() => updateQueryParam({ page: currentPage - 1 })}
-                className="page-btn"
-                aria-label="上一页"
-              >
-                上页
-              </button>
-              {pageNumbers.map((page) => (
-                <button
-                  key={page}
-                  onClick={() => updateQueryParam({ page })}
-                  className={`page-btn ${currentPage === page ? 'active' : ''}`}
-                  aria-label={`第 ${page} 页`}
-                  aria-current={currentPage === page ? 'page' : undefined}
-                >
-                  {page}
-                </button>
-              ))}
-              <button
-                disabled={currentPage === totalPages}
-                onClick={() => updateQueryParam({ page: currentPage + 1 })}
-                className="page-btn"
-                aria-label="下一页"
-              >
-                下页
-              </button>
-            </nav>
-          )}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={(page) => updateQueryParam({ page })}
+            ariaLabel="我的商品分页"
+          />
         </>
       )}
     </div>

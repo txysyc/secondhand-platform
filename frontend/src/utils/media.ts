@@ -28,8 +28,23 @@ export const resolveMediaUrl = (url?: string | null) => {
   return origin ? `${origin}${normalizedPath}` : normalizedPath;
 };
 
+/**
+ * 根据用户名生成稳定的本地首字母头像，避免外部头像服务不可用时出现破图。
+ */
 export const avatarFallbackUrl = (seed: string) => {
-  return `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(seed)}`;
+  const avatarColors = ['#087f72', '#39736b', '#b85b24', '#596f62', '#8a6534'];
+  const colorIndex = Array.from(seed).reduce((total, character) => total + character.charCodeAt(0), 0);
+  const backgroundColor = avatarColors[colorIndex % avatarColors.length];
+  const initial = Array.from(seed.trim())[0]?.toUpperCase() || '闲';
+  const safeInitial = initial.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character] ||
+      character
+  );
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" rx="48" fill="${backgroundColor}"/><text x="48" y="51" fill="#fff" font-family="sans-serif" font-size="36" font-weight="700" text-anchor="middle" dominant-baseline="middle">${safeInitial}</text></svg>`;
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 };
 
 export const resolveAvatarUrl = (url: string | null | undefined, seed: string) => {

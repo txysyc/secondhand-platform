@@ -15,13 +15,8 @@ import { OrderList } from '../features/orders/OrderList';
 import { OrderDetail } from '../features/orders/OrderDetail';
 import { MessageCenter } from '../features/messages/MessageCenter';
 import { NotificationCenter } from '../features/notifications/NotificationCenter';
-
-const NotFoundPage = () => (
-  <div className="placeholder-card error-card fade-in">
-    <h2>🚫 404 - 页面未找到</h2>
-    <p>您访问的路由地址不存在。</p>
-  </div>
-);
+import { AccountLayout } from '../features/users/AccountLayout';
+import { NotFoundPage } from './NotFoundPage';
 
 export const router = createBrowserRouter([
   {
@@ -93,60 +88,21 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: 'me/listings',
-        element: (
-          <ProtectedRoute>
-            <MyListings />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'me/listings/new',
-        element: (
-          <ProtectedRoute>
-            <ListingForm />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'me/listings/:id/edit',
-        element: (
-          <ProtectedRoute>
-            <ListingForm />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'me/favorites',
-        element: (
-          <ProtectedRoute>
-            <MyFavorites />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'me/history',
-        element: (
-          <ProtectedRoute>
-            <BrowseHistory />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'me/addresses',
-        element: (
-          <ProtectedRoute>
-            <AddressManager />
-          </ProtectedRoute>
-        ),
-      },
-      {
         path: 'me',
         element: (
           <ProtectedRoute>
-            <ProfileEdit />
+            <AccountLayout />
           </ProtectedRoute>
         ),
+        children: [
+          { index: true, element: <ProfileEdit /> },
+          { path: 'listings', element: <MyListings /> },
+          { path: 'listings/new', element: <ListingForm /> },
+          { path: 'listings/:id/edit', element: <ListingForm /> },
+          { path: 'favorites', element: <MyFavorites /> },
+          { path: 'history', element: <BrowseHistory /> },
+          { path: 'addresses', element: <AddressManager /> },
+        ],
       },
       {
         path: 'users/:id',

@@ -36,3 +36,13 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
                 "unread_count": event["unread_count"],
             }
         )
+
+    async def notification_unread_count(self, event):
+        """把通知已读操作产生的最新未读数发送给当前客户端。"""
+
+        await self.send_json(
+            {
+                "type": "notification.unread_count",
+                "unread_count": event["unread_count"],
+            }
+        )

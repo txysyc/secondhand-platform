@@ -10,7 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-from .base import *
+from .base import *  # noqa: F403
 from .base import env
 
 # Quick-start development settings - unsuitable for production
@@ -25,5 +25,5 @@ DEBUG = False
 CELERY_BROKER_URL = env("CELERY_BROKER_URL")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND")
 
-CACHES["default"]["LOCATION"] = env("DJANGO_CACHE_URL")
-CHANNEL_LAYERS["default"]["CONFIG"]["hosts"] = [env("CHANNEL_REDIS_URL")]
+CACHES["default"]["LOCATION"] = env.str("DJANGO_CACHE_URL")  # noqa: F405
+CHANNEL_LAYERS["default"]["CONFIG"]["hosts"] = [env.str("CHANNEL_REDIS_URL")]  # noqa: F405

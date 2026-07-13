@@ -1,6 +1,8 @@
 """DRF 统一异常响应。"""
 
 from rest_framework.views import exception_handler
+from rest_framework.response import Response
+from rest_framework import status
 
 
 def _extract_message(data):
@@ -27,16 +29,20 @@ def api_exception_handler(exc, context):
     """将 DRF 异常稳定包装为 message + errors。"""
 
     response = exception_handler(exc, context)
-    if response is None:
+    if response is not None:
+        if response.status_code == 429:
+            message = "请求过于频繁，请稍后再试。"
+        else:
+            message = _extract_message(response.data)
+
+        response.data = {
+            "message": message,
+            "errors": response.data,
+        }
         return response
 
-    if response.status_code == 429:
-        message = "请求过于频繁，请稍后再试。"
-    else:
-        message = _extract_message(response.data)
-
-    response.data = {
-        "message": message,
-        "errors": response.data,
-    }
-    return response
+    # DRF识别不出的错误，按默认500返回
+    return Response(
+        {"message": "服务器错误", "errors": {}},
+        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    )

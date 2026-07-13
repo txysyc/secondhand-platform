@@ -575,3 +575,48 @@ class TestCatalogApi:
         assert response.status_code == 200
         assert body["page_size"] == 50
         assert len(body["results"]) == 50
+
+    def test_public_listing_empty_result_uses_first_page_for_out_of_range_page(self):
+        """空列表请求超出范围页码时仍返回稳定的第一页空结果。"""
+
+        response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {"page": "999"},
+        )
+
+        body = response.json()
+        assert response.status_code == 200
+        assert body["count"] == 0
+        assert body["results"] == []
+        assert body["next"] is None
+        assert body["previous"] is None
+
+    def test_public_listing_page_number_is_limited_to_valid_range(self):
+        """负数页码回退首页，超出范围页码定位到最后一页。"""
+
+        for index in range(21):
+            self.create_listing(title=f"页码边界商品{index}")
+
+        first_page_response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {"page": "1", "page_size": "20"},
+        )
+        negative_page_response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {"page": "-1", "page_size": "20"},
+        )
+        overflow_page_response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {"page": "999", "page_size": "20"},
+        )
+
+        first_page = first_page_response.json()
+        negative_page = negative_page_response.json()
+        overflow_page = overflow_page_response.json()
+        assert first_page_response.status_code == 200
+        assert negative_page_response.status_code == 200
+        assert overflow_page_response.status_code == 200
+        assert negative_page["results"] == first_page["results"]
+        assert len(overflow_page["results"]) == 1
+        assert overflow_page["next"] is None
+        assert "page=1" in overflow_page["previous"]

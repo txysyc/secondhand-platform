@@ -10,7 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-from .base import *
+from .base import *  # noqa: F403
 from .base import env
 
 # Quick-start development settings - unsuitable for production
@@ -23,5 +23,7 @@ SECRET_KEY = env("DJANGO_DEV_SECRET_KEY")
 DEBUG = True
 
 # Celery配置：本地默认连接 secondhand-platform-redis 容器映射到宿主机的 6380 端口。
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6380/0")
-CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://localhost:6380/1")
+CELERY_BROKER_URL = env.str("CELERY_BROKER_URL", default="redis://localhost:6380/0")
+CELERY_RESULT_BACKEND = env.str(
+    "CELERY_RESULT_BACKEND", default="redis://localhost:6380/1"
+)

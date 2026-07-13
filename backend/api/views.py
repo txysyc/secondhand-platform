@@ -3,6 +3,7 @@
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import status
 
 
 class ApiRootView(APIView):
@@ -16,7 +17,7 @@ class ApiRootView(APIView):
                 "name": "secondhand-platform API",
                 "version": "v1",
                 "status": "ok",
-            }
+            },
         )
 
 
@@ -29,7 +30,7 @@ class AuthenticatedProbeView(APIView):
         return Response(
             {
                 "authenticated": True,
-            }
+            },
         )
 
 
@@ -39,4 +40,6 @@ class StaffProbeView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
-        return Response({"staff": True})
+        return Response(
+            {"staff": True},
+        )

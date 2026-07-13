@@ -136,8 +136,16 @@ AUTHENTICATION_BACKENDS = [
 
 # Redis-backed Django cache 与 Channels channel layer 使用独立 Redis DB。
 # 本地默认连接 secondhand-platform-redis 容器映射到宿主机的 6380 端口。
-DJANGO_CACHE_URL = env("DJANGO_CACHE_URL", default="redis://localhost:6380/2")
-CHANNEL_REDIS_URL = env("CHANNEL_REDIS_URL", default="redis://localhost:6380/3")
+# Redis 缓存地址，未配置环境变量时使用本地开发默认值。
+DJANGO_CACHE_URL = env.str(
+    "DJANGO_CACHE_URL",
+    default="redis://localhost:6380/2",
+)
+# Channels Redis 地址，未配置环境变量时使用本地开发默认值。
+CHANNEL_REDIS_URL = env.str(
+    "CHANNEL_REDIS_URL",
+    default="redis://localhost:6380/3",
+)
 
 CACHES = {
     "default": {
@@ -174,9 +182,7 @@ REST_FRAMEWORK = {
     # 默认异常处理器
     "EXCEPTION_HANDLER": "api.exceptions.api_exception_handler",
     # 默认限流类，业务视图通过 throttle_scope 精确启用。
-    "DEFAULT_THROTTLE_CLASSES": (
-        "rest_framework.throttling.ScopedRateThrottle",
-    ),
+    "DEFAULT_THROTTLE_CLASSES": ("rest_framework.throttling.ScopedRateThrottle",),
     # 关键写接口限流频率。
     "DEFAULT_THROTTLE_RATES": {
         "auth_register": "5/hour",

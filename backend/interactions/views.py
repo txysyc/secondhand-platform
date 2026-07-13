@@ -62,7 +62,7 @@ class _VisibleListingMixin:
         return comment
 
 
-class ListingCommentApiView(MethodScopedThrottleMixin, _VisibleListingMixin, APIView):
+class ListingCommentAPIView(MethodScopedThrottleMixin, _VisibleListingMixin, APIView):
     """商品评论列表和顶层评论创建。"""
 
     method_throttle_scopes = {"POST": "comment_write"}
@@ -91,7 +91,7 @@ class ListingCommentApiView(MethodScopedThrottleMixin, _VisibleListingMixin, API
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class CommentReplyApiView(_VisibleListingMixin, APIView):
+class CommentReplyAPIView(_VisibleListingMixin, APIView):
     """评论回复创建。"""
 
     permission_classes = [IsAuthenticated]
@@ -110,7 +110,7 @@ class CommentReplyApiView(_VisibleListingMixin, APIView):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class CommentDeleteApiView(_VisibleListingMixin, APIView):
+class CommentDeleteAPIView(_VisibleListingMixin, APIView):
     """删除自己的评论。"""
 
     permission_classes = [IsAuthenticated, IsCommentAuthor]
@@ -126,7 +126,7 @@ class CommentDeleteApiView(_VisibleListingMixin, APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class ListingFavoriteApiView(_VisibleListingMixin, APIView):
+class ListingFavoriteAPIView(_VisibleListingMixin, APIView):
     """商品收藏与取消收藏。"""
 
     permission_classes = [IsAuthenticated]
@@ -145,7 +145,7 @@ class ListingFavoriteApiView(_VisibleListingMixin, APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class MyFavoriteListApiView(PageNumberPaginationMixin, APIView):
+class MyFavoriteListAPIView(PageNumberPaginationMixin, APIView):
     """当前用户的商品收藏列表。"""
 
     permission_classes = [IsAuthenticated]
@@ -156,7 +156,7 @@ class MyFavoriteListApiView(PageNumberPaginationMixin, APIView):
         return self.paginate(request, queryset, ListingFavoriteSerializer)
 
 
-class MyViewHistoryListApiView(PageNumberPaginationMixin, APIView):
+class MyViewHistoryListAPIView(PageNumberPaginationMixin, APIView):
     """当前用户的浏览历史列表。"""
 
     permission_classes = [IsAuthenticated]

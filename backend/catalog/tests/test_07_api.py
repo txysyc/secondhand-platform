@@ -43,7 +43,7 @@ def build_png_image(name="listing.png", size=(16, 16)):
     image.save(buffer, format="PNG")
     return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
 
-class TestCatalogApi:
+class TestCatalogAPI:
     """P3 商品 API 测试。"""
 
     @pytest.fixture(autouse=True)

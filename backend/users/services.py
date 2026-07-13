@@ -1,9 +1,9 @@
-"""用户注册相关服务。"""
+"""用户领域服务。"""
 
-from django.db import transaction
 from django.contrib.auth.models import Group
+from django.db import transaction
 
-from users.models import User
+from users.models import User, UserAddress
 
 
 @transaction.atomic
@@ -28,3 +28,21 @@ def register_user(*, username, email, password):
     user.groups.add(group)
 
     return user
+
+
+@transaction.atomic
+def create_user_address(*, user, data):
+    """创建用户地址，并在需要时切换默认地址。
+
+    锁定用户记录，避免同一用户并发创建默认地址时破坏唯一约束。
+    """
+    lock_user = User.objects.select_for_update().get(pk=user.pk)
+    should_set_default = data.get("is_default", False)
+
+    if should_set_default:
+        UserAddress.objects.filter(user=lock_user, is_default=True).update(
+            is_default=False
+        )
+
+    address_data = {**data, "is_default": should_set_default}
+    return UserAddress.objects.create(user=lock_user, **address_data)

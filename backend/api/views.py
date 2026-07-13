@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework import status
 
 
-class ApiRootView(APIView):
+class APIRootView(APIView):
     """返回 API 基础信息，作为 `/api/v1/` 的稳定入口。"""
 
     permission_classes = [AllowAny]

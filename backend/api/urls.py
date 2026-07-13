@@ -2,12 +2,12 @@
 
 from django.urls import include, path
 
-from api.views import ApiRootView, AuthenticatedProbeView, StaffProbeView
+from api.views import APIRootView, AuthenticatedProbeView, StaffProbeView
 
 app_name = "api"
 
 urlpatterns = [
-    path("", ApiRootView.as_view(), name="root"),
+    path("", APIRootView.as_view(), name="root"),
     path(
         "probes/authenticated/",
         AuthenticatedProbeView.as_view(),

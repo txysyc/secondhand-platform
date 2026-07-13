@@ -15,7 +15,7 @@ from notifications.serializers import NotificationSerializer
 from notifications.services import mark_all_notifications_read, mark_notification_read
 
 
-class NotificationListApiView(PageNumberPaginationMixin, APIView):
+class NotificationListAPIView(PageNumberPaginationMixin, APIView):
     """当前用户站内通知列表。"""
 
     permission_classes = [IsAuthenticated]
@@ -30,7 +30,7 @@ class NotificationListApiView(PageNumberPaginationMixin, APIView):
         return self.paginate(request, queryset)
 
 
-class NotificationUnreadCountApiView(APIView):
+class NotificationUnreadCountAPIView(APIView):
     """当前用户未读通知数量。"""
 
     permission_classes = [IsAuthenticated]
@@ -39,7 +39,7 @@ class NotificationUnreadCountApiView(APIView):
         return Response({"unread_count": get_unread_notification_count(request.user)})
 
 
-class NotificationReadApiView(APIView):
+class NotificationReadAPIView(APIView):
     """当前用户单条通知标记已读。"""
 
     permission_classes = [IsAuthenticated]
@@ -54,7 +54,7 @@ class NotificationReadApiView(APIView):
         return Response(NotificationSerializer(notification).data)
 
 
-class NotificationReadAllApiView(APIView):
+class NotificationReadAllAPIView(APIView):
     """当前用户全部通知标记已读。"""
 
     permission_classes = [IsAuthenticated]

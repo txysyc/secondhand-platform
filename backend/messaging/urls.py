@@ -3,31 +3,31 @@
 from django.urls import path
 
 from messaging.views import (
-    ConversationDetailApiView,
-    ConversationListCreateApiView,
-    ConversationMessageListCreateApiView,
-    ConversationReadApiView,
+    ConversationDetailAPIView,
+    ConversationListCreateAPIView,
+    ConversationMessageListCreateAPIView,
+    ConversationReadAPIView,
 )
 
 urlpatterns = [
     path(
         "conversations/",
-        ConversationListCreateApiView.as_view(),
+        ConversationListCreateAPIView.as_view(),
         name="messaging_conversations",
     ),
     path(
         "conversations/<int:pk>/",
-        ConversationDetailApiView.as_view(),
+        ConversationDetailAPIView.as_view(),
         name="messaging_conversation_detail",
     ),
     path(
         "conversations/<int:pk>/messages/",
-        ConversationMessageListCreateApiView.as_view(),
+        ConversationMessageListCreateAPIView.as_view(),
         name="messaging_conversation_messages",
     ),
     path(
         "conversations/<int:pk>/read/",
-        ConversationReadApiView.as_view(),
+        ConversationReadAPIView.as_view(),
         name="messaging_conversation_read",
     ),
 ]

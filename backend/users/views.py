@@ -17,9 +17,10 @@ from users.serializers import (
     UserRegisterSerializer,
 )
 from users.models import Profile, User, UserAddress
+from users.services import create_user_address
 
 
-class RegisterApiView(APIView):
+class RegisterAPIView(APIView):
     """注册用户。"""
 
     permission_classes = [AllowAny]
@@ -35,7 +36,7 @@ class RegisterApiView(APIView):
         )
 
 
-class TokenPairApiView(APIView):
+class TokenPairAPIView(APIView):
     """使用用户名或邮箱获取 JWT token。"""
 
     permission_classes = [AllowAny]
@@ -56,7 +57,7 @@ class ThrottledTokenRefreshView(TokenRefreshView):
     throttle_scope = "auth_refresh"
 
 
-class CurrentUserApiView(APIView):
+class CurrentUserAPIView(APIView):
     """当前用户资料读取与更新。"""
 
     permission_classes = [IsAuthenticated]
@@ -87,7 +88,7 @@ class CurrentUserApiView(APIView):
         return Response(response_serializer.data)
 
 
-class PublicUserApiView(APIView):
+class PublicUserAPIView(APIView):
     """公开用户主页。"""
 
     permission_classes = [AllowAny]
@@ -99,7 +100,7 @@ class PublicUserApiView(APIView):
         return Response(serializer.data)
 
 
-class UserAddressListCreateApiView(APIView):
+class UserAddressListCreateAPIView(APIView):
     """当前用户收货地址列表与新增。"""
 
     permission_classes = [IsAuthenticated]
@@ -115,18 +116,10 @@ class UserAddressListCreateApiView(APIView):
         serializer = UserAddressSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        with transaction.atomic():
-            has_address = UserAddress.objects.select_for_update().filter(
-                user=request.user
-            ).exists()
-            should_set_default = serializer.validated_data.get(
-                "is_default", not has_address
-            )
-            if should_set_default:
-                UserAddress.objects.filter(user=request.user, is_default=True).update(
-                    is_default=False
-                )
-            address = serializer.save(user=request.user, is_default=should_set_default)
+        address = create_user_address(
+            user=request.user,
+            data=serializer.validated_data,
+        )
 
         return Response(
             UserAddressSerializer(address).data,
@@ -134,7 +127,7 @@ class UserAddressListCreateApiView(APIView):
         )
 
 
-class UserAddressDetailApiView(APIView):
+class UserAddressDetailAPIView(APIView):
     """当前用户单个收货地址读取、修改与删除。"""
 
     permission_classes = [IsAuthenticated]
@@ -171,7 +164,7 @@ class UserAddressDetailApiView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class UserAddressSetDefaultApiView(APIView):
+class UserAddressSetDefaultAPIView(APIView):
     """将当前用户的某个收货地址设为默认地址。"""
 
     permission_classes = [IsAuthenticated]
@@ -190,4 +183,3 @@ class UserAddressSetDefaultApiView(APIView):
             address.save(update_fields=["is_default", "updated_at"])
 
         return Response(UserAddressSerializer(address).data)
-

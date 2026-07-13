@@ -89,7 +89,7 @@ def notification_context():
     }
 
 
-class TestNotificationServiceAndApi:
+class TestNotificationServiceAndAPI:
     """站内通知服务与 HTTP API 测试。"""
 
     def test_create_notification_skips_self_and_inactive_recipient(
@@ -389,7 +389,7 @@ class TestNotificationConsumer:
         await communicator.disconnect()
 
 
-class TestThrottleApi:
+class TestThrottleAPI:
     """阶段四关键接口限流测试。"""
 
     @pytest.fixture(autouse=True)

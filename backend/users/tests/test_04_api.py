@@ -33,7 +33,7 @@ def default_group():
     return Group.objects.create(name="普通用户组")
 
 
-class TestUsersApi:
+class TestUsersAPI:
     """用户与认证 API 测试。"""
 
     @pytest.fixture(autouse=True)
@@ -262,7 +262,7 @@ class TestUsersApi:
 
         assert response.status_code == 401
 
-    def test_create_first_address_auto_default_and_trims_text(
+    def test_create_address_defaults_to_non_default_and_trims_text(
         self,
         api_client,
         auth_headers,
@@ -291,7 +291,50 @@ class TestUsersApi:
         body = response.json()
         assert body["recipient_name"] == "张三"
         assert body["phone"] == "13800138000"
-        assert body["is_default"] is True
+        # 未传默认地址标记时，地址应保持非默认状态。
+        assert body["is_default"] is False
+
+    def test_create_default_address_unsets_old_default(
+        self,
+        api_client,
+        auth_headers,
+    ):
+        user = User.objects.create_user(
+            username="newdefault",
+            email="newdefault@example.com",
+            password="StrongPass123",
+        )
+        old_default = UserAddress.objects.create(
+            user=user,
+            recipient_name="张三",
+            phone="13800138000",
+            province="广东省",
+            city="深圳市",
+            district="南山区",
+            detail_address="科技园1号",
+            is_default=True,
+        )
+
+        # 新增默认地址时，应取消同一用户原有默认地址的标记。
+        response = api_client.post(
+            reverse("api:users_me_addresses"),
+            data={
+                "recipient_name": "李四",
+                "phone": "13900139000",
+                "province": "广东省",
+                "city": "广州市",
+                "district": "天河区",
+                "detail_address": "体育西路1号",
+                "is_default": True,
+            },
+            format="json",
+            **auth_headers(user),
+        )
+
+        assert response.status_code == 201
+        old_default.refresh_from_db()
+        assert old_default.is_default is False
+        assert response.json()["is_default"] is True
 
     def test_address_api_crud_and_owner_scope(self, api_client, auth_headers):
         user = User.objects.create_user(

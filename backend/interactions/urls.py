@@ -3,43 +3,43 @@
 from django.urls import path
 
 from interactions.views import (
-    CommentDeleteApiView,
-    CommentReplyApiView,
-    ListingCommentApiView,
-    ListingFavoriteApiView,
-    MyFavoriteListApiView,
-    MyViewHistoryListApiView,
+    CommentDeleteAPIView,
+    CommentReplyAPIView,
+    ListingCommentAPIView,
+    ListingFavoriteAPIView,
+    MyFavoriteListAPIView,
+    MyViewHistoryListAPIView,
 )
 
 urlpatterns = [
     path(
         "listings/<int:listing_id>/comments/",
-        ListingCommentApiView.as_view(),
+        ListingCommentAPIView.as_view(),
         name="listing_comments",
     ),
     path(
         "comments/<int:comment_id>/replies/",
-        CommentReplyApiView.as_view(),
+        CommentReplyAPIView.as_view(),
         name="comment_replies",
     ),
     path(
         "comments/<int:comment_id>/",
-        CommentDeleteApiView.as_view(),
+        CommentDeleteAPIView.as_view(),
         name="comment_detail",
     ),
     path(
         "listings/<int:listing_id>/favorite/",
-        ListingFavoriteApiView.as_view(),
+        ListingFavoriteAPIView.as_view(),
         name="listing_favorite",
     ),
     path(
         "my/favorites/",
-        MyFavoriteListApiView.as_view(),
+        MyFavoriteListAPIView.as_view(),
         name="my_favorites",
     ),
     path(
         "my/browse-history/",
-        MyViewHistoryListApiView.as_view(),
+        MyViewHistoryListAPIView.as_view(),
         name="my_browse_history",
     ),
 ]

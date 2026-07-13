@@ -21,6 +21,7 @@ class UserRegisterSerializer(serializers.Serializer):
     password_confirm = serializers.CharField(write_only=True)
 
     def validate_username(self, value):
+        # serializers.CharField默认trim_whitespace=True，默认去除空白
         if len(value) < 2:
             raise serializers.ValidationError("用户名长度不得少于2位")
         if User.objects.filter(username=value).exists():
@@ -28,14 +29,16 @@ class UserRegisterSerializer(serializers.Serializer):
         return value
 
     def validate_email(self, value):
-        email = value.strip().lower()
+        email = value.strip().lower()  # 邮箱去除空白字段并统一小写
         if User.objects.filter(email__iexact=email).exists():
             raise serializers.ValidationError("该邮箱已存在")
         return email
 
     def validate(self, attrs):
         if attrs["password"] != attrs["password_confirm"]:
-            raise serializers.ValidationError({"password_confirm": "两次输入的密码不一致"})
+            raise serializers.ValidationError(
+                {"password_confirm": "两次输入的密码不一致"}
+            )
 
         user = User(username=attrs["username"], email=attrs["email"])
         try:
@@ -173,6 +176,7 @@ class UserAddressSerializer(serializers.ModelSerializer):
                 attrs[field] = attrs[field].strip()
 
             value = attrs.get(field)
+            # 如果是部分更新，那么就从数据库中取出原来的值
             if self.instance is not None and field not in attrs:
                 value = getattr(self.instance, field)
 

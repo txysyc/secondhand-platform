@@ -44,7 +44,7 @@ from interactions.selectors import annotate_listings_with_favorite_status
 from interactions.services import record_listing_view
 
 
-class CategoryListApiView(APIView):
+class CategoryListAPIView(APIView):
     """启用分类列表。"""
 
     permission_classes = [AllowAny]
@@ -53,7 +53,7 @@ class CategoryListApiView(APIView):
         return Response(get_active_category_payload())
 
 
-class ListingListApiView(PageNumberPaginationMixin, APIView):
+class ListingListAPIView(PageNumberPaginationMixin, APIView):
     """公开商品列表。"""
 
     permission_classes = [AllowAny]
@@ -72,7 +72,7 @@ class ListingListApiView(PageNumberPaginationMixin, APIView):
         return self.paginate(request, queryset, ListingDetailSerializer)
 
 
-class ListingDetailApiView(APIView):
+class ListingDetailAPIView(APIView):
     """商品详情。
 
     在售商品公开可见；支付后只有交易买家和卖家能继续查看详情。
@@ -114,7 +114,7 @@ class ListingDetailApiView(APIView):
         return ListingDetailSerializer(listing, context={"request": request}).data
 
 
-class MyListingListCreateApiView(MethodScopedThrottleMixin, PageNumberPaginationMixin, APIView):
+class MyListingListCreateAPIView(MethodScopedThrottleMixin, PageNumberPaginationMixin, APIView):
     """当前用户商品列表与草稿创建。"""
 
     permission_classes = [IsAuthenticated]
@@ -166,7 +166,7 @@ class _OwnedListingAPIView(APIView):
         return self.get_object(request, pk)
 
 
-class MyListingDetailApiView(_OwnedListingAPIView):
+class MyListingDetailAPIView(_OwnedListingAPIView):
     """更新或删除自己的商品。"""
 
     def get(self, request, pk):
@@ -199,7 +199,7 @@ class MyListingDetailApiView(_OwnedListingAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class ListingPublishApiView(_OwnedListingAPIView):
+class ListingPublishAPIView(_OwnedListingAPIView):
     """发布自己的草稿商品。"""
 
     throttle_scope = "listing_write"
@@ -214,7 +214,7 @@ class ListingPublishApiView(_OwnedListingAPIView):
         return Response(response_serializer.data)
 
 
-class ListingDeactivateApiView(_OwnedListingAPIView):
+class ListingDeactivateAPIView(_OwnedListingAPIView):
     """下架自己的在售商品。"""
 
     throttle_scope = "listing_write"
@@ -233,7 +233,7 @@ class ListingDeactivateApiView(_OwnedListingAPIView):
         return Response(response_serializer.data)
 
 
-class ListingReactivateApiView(_OwnedListingAPIView):
+class ListingReactivateAPIView(_OwnedListingAPIView):
     """重新上架自己的已下架商品。"""
 
     throttle_scope = "listing_write"
@@ -252,7 +252,7 @@ class ListingReactivateApiView(_OwnedListingAPIView):
         return Response(response_serializer.data)
 
 
-class ListingImageUploadApiView(_OwnedListingAPIView):
+class ListingImageUploadAPIView(_OwnedListingAPIView):
     """上传商品图片。"""
 
     throttle_scope = "image_upload"
@@ -275,7 +275,7 @@ class ListingImageUploadApiView(_OwnedListingAPIView):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class ListingImageDeleteApiView(_OwnedListingAPIView):
+class ListingImageDeleteAPIView(_OwnedListingAPIView):
     """删除商品图片。"""
 
     def delete(self, request, pk, image_id):
@@ -284,7 +284,7 @@ class ListingImageDeleteApiView(_OwnedListingAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class ListingImageReorderApiView(_OwnedListingAPIView):
+class ListingImageReorderAPIView(_OwnedListingAPIView):
     """重排商品图片。"""
 
     def post(self, request, pk):

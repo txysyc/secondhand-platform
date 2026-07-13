@@ -3,40 +3,40 @@
 from django.urls import path
 
 from users.views import (
-    CurrentUserApiView,
-    PublicUserApiView,
-    RegisterApiView,
+    CurrentUserAPIView,
+    PublicUserAPIView,
+    RegisterAPIView,
     ThrottledTokenRefreshView,
-    TokenPairApiView,
-    UserAddressDetailApiView,
-    UserAddressListCreateApiView,
-    UserAddressSetDefaultApiView,
+    TokenPairAPIView,
+    UserAddressDetailAPIView,
+    UserAddressListCreateAPIView,
+    UserAddressSetDefaultAPIView,
 )
 
 urlpatterns = [
-    path("auth/register/", RegisterApiView.as_view(), name="auth_register"),
-    path("auth/token/", TokenPairApiView.as_view(), name="auth_token"),
+    path("auth/register/", RegisterAPIView.as_view(), name="auth_register"),
+    path("auth/token/", TokenPairAPIView.as_view(), name="auth_token"),
     path(
         "auth/token/refresh/",
         ThrottledTokenRefreshView.as_view(),
         name="auth_token_refresh",
     ),
-    path("users/me/", CurrentUserApiView.as_view(), name="users_me"),
+    path("users/me/", CurrentUserAPIView.as_view(), name="users_me"),
     path(
         "users/me/addresses/",
-        UserAddressListCreateApiView.as_view(),
+        UserAddressListCreateAPIView.as_view(),
         name="users_me_addresses",
     ),
     path(
         "users/me/addresses/<int:pk>/",
-        UserAddressDetailApiView.as_view(),
+        UserAddressDetailAPIView.as_view(),
         name="users_me_address_detail",
     ),
     path(
         "users/me/addresses/<int:pk>/set-default/",
-        UserAddressSetDefaultApiView.as_view(),
+        UserAddressSetDefaultAPIView.as_view(),
         name="users_me_address_set_default",
     ),
-    path("users/<int:user_id>/", PublicUserApiView.as_view(), name="users_public"),
+    path("users/<int:user_id>/", PublicUserAPIView.as_view(), name="users_public"),
 ]
 

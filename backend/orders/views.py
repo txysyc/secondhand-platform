@@ -36,7 +36,7 @@ class OrderCreationConflict(APIException):
     default_code = "order_creation_conflict"
 
 
-class ListingOrderCreateApiView(APIView):
+class ListingOrderCreateAPIView(APIView):
     """为指定商品创建待支付订单。"""
 
     permission_classes = [IsAuthenticated]
@@ -92,7 +92,7 @@ class ListingOrderCreateApiView(APIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class BuyerOrderListApiView(PageNumberPaginationMixin, APIView):
+class BuyerOrderListAPIView(PageNumberPaginationMixin, APIView):
     """当前用户买家订单列表。"""
 
     permission_classes = [IsAuthenticated]
@@ -104,7 +104,7 @@ class BuyerOrderListApiView(PageNumberPaginationMixin, APIView):
         return self.paginate(request, queryset)
 
 
-class SellerOrderListApiView(PageNumberPaginationMixin, APIView):
+class SellerOrderListAPIView(PageNumberPaginationMixin, APIView):
     """当前用户卖家订单列表。"""
 
     permission_classes = [IsAuthenticated]
@@ -125,7 +125,7 @@ def _filter_and_sort_orders(request, queryset):
     return apply_order_list_sort(filterset.qs, request.query_params.get("sort"))
 
 
-class _OrderParticipantApiView(APIView):
+class _OrderParticipantAPIView(APIView):
     """需要订单参与者身份的 API 基类。"""
 
     permission_classes = [IsAuthenticated, IsOrderParticipant]
@@ -136,7 +136,7 @@ class _OrderParticipantApiView(APIView):
         return order
 
 
-class OrderDetailApiView(_OrderParticipantApiView):
+class OrderDetailAPIView(_OrderParticipantAPIView):
     """订单详情。"""
 
     def get(self, request, pk):
@@ -145,7 +145,7 @@ class OrderDetailApiView(_OrderParticipantApiView):
         return Response(serializer.data)
 
 
-class OrderPayApiView(_OrderParticipantApiView):
+class OrderPayAPIView(_OrderParticipantAPIView):
     """买家模拟支付。"""
 
     def post(self, request, pk):
@@ -156,7 +156,7 @@ class OrderPayApiView(_OrderParticipantApiView):
         return Response(serializer.data)
 
 
-class OrderConfirmDeliveryApiView(_OrderParticipantApiView):
+class OrderConfirmDeliveryAPIView(_OrderParticipantAPIView):
     """卖家确认发货或交付。"""
 
     def post(self, request, pk):
@@ -168,7 +168,7 @@ class OrderConfirmDeliveryApiView(_OrderParticipantApiView):
         return Response(serializer.data)
 
 
-class OrderConfirmReceiptApiView(_OrderParticipantApiView):
+class OrderConfirmReceiptAPIView(_OrderParticipantAPIView):
     """买家确认收货。"""
 
     def post(self, request, pk):
@@ -180,7 +180,7 @@ class OrderConfirmReceiptApiView(_OrderParticipantApiView):
         return Response(serializer.data)
 
 
-class OrderRatingApiView(_OrderParticipantApiView):
+class OrderRatingAPIView(_OrderParticipantAPIView):
     """买家为已完成订单提交一次星级评分。"""
 
     throttle_scope = "rating_write"

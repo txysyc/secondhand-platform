@@ -73,7 +73,7 @@ def clear_cache():
 
 
 
-class TestMessagingApi:
+class TestMessagingAPI:
     """私信 HTTP API 测试。"""
 
     def test_conversation_list_requires_login(self, api_client):

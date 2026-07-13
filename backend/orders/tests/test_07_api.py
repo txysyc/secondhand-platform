@@ -33,7 +33,7 @@ User = get_user_model()
 
 pytestmark = pytest.mark.django_db
 
-class TestOrdersApi:
+class TestOrdersAPI:
     """P5 订单 API 测试。"""
 
     @pytest.fixture(autouse=True)

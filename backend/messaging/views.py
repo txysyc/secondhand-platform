@@ -31,7 +31,7 @@ from messaging.services import (
 )
 
 
-class ConversationListCreateApiView(MethodScopedThrottleMixin, PageNumberPaginationMixin, APIView):
+class ConversationListCreateAPIView(MethodScopedThrottleMixin, PageNumberPaginationMixin, APIView):
     """当前用户会话列表与发起会话。"""
 
     permission_classes = [IsAuthenticated]
@@ -59,7 +59,7 @@ class ConversationListCreateApiView(MethodScopedThrottleMixin, PageNumberPaginat
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class _ConversationParticipantApiView(APIView):
+class _ConversationParticipantAPIView(APIView):
     """需要会话参与者身份的 API 基类。"""
 
     permission_classes = [IsAuthenticated, IsConversationParticipant]
@@ -78,7 +78,7 @@ class _ConversationParticipantApiView(APIView):
         return conversation
 
 
-class ConversationDetailApiView(_ConversationParticipantApiView):
+class ConversationDetailAPIView(_ConversationParticipantAPIView):
     """会话详情。"""
 
     def get(self, request, pk):
@@ -87,9 +87,9 @@ class ConversationDetailApiView(_ConversationParticipantApiView):
         return Response(serializer.data)
 
 
-class ConversationMessageListCreateApiView(
+class ConversationMessageListCreateAPIView(
     MethodScopedThrottleMixin,
-    _ConversationParticipantApiView,
+    _ConversationParticipantAPIView,
 ):
     """会话消息列表与 HTTP 发送消息。"""
 
@@ -134,7 +134,7 @@ class ConversationMessageListCreateApiView(
         return Response(serialize_private_message(message), status=status.HTTP_201_CREATED)
 
 
-class ConversationReadApiView(_ConversationParticipantApiView):
+class ConversationReadAPIView(_ConversationParticipantAPIView):
     """标记会话已读。"""
 
     def post(self, request, pk):

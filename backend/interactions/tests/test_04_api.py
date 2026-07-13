@@ -80,7 +80,7 @@ def interactions_api_context():
 
 
 
-class TestInteractionsApi:
+class TestInteractionsAPI:
     """评论互动 API 测试。"""
 
     def test_get_comments_returns_nested_replies(self, api_client, interactions_api_context):

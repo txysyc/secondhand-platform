@@ -16,12 +16,16 @@ logger = logging.getLogger(__name__)
 CACHE_KEY_ACTIVE_CATEGORY_IDS = "catalog:active_category_ids"
 CACHE_KEY_ACTIVE_CATEGORY_PAYLOAD = "catalog:active_category_payload"
 CACHE_KEY_ACTIVE_CATEGORY_IDS_DIGEST = "catalog:active_category_ids:digest"
-CACHE_KEY_ACTIVE_CATEGORY_VERSION = "catalog:active_category:version"
+CACHE_KEY_ACTIVE_CATEGORY_VERSION = (
+    "catalog:active_category:version"  # 版本key，同时其值用于其他缓存作key使用
+)
 CACHE_KEY_PUBLIC_DETAIL_VERSION = "catalog:public_detail:version"
-CACHE_KEY_PUBLIC_DETAIL_LISTING_VERSION = "catalog:public_detail:listing:{listing_id}:version"
+CACHE_KEY_PUBLIC_DETAIL_LISTING_VERSION = (
+    "catalog:public_detail:listing:{listing_id}:version"
+)
 CACHE_TIMEOUT_NORMAL = 5 * 60
 CACHE_TIMEOUT_EMPTY = 30
-CACHE_LOCK_TIMEOUT = 5
+CACHE_LOCK_TIMEOUT = 5  # 锁超时时间
 CACHE_NOT_FOUND_FLAG = "_catalog_cache_not_found"
 _CACHE_MISS = object()
 
@@ -51,6 +55,7 @@ def get_active_category_ids():
     digest_key = _active_category_ids_digest_cache_key()
     category_ids = _safe_cache_get(cache_key)
     digest = _safe_cache_get(digest_key)
+    # 判断活跃分类id列表是否读取失败和通过该id计算的digest和原来缓存的digest是否一致（即是否活跃分类是否有所改动）
     if category_ids is not _CACHE_MISS and digest == _category_ids_digest(category_ids):
         return category_ids
 
@@ -58,11 +63,12 @@ def get_active_category_ids():
     lock_key = f"{cache_key}:lock"
     if _safe_cache_add(lock_key, "building", CACHE_LOCK_TIMEOUT):
         return _refresh_active_category_ids(cache_key, digest_key)
-
+    # 如果重建失败，即有此时并发，所以尝试重新获取
     category_ids = _safe_cache_get(cache_key)
     digest = _safe_cache_get(digest_key)
     if category_ids is not _CACHE_MISS and digest == _category_ids_digest(category_ids):
         return category_ids
+    # 读取还是失败，直接访问数据库
     logger.debug("active_category_ids 缓存锁竞争，使用数据库降级读取")
     return _read_active_category_ids()
 
@@ -73,9 +79,7 @@ def get_active_category_payload():
     return _read_cached_value(
         _active_category_payload_cache_key(),
         lambda: list(
-            Category.objects.filter(is_active=True)
-            .order_by("id")
-            .values("id", "name")
+            Category.objects.filter(is_active=True).order_by("id").values("id", "name")
         ),
         "active_category_payload",
     )
@@ -99,24 +103,39 @@ def get_cached_public_listing_detail(
 
 
 def _read_cached_value(cache_key, builder, cache_name, *, empty_timeout=False):
-    """按互斥锁回源缓存；锁竞争或 Redis 故障时保持数据库可用。"""
+    """按互斥锁读取或构建缓存，锁竞争和 Redis 故障时均可降级数据库。
 
+    ``builder`` 负责从数据库构建缓存值；仅抢到重建锁的请求会回填 Redis。
+    未抢到锁的请求会再次读取缓存，仍未命中时直接调用 ``builder`` 返回数据，
+    避免等待锁而阻塞 Web 请求。
+    """
+
+    # 第一阶段：优先读取已存在的缓存，命中后无需执行数据库查询。
     value = _safe_cache_get(cache_key)
     if value is not _CACHE_MISS:
         return value
 
+    # 第二阶段：缓存未命中时，使用独立锁 Key 选出一个请求负责回源和回填。
     lock_key = f"{cache_key}:lock"
     if _safe_cache_add(lock_key, "building", CACHE_LOCK_TIMEOUT):
+        # 当前请求获得锁，由它执行数据库查询，避免并发请求同时回源造成缓存击穿。
         value = builder()
-        timeout = _cache_timeout(CACHE_TIMEOUT_EMPTY if empty_timeout and _is_empty_value(value) else CACHE_TIMEOUT_NORMAL)
+        # 空值缓存使用更短 TTL，正常数据使用默认 TTL；两者均会加入随机抖动。
+        timeout = _cache_timeout(
+            CACHE_TIMEOUT_EMPTY
+            if empty_timeout and _is_empty_value(value)
+            else CACHE_TIMEOUT_NORMAL
+        )
+        # Redis 写入异常已由安全包装函数处理，不影响本次查询得到的数据返回。
         _safe_cache_set(cache_key, value, timeout)
         return value
 
-    # 缓存构建者可能刚完成回填，竞争请求优先再次读取而不阻塞 Web 工作线程。
+    # 第三阶段：未获得锁时，构建缓存的请求可能已完成回填，因此再次尝试读取。
     value = _safe_cache_get(cache_key)
     if value is not _CACHE_MISS:
         return value
 
+    # 第四阶段：锁仍被持有或 Redis 故障时，不等待锁，直接查询数据库保证接口可用。
     logger.debug("%s 缓存锁竞争，使用数据库降级读取", cache_name)
     return builder()
 
@@ -223,16 +242,19 @@ def _category_ids_digest(category_ids):
 
 
 def _cache_version(version_key):
-    """读取版本号；缓存故障时使用临时版本并让读请求降级。"""
+    """读取版本号；缓存故障时使用临时版本并让读请求降级。版本号以时间戳做key，返回版本cache key"""
 
     version = _safe_cache_get(version_key)
     if version is not _CACHE_MISS:
         return version
 
     version = str(time_ns())
+    # 尝试重新创建版本号，如果已有就获取；重新创建成功，直接返回该版本号(由于都是version重新赋予新值，创建失败是由于此时并发的原因)
     if _safe_cache_add(version_key, version, None):
         return version
+    # 写入失败通常表示并发请求已先写入版本号，二次读取以统一使用该版本。
     refreshed_version = _safe_cache_get(version_key)
+    # Redis 仍不可用时，返回本次生成的临时版本而非未命中标记，保证请求可继续降级执行。
     return refreshed_version if refreshed_version is not _CACHE_MISS else version
 
 

@@ -41,7 +41,7 @@ class Migration(migrations.Migration):
             name='ListingImage',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('image', models.ImageField(upload_to='listings/%Y/%m/%d', validators=[catalog.models.valid_imgae_size], verbose_name='商品图片')),
+                ('image', models.ImageField(upload_to='listings/%Y/%m/%d', validators=[catalog.models.valid_image_size], verbose_name='商品图片')),
                 ('created_at', models.DateTimeField(auto_now_add=True, verbose_name='创建时间')),
                 ('sort_order', models.PositiveIntegerField(default=0, verbose_name='排序')),
                 ('listing', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='images', to='catalog.listing', verbose_name='所属商品')),

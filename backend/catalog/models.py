@@ -159,10 +159,8 @@ class Listing(models.Model):
         return f"{self.title}"
 
 
-def valid_imgae_size(value):
+def valid_image_size(value):
     """限制单张商品图片大小。
-
-    函数名保留历史拼写，避免在无模型行为变化时产生迁移 churn。
     """
 
     if value.size > Max_IMAGE_SIZE:
@@ -186,7 +184,7 @@ class ListingImage(models.Model):
     image = models.ImageField(
         verbose_name="商品图片",
         upload_to="listings/%Y/%m/%d",
-        validators=[valid_imgae_size],
+        validators=[valid_image_size],
     )
     created_at = models.DateTimeField(verbose_name="创建时间", auto_now_add=True)
     sort_order = models.PositiveIntegerField(

@@ -45,7 +45,7 @@ from interactions.services import record_listing_view
 
 
 class CategoryListAPIView(APIView):
-    """启用分类列表。"""
+    """启用的分类列表。"""
 
     permission_classes = [AllowAny]
 
@@ -114,7 +114,9 @@ class ListingDetailAPIView(APIView):
         return ListingDetailSerializer(listing, context={"request": request}).data
 
 
-class MyListingListCreateAPIView(MethodScopedThrottleMixin, PageNumberPaginationMixin, APIView):
+class MyListingListCreateAPIView(
+    MethodScopedThrottleMixin, PageNumberPaginationMixin, APIView
+):
     """当前用户商品列表与草稿创建。"""
 
     permission_classes = [IsAuthenticated]
@@ -153,10 +155,9 @@ class _OwnedListingAPIView(APIView):
     permission_classes = [IsAuthenticated, IsListingOwner]
 
     def get_object(self, request, pk):
-        queryset = (
-            Listing.objects.select_related("category", "owner", "owner__profile")
-            .prefetch_related("images")
-        )
+        queryset = Listing.objects.select_related(
+            "category", "owner", "owner__profile"
+        ).prefetch_related("images")
         queryset = annotate_listings_with_favorite_status(queryset, request.user)
         listing = get_object_or_404(queryset, pk=pk)
         self.check_object_permissions(request, listing)
@@ -302,4 +303,3 @@ class ListingImageReorderAPIView(_OwnedListingAPIView):
             context={"request": request},
         )
         return Response(response_serializer.data)
-

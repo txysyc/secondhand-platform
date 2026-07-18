@@ -1,4 +1,3 @@
-.agents/
 .claude/
 __pycache__/
 .pytest_cache/
@@ -11,11 +10,14 @@ build/
 
 .playwright-mcp/
 
+# Trellis/Codex 本机运行状态；项目规范、脚本、skills 和工作日志需要提交。
+.trellis/.developer
+.trellis/.runtime/
+.trellis/**/__pycache__/
+.trellis/**/*.pyc
+
 # 一键性能测试生成的 CSV、HTML、JWT 配置与报告均为本地测试产物。
 performance/中间文件/
 performance/测试结果/
 
-AGENTS.md
-
-docs/
 media/

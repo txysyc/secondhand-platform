@@ -11,7 +11,7 @@ import {
   reorderListingImages,
   publishListing,
 } from '../../api/endpoints/listings';
-import { useAuth } from '../../app/providers';
+import { useAuth } from '../../app/auth';
 import { Button, Card, ErrorState, Loading } from '../../components/ui';
 import { ListingFormFields } from './form/ListingFormFields';
 import { ListingImageManager } from './form/ListingImageManager';

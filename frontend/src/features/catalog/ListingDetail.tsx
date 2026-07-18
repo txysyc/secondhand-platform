@@ -15,7 +15,7 @@ import {
 import { createOrder } from '../../api/endpoints/orders';
 import { getAddresses } from '../../api/endpoints/addresses';
 import { createConversation } from '../../api/endpoints/messages';
-import { useAuth } from '../../app/providers';
+import { useAuth } from '../../app/auth';
 import { resolveAvatarUrl, resolveMediaUrl } from '../../utils/media';
 import { Button, Card, ErrorState, Loading, Tabs } from '../../components/ui';
 import { AddressPickerPanel } from './detail/AddressPickerPanel';

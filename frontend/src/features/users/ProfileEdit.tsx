@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, PartyPopper, AlertCircle } from 'lucide-react';
-import { useAuth } from '../../app/providers';
+import { useAuth } from '../../app/auth';
 import { updateProfile } from '../../api/endpoints/users';
 import { resolveMediaUrl } from '../../utils/media';
 import { Card } from '../../components/ui/Card';

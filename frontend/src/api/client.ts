@@ -2,15 +2,23 @@ type RequestConfig = RequestInit & {
   params?: Record<string, string | number | boolean>;
 };
 
+/** API 统一错误载荷，保持与后端 message/errors 契约一致。 */
+export interface ApiErrorPayload {
+  status: number;
+  message: string;
+  errors: unknown;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
 class ApiClient {
   private baseUrl: string = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-  private isRefreshing: boolean = false;
+  private isRefreshing = false;
   private refreshSubscribers: ((token: string) => void)[] = [];
   private authFailureCallback: (() => void) | null = null;
 
-  /**
-   * 注册认证失败（Token 刷新失败）的全局回调
-   */
+  /** 注册认证失败（Token 刷新失败）的全局回调。 */
   public setAuthFailureCallback(callback: () => void) {
     this.authFailureCallback = callback;
   }
@@ -32,17 +40,15 @@ class ApiClient {
   private clearTokens() {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
-    if (this.authFailureCallback) {
-      this.authFailureCallback();
-    }
+    this.authFailureCallback?.();
   }
 
-  private subscribeTokenRefresh(cb: (token: string) => void) {
-    this.refreshSubscribers.push(cb);
+  private subscribeTokenRefresh(callback: (token: string) => void) {
+    this.refreshSubscribers.push(callback);
   }
 
   private onRefreshed(token: string) {
-    this.refreshSubscribers.forEach((cb) => cb(token));
+    this.refreshSubscribers.forEach((callback) => callback(token));
     this.refreshSubscribers = [];
   }
 
@@ -51,126 +57,114 @@ class ApiClient {
     this.clearTokens();
   }
 
-  private async request(url: string, config: RequestConfig = {}): Promise<any> {
+  private async request<T = unknown>(url: string, config: RequestConfig = {}): Promise<T> {
     const { params, ...init } = config;
-    
-    // 拼接 URL 查询参数
+
+    // 拼接 URL 查询参数。
     let fullUrl = url.startsWith('http') ? url : `${this.baseUrl}${url}`;
     if (params) {
       const searchParams = new URLSearchParams();
-      Object.entries(params).forEach(([key, val]) => {
-        if (val !== undefined && val !== null) {
-          searchParams.append(key, String(val));
+      Object.entries(params).forEach(([key, value]) => {
+        // 页面筛选对象会保留未填写字段；空值不能序列化成字符串 undefined/null。
+        if (value === undefined || value === null) {
+          return;
         }
+        searchParams.append(key, String(value));
       });
-      const qs = searchParams.toString();
-      if (qs) {
-        fullUrl += (fullUrl.includes('?') ? '&' : '?') + qs;
+      const queryString = searchParams.toString();
+      if (queryString) {
+        fullUrl += (fullUrl.includes('?') ? '&' : '?') + queryString;
       }
     }
 
-    // 设置 Header
     const headers = new Headers(init.headers);
     const { access } = this.getTokens();
     if (access) {
       headers.set('Authorization', `Bearer ${access}`);
     }
 
-    // FormData 情况下由浏览器自动配置边界，不设 Content-Type
+    // FormData 由浏览器自动设置 boundary，JSON 请求才补充 Content-Type。
     if (init.body instanceof FormData) {
       headers.delete('Content-Type');
     } else if (init.body && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
-
     init.headers = headers;
 
-    try {
-      const response = await fetch(fullUrl, init);
-
-      if (response.status === 401) {
-        const { refresh } = this.getTokens();
-        
-        // 如果没有 refresh token，或者请求本身就是刷新 token，则直接判定登录失效
-        if (!refresh || url === '/auth/token/refresh/') {
-          this.clearTokens();
-          throw await this.parseError(response);
-        }
-
-        if (!this.isRefreshing) {
-          this.isRefreshing = true;
-          this.refreshToken(refresh)
-            .then((newAccess) => {
-              this.isRefreshing = false;
-              this.onRefreshed(newAccess);
-            })
-            .catch(() => {
-              this.isRefreshing = false;
-              this.handleRefreshFailure();
-            });
-        }
-
-        // 返回 Promise 在刷新成功后重新请求并 resolve 结果
-        return new Promise((resolve) => {
-          this.subscribeTokenRefresh((newToken) => {
-            const newHeaders = new Headers(init.headers);
-            newHeaders.set('Authorization', `Bearer ${newToken}`);
-            init.headers = newHeaders;
-            resolve(
-              fetch(fullUrl, init).then((res) => {
-                if (!res.ok) {
-                  return this.parseError(res).then((err) => Promise.reject(err));
-                }
-                return res.status === 204 ? null : res.json();
-              })
-            );
-          });
-        });
-      }
-
-      return await this.handleResponse(response);
-    } catch (error) {
-      throw error;
+    const response = await fetch(fullUrl, init);
+    if (response.status !== 401) {
+      return this.handleResponse<T>(response);
     }
+
+    const { refresh } = this.getTokens();
+    if (!refresh || url === '/auth/token/refresh/') {
+      this.clearTokens();
+      throw await this.parseError(response);
+    }
+
+    if (!this.isRefreshing) {
+      this.isRefreshing = true;
+      this.refreshToken(refresh)
+        .then((newAccess) => {
+          this.isRefreshing = false;
+          this.onRefreshed(newAccess);
+        })
+        .catch(() => {
+          this.isRefreshing = false;
+          this.handleRefreshFailure();
+        });
+    }
+
+    // 刷新期间的请求排队，共用同一个新 access token。
+    return new Promise<T>((resolve, reject) => {
+      this.subscribeTokenRefresh((newToken) => {
+        const retryHeaders = new Headers(init.headers);
+        retryHeaders.set('Authorization', `Bearer ${newToken}`);
+        fetch(fullUrl, { ...init, headers: retryHeaders })
+          .then((retryResponse) => this.handleResponse<T>(retryResponse))
+          .then(resolve)
+          .catch(reject);
+      });
+    });
   }
 
   private async refreshToken(refresh: string): Promise<string> {
-    const res = await fetch(`${this.baseUrl}/auth/token/refresh/`, {
+    const response = await fetch(`${this.baseUrl}/auth/token/refresh/`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh }),
     });
 
-    if (!res.ok) {
+    if (!response.ok) {
       throw new Error('Refresh token failed');
     }
 
-    const data = await res.json();
+    const data: unknown = await response.json();
+    if (!isRecord(data) || typeof data.access !== 'string') {
+      throw new Error('Refresh token response is invalid');
+    }
     this.setTokens(data.access);
     return data.access;
   }
 
-  private async handleResponse(response: Response): Promise<any> {
+  private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
       throw await this.parseError(response);
     }
-    
     if (response.status === 204) {
-      return null;
+      return null as T;
     }
-
-    return await response.json();
+    return (await response.json()) as T;
   }
 
-  private async parseError(response: Response): Promise<any> {
+  private async parseError(response: Response): Promise<ApiErrorPayload> {
     try {
-      const errorData = await response.json();
+      const data: unknown = await response.json();
+      const payload = isRecord(data) ? data : {};
       return {
         status: response.status,
-        message: errorData.message || '网络请求错误',
-        errors: errorData.errors || {},
+        message: typeof payload.message === 'string' ? payload.message : '网络请求错误',
+        errors: payload.errors ?? {},
       };
     } catch {
       return {
@@ -181,36 +175,36 @@ class ApiClient {
     }
   }
 
-  public get(url: string, config?: RequestConfig) {
-    return this.request(url, { ...config, method: 'GET' });
+  public get<T = unknown>(url: string, config?: RequestConfig) {
+    return this.request<T>(url, { ...config, method: 'GET' });
   }
 
-  public post(url: string, body?: any, config?: RequestConfig) {
-    return this.request(url, {
+  public post<T = unknown>(url: string, body?: unknown, config?: RequestConfig) {
+    return this.request<T>(url, {
       ...config,
       method: 'POST',
       body: body instanceof FormData ? body : JSON.stringify(body),
     });
   }
 
-  public patch(url: string, body?: any, config?: RequestConfig) {
-    return this.request(url, {
+  public patch<T = unknown>(url: string, body?: unknown, config?: RequestConfig) {
+    return this.request<T>(url, {
       ...config,
       method: 'PATCH',
       body: body instanceof FormData ? body : JSON.stringify(body),
     });
   }
 
-  public put(url: string, body?: any, config?: RequestConfig) {
-    return this.request(url, {
+  public put<T = unknown>(url: string, body?: unknown, config?: RequestConfig) {
+    return this.request<T>(url, {
       ...config,
       method: 'PUT',
       body: body instanceof FormData ? body : JSON.stringify(body),
     });
   }
 
-  public delete(url: string, config?: RequestConfig) {
-    return this.request(url, { ...config, method: 'DELETE' });
+  public delete<T = unknown>(url: string, config?: RequestConfig) {
+    return this.request<T>(url, { ...config, method: 'DELETE' });
   }
 }
 

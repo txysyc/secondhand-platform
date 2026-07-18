@@ -7,6 +7,18 @@ import type {
   PaginatedResponse,
 } from '../../types/listings';
 
+interface ListingPayload {
+  title: string;
+  category: number;
+  item_type: 'physical' | 'virtual';
+  price: string;
+  description: string;
+  delivery_notes: string;
+  condition?: 'new' | 'like_new' | 'good' | 'fair' | null;
+  physical_delivery_method?: 'meetup' | 'shipping' | 'both' | null;
+  virtual_valid_until?: string | null;
+}
+
 export interface ListingFilterParams {
   q?: string;
   category?: string | number;
@@ -40,7 +52,7 @@ type ListingQueryParams = Record<string, string | number | boolean>;
  * 获取启用的分类列表
  */
 export const getCategories = async (): Promise<Category[]> => {
-  return apiClient.get('/categories/');
+  return apiClient.get<Category[]>('/categories/');
 };
 
 /**
@@ -49,14 +61,14 @@ export const getCategories = async (): Promise<Category[]> => {
 export const getListings = async (
   params?: ListingFilterParams
 ): Promise<PaginatedResponse<Listing>> => {
-  return apiClient.get('/listings/', { params: params as ListingQueryParams });
+  return apiClient.get<PaginatedResponse<Listing>>('/listings/', { params: params as ListingQueryParams });
 };
 
 /**
  * 获取特定商品的详情
  */
 export const getListingDetail = async (id: string | number): Promise<Listing> => {
-  return apiClient.get(`/listings/${id}/`);
+  return apiClient.get<Listing>(`/listings/${id}/`);
 };
 
 /**
@@ -65,14 +77,14 @@ export const getListingDetail = async (id: string | number): Promise<Listing> =>
 export const favoriteListing = async (
   id: string | number
 ): Promise<{ listing_id: number; is_favorited: boolean }> => {
-  return apiClient.post(`/listings/${id}/favorite/`);
+  return apiClient.post<{ listing_id: number; is_favorited: boolean }>(`/listings/${id}/favorite/`);
 };
 
 /**
  * 取消收藏指定商品
  */
 export const unfavoriteListing = async (id: string | number): Promise<void> => {
-  return apiClient.delete(`/listings/${id}/favorite/`);
+  return apiClient.delete<void>(`/listings/${id}/favorite/`);
 };
 
 /**
@@ -81,7 +93,7 @@ export const unfavoriteListing = async (id: string | number): Promise<void> => {
 export const getMyFavorites = async (
   params?: { page?: string | number; page_size?: string | number }
 ): Promise<PaginatedResponse<FavoriteItem>> => {
-  return apiClient.get('/my/favorites/', { params: params as ListingQueryParams });
+  return apiClient.get<PaginatedResponse<FavoriteItem>>('/my/favorites/', { params: params as ListingQueryParams });
 };
 
 /**
@@ -90,14 +102,14 @@ export const getMyFavorites = async (
 export const getBrowseHistory = async (
   params?: { page?: string | number; page_size?: string | number }
 ): Promise<PaginatedResponse<BrowseHistoryItem>> => {
-  return apiClient.get('/my/browse-history/', { params: params as ListingQueryParams });
+  return apiClient.get<PaginatedResponse<BrowseHistoryItem>>('/my/browse-history/', { params: params as ListingQueryParams });
 };
 
 /**
  * 获取当前登录用户自己的商品详情，包含草稿和已下架商品
  */
 export const getMyListingDetail = async (id: string | number): Promise<Listing> => {
-  return apiClient.get(`/my/listings/${id}/`);
+  return apiClient.get<Listing>(`/my/listings/${id}/`);
 };
 
 /**
@@ -106,49 +118,52 @@ export const getMyListingDetail = async (id: string | number): Promise<Listing> 
 export const getMyListings = async (
   params?: MyListingFilterParams
 ): Promise<PaginatedResponse<Listing>> => {
-  return apiClient.get('/my/listings/', { params: params as ListingQueryParams });
+  return apiClient.get<PaginatedResponse<Listing>>('/my/listings/', { params: params as ListingQueryParams });
 };
 
 /**
  * 创建商品草稿
  */
-export const createListing = async (data: any): Promise<Listing> => {
-  return apiClient.post('/my/listings/', data);
+export const createListing = async (data: ListingPayload): Promise<Listing> => {
+  return apiClient.post<Listing>('/my/listings/', data);
 };
 
 /**
  * 更新自己特定的商品
  */
-export const updateListing = async (id: string | number, data: any): Promise<Listing> => {
-  return apiClient.patch(`/my/listings/${id}/`, data);
+export const updateListing = async (
+  id: string | number,
+  data: Partial<ListingPayload>
+): Promise<Listing> => {
+  return apiClient.patch<Listing>(`/my/listings/${id}/`, data);
 };
 
 /**
  * 删除自己特定的商品
  */
 export const deleteListing = async (id: string | number): Promise<void> => {
-  return apiClient.delete(`/my/listings/${id}/`);
+  return apiClient.delete<void>(`/my/listings/${id}/`);
 };
 
 /**
  * 发布商品 (由草稿转为在售)
  */
 export const publishListing = async (id: string | number): Promise<Listing> => {
-  return apiClient.post(`/my/listings/${id}/publish/`);
+  return apiClient.post<Listing>(`/my/listings/${id}/publish/`);
 };
 
 /**
  * 下架商品
  */
 export const deactivateListing = async (id: string | number): Promise<Listing> => {
-  return apiClient.post(`/my/listings/${id}/deactivate/`);
+  return apiClient.post<Listing>(`/my/listings/${id}/deactivate/`);
 };
 
 /**
  * 重新上架商品
  */
 export const reactivateListing = async (id: string | number): Promise<Listing> => {
-  return apiClient.post(`/my/listings/${id}/reactivate/`);
+  return apiClient.post<Listing>(`/my/listings/${id}/reactivate/`);
 };
 
 /**
@@ -157,8 +172,8 @@ export const reactivateListing = async (id: string | number): Promise<Listing> =
 export const uploadListingImage = async (
   id: string | number,
   formData: FormData
-): Promise<any> => {
-  return apiClient.post(`/my/listings/${id}/images/`, formData);
+): Promise<Listing> => {
+  return apiClient.post<Listing>(`/my/listings/${id}/images/`, formData);
 };
 
 /**
@@ -168,7 +183,7 @@ export const deleteListingImage = async (
   listingId: string | number,
   imageId: string | number
 ): Promise<void> => {
-  return apiClient.delete(`/my/listings/${listingId}/images/${imageId}/`);
+  return apiClient.delete<void>(`/my/listings/${listingId}/images/${imageId}/`);
 };
 
 /**
@@ -177,6 +192,6 @@ export const deleteListingImage = async (
 export const reorderListingImages = async (
   id: string | number,
   imageIds: number[]
-): Promise<any> => {
-  return apiClient.post(`/my/listings/${id}/images/reorder/`, { image_ids: imageIds });
+): Promise<Listing> => {
+  return apiClient.post<Listing>(`/my/listings/${id}/images/reorder/`, { image_ids: imageIds });
 };

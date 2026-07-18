@@ -196,7 +196,10 @@ export const AddressManager: React.FC = () => {
   };
 
   useEffect(() => {
-    loadAddresses();
+    // 推迟首次请求到当前 effect 完成后，避免初始化阶段同步触发级联渲染。
+    queueMicrotask(() => {
+      void loadAddresses();
+    });
   }, []);
 
   const handleAdd = async (form: AddressForm) => {

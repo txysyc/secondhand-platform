@@ -9,7 +9,7 @@ import {
   reactivateListing,
   deleteListing,
 } from '../../api/endpoints/listings';
-import { useAuth } from '../../app/providers';
+import { useAuth } from '../../app/auth';
 import { Button, EmptyState, Loading, ErrorState, Pagination } from '../../components/ui';
 import { MyListingsFilterPanel } from './my/MyListingsFilterPanel';
 import { MyListingsRows } from './my/MyListingsRows';

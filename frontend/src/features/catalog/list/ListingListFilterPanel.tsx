@@ -3,13 +3,7 @@ import { Search } from 'lucide-react';
 
 import { Button, Input, Select } from '../../../components/ui';
 import type { Category } from '../../../types/listings';
-
-export const LISTING_SORT_OPTIONS = [
-  { value: 'newest', label: '最新发布' },
-  { value: 'oldest', label: '时间最久' },
-  { value: 'price_asc', label: '价格从低到高' },
-  { value: 'price_desc', label: '价格从高到低' },
-];
+import { LISTING_SORT_OPTIONS } from './options';
 
 interface ListingListFilterPanelProps {
   categories: Category[];

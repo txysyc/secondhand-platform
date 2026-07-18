@@ -8,7 +8,7 @@ import {
   sendMessageViaHttp,
   markConversationAsRead,
 } from '../../api/endpoints/messages';
-import { useAuth } from '../../app/providers';
+import { useAuth } from '../../app/auth';
 import { ChatWindow } from './ChatWindow';
 import { ConversationSidebar } from './ConversationSidebar';
 import type { Conversation, Message } from '../../types/messages';

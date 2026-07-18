@@ -15,7 +15,7 @@ import {
   Heart,
   MapPin,
 } from 'lucide-react';
-import { useAuth } from './providers';
+import { useAuth } from './auth';
 import { getNotificationUnreadCount } from '../api/endpoints/notifications';
 import { Avatar } from '../components/ui/Avatar';
 import { Button } from '../components/ui/Button';

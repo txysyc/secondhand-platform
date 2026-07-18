@@ -10,7 +10,7 @@ export type NotificationType =
 
 export type NotificationStatusFilter = 'all' | 'unread' | 'read';
 
-export interface NotificationActor extends Pick<User, 'id' | 'username' | 'profile'> {}
+export type NotificationActor = Pick<User, 'id' | 'username' | 'profile'>;
 
 export interface NotificationItem {
   id: number;

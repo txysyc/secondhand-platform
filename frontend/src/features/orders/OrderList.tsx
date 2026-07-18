@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { getBuyerOrders, getSellerOrders } from '../../api/endpoints/orders';
-import { useAuth } from '../../app/providers';
+import { useAuth } from '../../app/auth';
 import { resolveMediaUrl } from '../../utils/media';
 import { Badge } from '../../components/ui/Badge';
 import { Loading } from '../../components/ui/Loading';

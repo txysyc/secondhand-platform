@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
-import { useAuth } from '../../app/providers';
+import { useAuth } from '../../app/auth';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 

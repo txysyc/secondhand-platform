@@ -7,7 +7,7 @@ import {
   confirmOrderReceipt,
   rateOrder,
 } from '../../api/endpoints/orders';
-import { useAuth } from '../../app/providers';
+import { useAuth } from '../../app/auth';
 import { resolveMediaUrl } from '../../utils/media';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';

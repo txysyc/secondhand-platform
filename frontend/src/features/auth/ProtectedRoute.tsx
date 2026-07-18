@@ -1,6 +1,6 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../app/providers';
+import { useAuth } from '../../app/auth';
 
 export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -37,7 +37,8 @@ export const AnonymousRoute: React.FC<{ children: React.ReactNode }> = ({ childr
   }
 
   if (user) {
-    const from = (location.state as any)?.from?.pathname || '/';
+    const routeState = location.state as { from?: { pathname?: string } } | null;
+    const from = routeState?.from?.pathname || '/';
     return <Navigate to={from} replace />;
   }
 

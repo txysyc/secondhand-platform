@@ -20,6 +20,7 @@
 
 - 业务状态流转集中在 service；视图只编排请求和响应。
 - 新增可见性或列表查询先扩展 selector，并添加预取/查询数测试。
+- 新的 DRF generic list view 使用 `api.pagination.StandardPageNumberPagination`，统一返回 `count/next/previous/page_size/results`；已有 `APIView + PageNumberPaginationMixin` 视图按模块迁移前继续保持原实现。
 - 跨模型写入使用 `transaction.atomic()`；订单、库存/商品状态需要 `select_for_update()`。
 - 上传文件、缓存和通知等副作用使用已有的 `on_commit` 或失效 helper。
 - 新增常量、枚举、错误消息或 API 字段前先 `rg` 搜索所有消费者，避免只改一端。

@@ -447,6 +447,22 @@ class TestCatalogAPI:
         listing.refresh_from_db()
         assert listing.title != "越权修改"
 
+    def test_my_listing_detail_does_not_enable_put_during_generic_view_migration(self):
+        """详情接口保持原有 GET/PATCH/DELETE 方法边界。"""
+
+        listing = self.create_listing(status=Listing.Status.DRAFT, published_at=None)
+
+        response = self.api_client.put(
+            reverse("api:catalog_my_listing_detail", kwargs={"pk": listing.id}),
+            data={"title": "不应通过 PUT 更新"},
+            format="json",
+            **self.auth_headers(self.seller),
+        )
+
+        assert response.status_code == 405
+        listing.refresh_from_db()
+        assert listing.title != "不应通过 PUT 更新"
+
     def test_image_upload_reorder_delete_and_limit(self):
         listing = self.create_listing(status=Listing.Status.DRAFT, published_at=None)
 

@@ -1,30 +1,32 @@
-"""catalog 应用 API 类视图。"""
+"""catalog 应用 API 通用视图。"""
 
 from django.http import Http404
-from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
+from rest_framework.generics import (
+    GenericAPIView,
+    ListAPIView,
+    ListCreateAPIView,
+    RetrieveAPIView,
+    RetrieveUpdateDestroyAPIView,
+)
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
-from api.mixins import PageNumberPaginationMixin
 from api.throttles import MethodScopedThrottleMixin
 from catalog.cache import get_active_category_payload, get_cached_public_listing_detail
 from catalog.filters import ListingFilterSet, MyListingFilterSet
+from catalog.models import Listing
 from catalog.permissions import IsListingOwner
 from catalog.serializers import (
-    CategorySerializer,
     ListingDetailSerializer,
     ListingImageReorderSerializer,
     ListingImageUploadSerializer,
     ListingWriteSerializer,
 )
-from catalog.models import Listing
 from catalog.selectors import (
     apply_owner_listing_sort,
     apply_public_listing_sort,
-    get_active_categories,
     get_owner_listing_queryset,
     get_public_listing_detail_queryset,
     get_public_listing_queryset,
@@ -44,7 +46,24 @@ from interactions.selectors import annotate_listings_with_favorite_status
 from interactions.services import record_listing_view
 
 
-class CategoryListAPIView(APIView):
+def _filter_listing_queryset(request, queryset, filterset_class, sort_func):
+    """统一处理商品列表筛选和白名单排序。"""
+
+    queryset = annotate_listings_with_favorite_status(queryset, request.user)
+    filterset = filterset_class(data=request.query_params, queryset=queryset)
+    if not filterset.is_valid():
+        raise ValidationError(filterset.errors)
+    return sort_func(filterset.qs, request.query_params.get("sort"))
+
+
+def _listing_response(listing, request, *, status_code=status.HTTP_200_OK):
+    """使用详情 serializer 返回商品，统一 request context。"""
+
+    serializer = ListingDetailSerializer(listing, context={"request": request})
+    return Response(serializer.data, status=status_code)
+
+
+class CategoryListAPIView(GenericAPIView):
     """启用的分类列表。"""
 
     permission_classes = [AllowAny]
@@ -53,134 +72,123 @@ class CategoryListAPIView(APIView):
         return Response(get_active_category_payload())
 
 
-class ListingListAPIView(PageNumberPaginationMixin, APIView):
+class ListingListAPIView(ListAPIView):
     """公开商品列表。"""
 
     permission_classes = [AllowAny]
-    max_page_size = 50
+    serializer_class = ListingDetailSerializer
 
-    def get(self, request):
-        queryset = get_public_listing_queryset()
-        queryset = annotate_listings_with_favorite_status(queryset, request.user)
-        filterset = ListingFilterSet(data=request.query_params, queryset=queryset)
-        if not filterset.is_valid():
-            raise ValidationError(filterset.errors)
-        queryset = apply_public_listing_sort(
-            filterset.qs,
-            request.query_params.get("sort"),
+    def get_queryset(self):
+        return _filter_listing_queryset(
+            self.request,
+            get_public_listing_queryset(),
+            ListingFilterSet,
+            apply_public_listing_sort,
         )
-        return self.paginate(request, queryset, ListingDetailSerializer)
 
 
-class ListingDetailAPIView(APIView):
+class ListingDetailAPIView(RetrieveAPIView):
     """商品详情。
 
     在售商品公开可见；支付后只有交易买家和卖家能继续查看详情。
     """
 
     permission_classes = [AllowAny]
+    serializer_class = ListingDetailSerializer
 
-    def get_object(self, request, pk):
-        queryset = annotate_listings_with_favorite_status(
-            get_visible_listing_detail_queryset(request.user),
-            request.user,
-        )
-        return get_object_or_404(
-            queryset,
-            pk=pk,
-        )
+    def get_queryset(self):
+        queryset = get_visible_listing_detail_queryset(self.request.user)
+        return annotate_listings_with_favorite_status(queryset, self.request.user)
 
-    def get(self, request, pk):
+    def get(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             payload = get_cached_public_listing_detail(
-                pk,
-                lambda: self._build_public_detail_payload(pk, request),
+                kwargs["pk"],
+                lambda: self._build_public_detail_payload(kwargs["pk"], request),
             )
             if payload is None:
                 raise Http404("商品不存在或暂不可见")
             return Response(payload)
 
-        listing = self.get_object(request, pk)
+        listing = self.get_object()
         record_listing_view(request.user, listing)
-        serializer = ListingDetailSerializer(listing, context={"request": request})
-        return Response(serializer.data)
+        return _listing_response(listing, request)
 
-    def _build_public_detail_payload(self, pk, request):
+    def _build_public_detail_payload(self, listing_id, request):
         """构建仅供匿名访客复用的公开商品详情快照。"""
 
-        listing = get_public_listing_detail_queryset().filter(pk=pk).first()
+        listing = get_public_listing_detail_queryset().filter(pk=listing_id).first()
         if listing is None:
             return None
         return ListingDetailSerializer(listing, context={"request": request}).data
 
 
 class MyListingListCreateAPIView(
-    MethodScopedThrottleMixin, PageNumberPaginationMixin, APIView
+    MethodScopedThrottleMixin,
+    ListCreateAPIView,
 ):
     """当前用户商品列表与草稿创建。"""
 
     permission_classes = [IsAuthenticated]
     method_throttle_scopes = {"POST": "listing_write"}
-    max_page_size = 50
+    serializer_class = ListingDetailSerializer
 
-    def get(self, request):
-        queryset = get_owner_listing_queryset(request.user)
-        queryset = annotate_listings_with_favorite_status(queryset, request.user)
-        filterset = MyListingFilterSet(data=request.query_params, queryset=queryset)
-        if not filterset.is_valid():
-            raise ValidationError(filterset.errors)
-        queryset = apply_owner_listing_sort(
-            filterset.qs,
-            request.query_params.get("sort"),
+    def get_queryset(self):
+        return _filter_listing_queryset(
+            self.request,
+            get_owner_listing_queryset(self.request.user),
+            MyListingFilterSet,
+            apply_owner_listing_sort,
         )
-        return self.paginate(request, queryset, ListingDetailSerializer)
 
-    def post(self, request):
-        serializer = ListingWriteSerializer(data=request.data)
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return ListingWriteSerializer
+        return ListingDetailSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        listing = create_listing_from_payload(
-            request.user,
-            serializer.validated_data,
-        )
-        response_serializer = ListingDetailSerializer(
+        listing = create_listing_from_payload(request.user, serializer.validated_data)
+        return _listing_response(
             listing,
-            context={"request": request},
+            request,
+            status_code=status.HTTP_201_CREATED,
         )
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class _OwnedListingAPIView(APIView):
-    """带所有权校验的商品基类视图。"""
+class _OwnedListingMixin:
+    """提供所有者查询集和对象刷新逻辑。"""
 
     permission_classes = [IsAuthenticated, IsListingOwner]
 
-    def get_object(self, request, pk):
+    def get_queryset(self):
         queryset = Listing.objects.select_related(
             "category", "owner", "owner__profile"
         ).prefetch_related("images")
-        queryset = annotate_listings_with_favorite_status(queryset, request.user)
-        listing = get_object_or_404(queryset, pk=pk)
-        self.check_object_permissions(request, listing)
-        return listing
+        return annotate_listings_with_favorite_status(queryset, self.request.user)
 
-    def get_fresh_object(self, request, pk):
-        return self.get_object(request, pk)
+    def get_fresh_object(self):
+        return self.get_object()
 
 
-class MyListingDetailAPIView(_OwnedListingAPIView):
+class MyListingDetailAPIView(
+    _OwnedListingMixin,
+    RetrieveUpdateDestroyAPIView,
+):
     """更新或删除自己的商品。"""
 
-    def get(self, request, pk):
-        listing = self.get_object(request, pk)
-        serializer = ListingDetailSerializer(listing, context={"request": request})
-        return Response(serializer.data)
+    serializer_class = ListingDetailSerializer
+    http_method_names = ["get", "patch", "delete", "head", "options"]
 
-    def patch(self, request, pk):
-        listing = self.get_object(request, pk)
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        listing = self.get_object()
         serializer = ListingWriteSerializer(
             listing,
             data=request.data,
-            partial=True,
+            partial=partial,
+            context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
         listing = update_listing_from_payload(
@@ -188,78 +196,57 @@ class MyListingDetailAPIView(_OwnedListingAPIView):
             listing,
             serializer.validated_data,
         )
-        response_serializer = ListingDetailSerializer(
-            listing,
-            context={"request": request},
-        )
-        return Response(response_serializer.data)
+        return _listing_response(listing, request)
 
-    def delete(self, request, pk):
-        listing = self.get_object(request, pk)
-        delete_listing_for_user(request.user, listing)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    def perform_destroy(self, instance):
+        delete_listing_for_user(self.request.user, instance)
 
 
-class ListingPublishAPIView(_OwnedListingAPIView):
+class ListingPublishAPIView(_OwnedListingMixin, GenericAPIView):
     """发布自己的草稿商品。"""
 
     throttle_scope = "listing_write"
 
     def post(self, request, pk):
-        listing = self.get_object(request, pk)
-        listing = publish_listing_for_user(request.user, listing)
-        response_serializer = ListingDetailSerializer(
-            listing,
-            context={"request": request},
-        )
-        return Response(response_serializer.data)
+        listing = publish_listing_for_user(request.user, self.get_object())
+        return _listing_response(listing, request)
 
 
-class ListingDeactivateAPIView(_OwnedListingAPIView):
+class ListingDeactivateAPIView(_OwnedListingMixin, GenericAPIView):
     """下架自己的在售商品。"""
 
     throttle_scope = "listing_write"
 
     def post(self, request, pk):
-        listing = self.get_object(request, pk)
         listing = change_listing_status_for_user(
             request.user,
-            listing,
+            self.get_object(),
             "withdraw",
         )
-        response_serializer = ListingDetailSerializer(
-            listing,
-            context={"request": request},
-        )
-        return Response(response_serializer.data)
+        return _listing_response(listing, request)
 
 
-class ListingReactivateAPIView(_OwnedListingAPIView):
+class ListingReactivateAPIView(_OwnedListingMixin, GenericAPIView):
     """重新上架自己的已下架商品。"""
 
     throttle_scope = "listing_write"
 
     def post(self, request, pk):
-        listing = self.get_object(request, pk)
         listing = change_listing_status_for_user(
             request.user,
-            listing,
+            self.get_object(),
             "restore_active",
         )
-        response_serializer = ListingDetailSerializer(
-            listing,
-            context={"request": request},
-        )
-        return Response(response_serializer.data)
+        return _listing_response(listing, request)
 
 
-class ListingImageUploadAPIView(_OwnedListingAPIView):
+class ListingImageUploadAPIView(_OwnedListingMixin, GenericAPIView):
     """上传商品图片。"""
 
     throttle_scope = "image_upload"
 
     def post(self, request, pk):
-        listing = self.get_object(request, pk)
+        listing = self.get_object()
         images = request.FILES.getlist("images") or request.FILES.getlist("image")
         serializer = ListingImageUploadSerializer(data={"images": images})
         serializer.is_valid(raise_exception=True)
@@ -268,28 +255,26 @@ class ListingImageUploadAPIView(_OwnedListingAPIView):
             listing,
             serializer.validated_data["images"],
         )
-        listing = self.get_fresh_object(request, pk)
-        response_serializer = ListingDetailSerializer(
-            listing,
-            context={"request": request},
+        return _listing_response(
+            self.get_fresh_object(),
+            request,
+            status_code=status.HTTP_201_CREATED,
         )
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class ListingImageDeleteAPIView(_OwnedListingAPIView):
+class ListingImageDeleteAPIView(_OwnedListingMixin, GenericAPIView):
     """删除商品图片。"""
 
     def delete(self, request, pk, image_id):
-        listing = self.get_object(request, pk)
-        delete_listing_image(request.user, listing, image_id)
+        delete_listing_image(request.user, self.get_object(), image_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class ListingImageReorderAPIView(_OwnedListingAPIView):
+class ListingImageReorderAPIView(_OwnedListingMixin, GenericAPIView):
     """重排商品图片。"""
 
     def post(self, request, pk):
-        listing = self.get_object(request, pk)
+        listing = self.get_object()
         serializer = ListingImageReorderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         reorder_listing_images(
@@ -297,9 +282,4 @@ class ListingImageReorderAPIView(_OwnedListingAPIView):
             listing,
             serializer.validated_data["image_ids"],
         )
-        listing = self.get_fresh_object(request, pk)
-        response_serializer = ListingDetailSerializer(
-            listing,
-            context={"request": request},
-        )
-        return Response(response_serializer.data)
+        return _listing_response(self.get_fresh_object(), request)

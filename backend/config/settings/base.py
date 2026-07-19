@@ -151,6 +151,7 @@ CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": DJANGO_CACHE_URL,
+        "TIMEOUT": 600,  # 默认缓存10分钟
     }
 }
 
@@ -173,8 +174,8 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     # 默认过滤后端
     "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
-    # 默认分页类
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    # 新 generic view 使用统一分页类；旧 APIView + mixin 保持兼容。
+    "DEFAULT_PAGINATION_CLASS": "api.pagination.StandardPageNumberPagination",
     # 默认全局每页大小
     "PAGE_SIZE": 20,
     # 默认全局接口返回数据格式

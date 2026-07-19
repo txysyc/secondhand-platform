@@ -19,7 +19,9 @@
 
 ### Main Changes
 
-- Detailed change bullets were not supplied; see the summary above.
+- 商品列表视图显式声明 `DjangoFilterBackend`、自定义搜索后端和排序后端。
+- 保留 `q`、`sort`、中文字段错误与稳定次级排序契约，删除旧手工过滤和 selector 排序逻辑。
+- 删除 DRF 全局过滤后端配置，补充 API 回归测试和后端质量规范。
 
 ### Git Commits
 
@@ -67,6 +69,43 @@
 - `uv run pytest -q --reuse-db backend/interactions/tests/test_04_api.py`：16 passed
 - `uv run pytest -q --reuse-db backend/orders/tests/test_07_api.py`：19 passed
 - `python backend/manage.py check`：通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 3: 标准化 catalog 过滤与排序后端
+
+**Date**: 2026-07-19
+**Task**: 标准化 catalog 过滤与排序后端
+**Branch**: `main`
+
+### Summary
+
+将商品列表迁移到显式 DRF 过滤后端，保留 q、sort、分页和中文错误契约，并完成 catalog 及相关 API 回归测试。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `75b0069` | `refactor(catalog): 标准化商品过滤与排序后端` |
+
+### Testing
+
+- `uv run pytest -q --reuse-db backend/catalog`：67 passed
+- `uv run pytest -q --reuse-db backend/interactions/tests/test_04_api.py`：16 passed
+- `uv run pytest -q --reuse-db backend/orders/tests/test_07_api.py`：19 passed
+- `uv run python backend/manage.py check`：通过
+- Python 编译检查与 `git diff --check`：通过
 
 ### Status
 

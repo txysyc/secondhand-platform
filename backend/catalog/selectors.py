@@ -42,21 +42,6 @@ def get_public_listing_queryset():
     return listing_queryset
 
 
-def apply_public_listing_sort(queryset, sort: str | None):
-    """按公开列表允许的排序白名单处理排序参数。"""
-
-    # 排序字段保持白名单匹配，避免把请求参数直接拼进 order_by。
-    match sort:
-        case "oldest":
-            return queryset.order_by("published_at", "id")
-        case "price_asc":
-            return queryset.order_by("price", "id")
-        case "price_desc":
-            return queryset.order_by("-price", "-id")
-        case _:
-            return queryset.order_by("-published_at", "-id")
-
-
 def get_public_listing_detail_queryset():
     """构建公开商品详情 API 使用的可见商品查询。"""
 
@@ -113,22 +98,3 @@ def get_owner_listing_queryset(user):
         .prefetch_related("images")
         .order_by("-updated_at", "-id")
     )
-
-
-def apply_owner_listing_sort(queryset, sort: str | None):
-    """按我的商品管理允许的排序白名单处理排序参数。"""
-
-    # 排序字段保持白名单匹配，避免把请求参数直接拼进 order_by。
-    match sort:
-        case "updated_asc":
-            return queryset.order_by("updated_at", "id")
-        case "published_desc":
-            return queryset.order_by("-published_at", "-id")
-        case "published_asc":
-            return queryset.order_by("published_at", "id")
-        case "price_asc":
-            return queryset.order_by("price", "id")
-        case "price_desc":
-            return queryset.order_by("-price", "-id")
-        case _:
-            return queryset.order_by("-updated_at", "-id")

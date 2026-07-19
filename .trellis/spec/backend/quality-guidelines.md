@@ -21,6 +21,17 @@
 - 业务状态流转集中在 service；视图只编排请求和响应。
 - 新增可见性或列表查询先扩展 selector，并添加预取/查询数测试。
 - 新的 DRF generic list view 使用 `api.pagination.StandardPageNumberPagination`，统一返回 `count/next/previous/page_size/results`；已有 `APIView + PageNumberPaginationMixin` 视图按模块迁移前继续保持原实现。
+- 需要筛选、搜索或排序的 generic list view 必须显式声明 `filter_backends` 和 `filterset_class`，不要依赖全局 `DEFAULT_FILTER_BACKENDS`。外部参数名或排序别名与 DRF 默认契约不同时，继承标准 backend 只实现兼容层：
+
+  ```python
+  class ListingListAPIView(ListAPIView):
+      filter_backends = (DjangoFilterBackend, ListingSearchFilter, ListingOrderingFilter)
+      filterset_class = ListingFilterSet
+      search_fields = ("title", "description")
+      ordering = ("-published_at", "-id")
+  ```
+
+  FilterSet 只负责结构化字段和跨字段校验；搜索与排序规则不要再在 `get_queryset()` 中手工执行。排序映射必须使用代码内白名单并包含主键次级排序，禁止把客户端参数直接传给 `order_by()`。测试至少断言有效值、未知值回退、字段级中文错误和等值字段下的稳定顺序。
 - 跨模型写入使用 `transaction.atomic()`；订单、库存/商品状态需要 `select_for_update()`。
 - 上传文件、缓存和通知等副作用使用已有的 `on_commit` 或失效 helper。
 - 新增常量、枚举、错误消息或 API 字段前先 `rg` 搜索所有消费者，避免只改一端。

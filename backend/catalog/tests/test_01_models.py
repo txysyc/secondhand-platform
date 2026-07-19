@@ -16,7 +16,6 @@ from catalog.admin import CategoryAdmin, ListingAdmin
 from catalog.filters import ListingFilterSet
 from catalog.models import Category, Listing, ListingImage
 from catalog.selectors import (
-    apply_public_listing_sort,
     get_active_categories,
     get_public_listing_queryset,
     get_visible_listing_detail_queryset,

@@ -16,7 +16,6 @@ from catalog.admin import CategoryAdmin, ListingAdmin
 from catalog.filters import ListingFilterSet
 from catalog.models import Category, Listing, ListingImage
 from catalog.selectors import (
-    apply_public_listing_sort,
     get_active_categories,
     get_public_listing_queryset,
     get_visible_listing_detail_queryset,
@@ -75,35 +74,6 @@ class TestListingFilterSet:
         filterset = ListingFilterSet(data=params, queryset=get_public_listing_queryset())
         assert filterset.is_valid(), filterset.errors
         return list(filterset.qs)
-
-    def test_keyword_matches_title_or_description(self):
-        match_title = self.make_listing(title="蓝牙耳机", description="无关描述")
-        match_desc = self.make_listing(title="无关标题", description="蓝牙音箱描述")
-        no_match = self.make_listing(title="无关标题", description="无关描述")
-
-        results = self.filter_results({"q": " 蓝牙 "})
-
-        assert match_title in results
-        assert match_desc in results
-        assert no_match not in results
-
-    def test_blank_keyword_equals_no_search(self):
-        first = self.make_listing(title="蓝牙耳机")
-        second = self.make_listing(title="普通键盘")
-
-        results = self.filter_results({"q": "   "})
-
-        assert first in results
-        assert second in results
-
-    def test_too_long_keyword_returns_chinese_error(self):
-        filterset = ListingFilterSet(
-            data={"q": "蓝" * 51},
-            queryset=get_public_listing_queryset(),
-        )
-
-        assert filterset.is_valid() is False
-        assert "搜索关键词不能超过50个字符" in str(filterset.errors)
 
     def test_category_filter(self):
         target = self.make_listing(title="目标分类商品", category=self.category)
@@ -212,7 +182,6 @@ class TestListingFilterSet:
 
         results = self.filter_results(
             {
-                "q": "蓝牙",
                 "item_type": "physical",
                 "min_price": "10",
                 "max_price": "100",

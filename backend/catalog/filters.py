@@ -4,13 +4,49 @@ from datetime import datetime, time
 
 import django_filters
 from django import forms
-from django.db.models import Q
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
+from rest_framework.filters import OrderingFilter, SearchFilter
 
 from catalog.models import Category, Listing
 from catalog.selectors import get_active_categories
 
 MAX_LISTING_SEARCH_LENGTH = 50
+
+
+class ListingSearchFilter(SearchFilter):
+    """兼容现有 ``q`` 参数与完整关键词语义的商品搜索后端。"""
+
+    search_param = "q"
+
+    def get_search_terms(self, request):
+        """规范化搜索词，并保持原有单个完整关键词匹配语义。"""
+
+        value = request.query_params.get(self.search_param, "").strip()
+        if len(value) > MAX_LISTING_SEARCH_LENGTH:
+            raise ValidationError(
+                {
+                    self.search_param: [
+                        f"搜索关键词不能超过{MAX_LISTING_SEARCH_LENGTH}个字符"
+                    ]
+                }
+            )
+        return [value] if value else []
+
+
+class ListingOrderingFilter(OrderingFilter):
+    """把 ``sort`` 业务别名映射为视图声明的稳定 ORM 排序。"""
+
+    ordering_param = "sort"
+
+    def get_ordering(self, request, queryset, view):
+        """仅接受视图白名单中的别名，未知值回退到默认排序。"""
+
+        alias = request.query_params.get(self.ordering_param, "").strip()
+        ordering_aliases = getattr(view, "ordering_aliases", {})
+        if alias:
+            return ordering_aliases.get(alias, self.get_default_ordering(view))
+        return self.get_default_ordering(view)
 
 
 class ListingDateTimeField(forms.DateTimeField):
@@ -38,16 +74,6 @@ class ListingDateTimeFilter(django_filters.DateTimeFilter):
 
 class ListingFilterForm(forms.Form):
     """公开商品列表筛选表单，集中处理跨字段参数校验。"""
-
-    def clean_q(self):
-        """去除搜索词首尾空白，并限制关键词长度。"""
-
-        value = (self.cleaned_data.get("q") or "").strip()
-        if len(value) > MAX_LISTING_SEARCH_LENGTH:
-            raise forms.ValidationError(
-                f"搜索关键词不能超过{MAX_LISTING_SEARCH_LENGTH}个字符"
-            )
-        return value
 
     def clean(self):
         """校验价格区间和发布时间区间不能倒挂。"""
@@ -77,7 +103,6 @@ class ListingFilterForm(forms.Form):
 class ListingFilterSet(django_filters.FilterSet):
     """公开商品列表筛选参数。"""
 
-    q = django_filters.CharFilter(method="filter_q", required=False)
     category = django_filters.ModelChoiceFilter(
         queryset=Category.objects.none(),
         required=False,
@@ -109,7 +134,6 @@ class ListingFilterSet(django_filters.FilterSet):
     class Meta:
         model = Listing
         fields = [
-            "q",
             "category",
             "item_type",
             "min_price",
@@ -125,13 +149,6 @@ class ListingFilterSet(django_filters.FilterSet):
         super().__init__(*args, **kwargs)
         self.filters["category"].queryset = get_active_categories()
 
-    def filter_q(self, queryset, name, value):
-        """按标题或描述模糊搜索商品。"""
-
-        if not value:
-            return queryset
-        return queryset.filter(Q(title__icontains=value) | Q(description__icontains=value))
-
     def filter_published_before(self, queryset, name, value):
         """按发布时间截止筛选，纯日期输入覆盖当天结束前的商品。"""
 
@@ -146,16 +163,6 @@ class ListingFilterSet(django_filters.FilterSet):
 
 class MyListingFilterForm(forms.Form):
     """我的商品列表筛选表单，集中处理跨字段参数校验。"""
-
-    def clean_q(self):
-        """去除搜索词首尾空白，并限制关键词长度。"""
-
-        value = (self.cleaned_data.get("q") or "").strip()
-        if len(value) > MAX_LISTING_SEARCH_LENGTH:
-            raise forms.ValidationError(
-                f"搜索关键词不能超过{MAX_LISTING_SEARCH_LENGTH}个字符"
-            )
-        return value
 
     def clean(self):
         """校验价格区间和更新时间区间不能倒挂。"""
@@ -189,7 +196,6 @@ class MyListingFilterSet(django_filters.FilterSet):
         if status_choice[0] != Listing.Status.SOLD
     ]
 
-    q = django_filters.CharFilter(method="filter_q", required=False)
     status = django_filters.ChoiceFilter(
         choices=MANAGEABLE_STATUS_CHOICES,
         required=False,
@@ -226,7 +232,6 @@ class MyListingFilterSet(django_filters.FilterSet):
     class Meta:
         model = Listing
         fields = [
-            "q",
             "status",
             "category",
             "item_type",
@@ -236,13 +241,6 @@ class MyListingFilterSet(django_filters.FilterSet):
             "updated_before",
         ]
         form = MyListingFilterForm
-
-    def filter_q(self, queryset, name, value):
-        """按标题或描述模糊搜索当前用户商品。"""
-
-        if not value:
-            return queryset
-        return queryset.filter(Q(title__icontains=value) | Q(description__icontains=value))
 
 
 def _normalize_plain_date_before(raw_value, value):

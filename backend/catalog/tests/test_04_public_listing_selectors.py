@@ -16,7 +16,6 @@ from catalog.admin import CategoryAdmin, ListingAdmin
 from catalog.filters import ListingFilterSet
 from catalog.models import Category, Listing, ListingImage
 from catalog.selectors import (
-    apply_public_listing_sort,
     get_active_categories,
     get_public_listing_queryset,
     get_visible_listing_detail_queryset,
@@ -162,47 +161,4 @@ class TestPublicListingSelector:
         listings = list(get_visible_listing_detail_queryset(buyer))
 
         assert reserved not in listings
-
-    def test_sort_price_asc(self):
-        expensive = self.make_listing(title="贵", price=Decimal("200.00"))
-        cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
-
-        results = list(apply_public_listing_sort(get_public_listing_queryset(), "price_asc"))
-
-        assert results == [cheap, expensive]
-
-    def test_sort_price_desc(self):
-        cheap = self.make_listing(title="便宜", price=Decimal("10.00"))
-        expensive = self.make_listing(title="贵", price=Decimal("200.00"))
-
-        results = list(apply_public_listing_sort(get_public_listing_queryset(), "price_desc"))
-
-        assert results == [expensive, cheap]
-
-    def test_sort_oldest(self):
-        older = self.make_listing(
-            title="旧", published_at=timezone.now() - timezone.timedelta(days=2)
-        )
-        newer = self.make_listing(
-            title="新", published_at=timezone.now() - timezone.timedelta(days=1)
-        )
-
-        results = list(apply_public_listing_sort(get_public_listing_queryset(), "oldest"))
-
-        assert results == [older, newer]
-
-    def test_unknown_sort_falls_back_to_default(self):
-        older = self.make_listing(
-            title="旧",
-            published_at=timezone.now() - timezone.timedelta(days=2),
-        )
-        newer = self.make_listing(
-            title="新",
-            published_at=timezone.now() - timezone.timedelta(days=1),
-        )
-
-        results = list(apply_public_listing_sort(get_public_listing_queryset(), "invalid_sort"))
-
-        assert results == [newer, older]
-
 

@@ -1,8 +1,8 @@
 """catalog 应用 API 通用视图。"""
 
 from django.http import Http404
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
 from rest_framework.generics import (
     GenericAPIView,
     ListAPIView,
@@ -15,7 +15,12 @@ from rest_framework.response import Response
 
 from api.throttles import MethodScopedThrottleMixin
 from catalog.cache import get_active_category_payload, get_cached_public_listing_detail
-from catalog.filters import ListingFilterSet, MyListingFilterSet
+from catalog.filters import (
+    ListingFilterSet,
+    ListingOrderingFilter,
+    ListingSearchFilter,
+    MyListingFilterSet,
+)
 from catalog.models import Listing
 from catalog.permissions import IsListingOwner
 from catalog.serializers import (
@@ -25,8 +30,6 @@ from catalog.serializers import (
     ListingWriteSerializer,
 )
 from catalog.selectors import (
-    apply_owner_listing_sort,
-    apply_public_listing_sort,
     get_owner_listing_queryset,
     get_public_listing_detail_queryset,
     get_public_listing_queryset,
@@ -46,14 +49,12 @@ from interactions.selectors import annotate_listings_with_favorite_status
 from interactions.services import record_listing_view
 
 
-def _filter_listing_queryset(request, queryset, filterset_class, sort_func):
-    """统一处理商品列表筛选和白名单排序。"""
-
-    queryset = annotate_listings_with_favorite_status(queryset, request.user)
-    filterset = filterset_class(data=request.query_params, queryset=queryset)
-    if not filterset.is_valid():
-        raise ValidationError(filterset.errors)
-    return sort_func(filterset.qs, request.query_params.get("sort"))
+LISTING_FILTER_BACKENDS = (
+    DjangoFilterBackend,
+    ListingSearchFilter,
+    ListingOrderingFilter,
+)
+LISTING_SEARCH_FIELDS = ("title", "description")
 
 
 def _listing_response(listing, request, *, status_code=status.HTTP_200_OK):
@@ -77,13 +78,20 @@ class ListingListAPIView(ListAPIView):
 
     permission_classes = [AllowAny]
     serializer_class = ListingDetailSerializer
+    filter_backends = LISTING_FILTER_BACKENDS
+    filterset_class = ListingFilterSet
+    search_fields = LISTING_SEARCH_FIELDS
+    ordering = ("-published_at", "-id")
+    ordering_aliases = {
+        "oldest": ("published_at", "id"),
+        "price_asc": ("price", "id"),
+        "price_desc": ("-price", "-id"),
+    }
 
     def get_queryset(self):
-        return _filter_listing_queryset(
-            self.request,
+        return annotate_listings_with_favorite_status(
             get_public_listing_queryset(),
-            ListingFilterSet,
-            apply_public_listing_sort,
+            self.request.user,
         )
 
 
@@ -132,13 +140,22 @@ class MyListingListCreateAPIView(
     permission_classes = [IsAuthenticated]
     method_throttle_scopes = {"POST": "listing_write"}
     serializer_class = ListingDetailSerializer
+    filter_backends = LISTING_FILTER_BACKENDS
+    filterset_class = MyListingFilterSet
+    search_fields = LISTING_SEARCH_FIELDS
+    ordering = ("-updated_at", "-id")
+    ordering_aliases = {
+        "updated_asc": ("updated_at", "id"),
+        "published_desc": ("-published_at", "-id"),
+        "published_asc": ("published_at", "id"),
+        "price_asc": ("price", "id"),
+        "price_desc": ("-price", "-id"),
+    }
 
     def get_queryset(self):
-        return _filter_listing_queryset(
-            self.request,
+        return annotate_listings_with_favorite_status(
             get_owner_listing_queryset(self.request.user),
-            MyListingFilterSet,
-            apply_owner_listing_sort,
+            self.request.user,
         )
 
     def get_serializer_class(self):

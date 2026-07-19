@@ -18,7 +18,6 @@ from catalog.filters import ListingFilterSet
 from catalog.models import Category, Listing, ListingImage
 from catalog.selectors import (
     _active_category_ids_cache_key,
-    apply_public_listing_sort,
     get_active_categories,
     get_active_category_ids,
     get_public_listing_queryset,

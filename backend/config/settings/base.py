@@ -172,8 +172,6 @@ REST_FRAMEWORK = {
     ),
     # 默认权限
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
-    # 默认过滤后端
-    "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
     # 新 generic view 使用统一分页类；旧 APIView + mixin 保持兼容。
     "DEFAULT_PAGINATION_CLASS": "api.pagination.StandardPageNumberPagination",
     # 默认全局每页大小

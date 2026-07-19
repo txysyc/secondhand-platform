@@ -16,7 +16,6 @@ from catalog.admin import CategoryAdmin, ListingAdmin
 from catalog.filters import ListingFilterSet
 from catalog.models import Category, Listing, ListingImage
 from catalog.selectors import (
-    apply_public_listing_sort,
     get_active_categories,
     get_public_listing_queryset,
     get_visible_listing_detail_queryset,
@@ -117,18 +116,79 @@ class TestCatalogAPI:
         assert "API停用分类" not in names
 
     def test_public_listing_list_filters_active_listings(self):
-        match = self.create_listing(title="蓝牙耳机", description="支持降噪")
-        self.create_listing(title="普通键盘", description="无关描述")
+        title_match = self.create_listing(
+            title="专业蓝牙 耳机",
+            description="支持降噪",
+        )
+        description_match = self.create_listing(
+            title="普通键盘",
+            description="支持蓝牙 耳机连接",
+        )
+        split_only = self.create_listing(
+            title="蓝牙音箱",
+            description="耳机配件",
+        )
         self.create_listing(title="草稿商品", status=Listing.Status.DRAFT, published_at=None)
         self.create_listing(title="停用分类商品", category=self.inactive_category)
 
-        response = self.api_client.get(reverse("api:catalog_listings"), {"q": "蓝牙"})
+        response = self.api_client.get(
+            reverse("api:catalog_listings"),
+            {"q": " 蓝牙 耳机 "},
+        )
 
         assert response.status_code == 200
         body = response.json()
-        assert body["count"] == 1
-        assert body["results"][0]["id"] == match.id
+        ids = [item["id"] for item in body["results"]]
+        assert body["count"] == 2
+        assert title_match.id in ids
+        assert description_match.id in ids
+        assert split_only.id not in ids
         assert body["results"][0]["category"]["name"] == "API数码"
+
+    def test_public_listing_sort_aliases_use_stable_secondary_ordering(self):
+        published_at = timezone.now() - timezone.timedelta(days=1)
+        oldest = self.create_listing(
+            title="最早的高价商品",
+            price=Decimal("200.00"),
+            published_at=published_at - timezone.timedelta(days=1),
+        )
+        first_same_value = self.create_listing(
+            title="同值一号",
+            price=Decimal("10.00"),
+            published_at=published_at,
+        )
+        second_same_value = self.create_listing(
+            title="同值二号",
+            price=Decimal("10.00"),
+            published_at=published_at,
+        )
+        url = reverse("api:catalog_listings")
+
+        price_asc = self.api_client.get(url, {"sort": "price_asc"}).json()
+        price_desc = self.api_client.get(url, {"sort": "price_desc"}).json()
+        oldest_first = self.api_client.get(url, {"sort": "oldest"}).json()
+        foreign_alias = self.api_client.get(url, {"sort": "updated_asc"}).json()
+
+        assert [item["id"] for item in price_asc["results"]] == [
+            first_same_value.id,
+            second_same_value.id,
+            oldest.id,
+        ]
+        assert [item["id"] for item in price_desc["results"]] == [
+            oldest.id,
+            second_same_value.id,
+            first_same_value.id,
+        ]
+        assert [item["id"] for item in oldest_first["results"]] == [
+            oldest.id,
+            first_same_value.id,
+            second_same_value.id,
+        ]
+        assert [item["id"] for item in foreign_alias["results"]] == [
+            second_same_value.id,
+            first_same_value.id,
+            oldest.id,
+        ]
 
     def test_public_detail_hides_inactive_or_non_active_listing(self):
         active = self.create_listing(title="详情商品")
@@ -332,6 +392,69 @@ class TestCatalogAPI:
         assert other_owner.id not in ids
         assert sold.id not in ids
 
+    def test_my_listing_sort_aliases_use_stable_secondary_ordering(self):
+        published_at = timezone.now() - timezone.timedelta(days=1)
+        updated_at = timezone.now() - timezone.timedelta(hours=1)
+        oldest = self.create_listing(
+            title="最早更新的高价商品",
+            price=Decimal("200.00"),
+            published_at=published_at - timezone.timedelta(days=1),
+        )
+        first_same_value = self.create_listing(
+            title="同值一号",
+            price=Decimal("10.00"),
+            published_at=published_at,
+        )
+        second_same_value = self.create_listing(
+            title="同值二号",
+            price=Decimal("10.00"),
+            published_at=published_at,
+        )
+        Listing.objects.filter(pk=oldest.pk).update(
+            updated_at=updated_at - timezone.timedelta(days=1)
+        )
+        Listing.objects.filter(
+            pk__in=[first_same_value.pk, second_same_value.pk]
+        ).update(updated_at=updated_at)
+        url = reverse("api:catalog_my_listings")
+        headers = self.auth_headers(self.seller)
+
+        def result_ids(sort):
+            response = self.api_client.get(url, {"sort": sort}, **headers)
+            assert response.status_code == 200
+            return [item["id"] for item in response.json()["results"]]
+
+        assert result_ids("updated_asc") == [
+            oldest.id,
+            first_same_value.id,
+            second_same_value.id,
+        ]
+        assert result_ids("published_desc") == [
+            second_same_value.id,
+            first_same_value.id,
+            oldest.id,
+        ]
+        assert result_ids("published_asc") == [
+            oldest.id,
+            first_same_value.id,
+            second_same_value.id,
+        ]
+        assert result_ids("price_asc") == [
+            first_same_value.id,
+            second_same_value.id,
+            oldest.id,
+        ]
+        assert result_ids("price_desc") == [
+            oldest.id,
+            second_same_value.id,
+            first_same_value.id,
+        ]
+        assert result_ids("oldest") == [
+            second_same_value.id,
+            first_same_value.id,
+            oldest.id,
+        ]
+
     def test_my_listing_list_excludes_sold_listing_and_rejects_sold_filter(self):
         """我的商品管理不展示已售出商品，也不接受已售出状态筛选。"""
 
@@ -388,6 +511,7 @@ class TestCatalogAPI:
         assert "更新时间截止不得早于更新时间起始" in invalid_time_response.json()["message"]
         assert keyword_response.status_code == 400
         assert "搜索关键词不能超过50个字符" in keyword_response.json()["message"]
+        assert "q" in keyword_response.json()["errors"]
         assert page_response.status_code == 200
         assert page_response.json()["page_size"] == 50
         assert len(page_response.json()["results"]) == 50
@@ -577,6 +701,7 @@ class TestCatalogAPI:
         assert second.id in ids
         assert long_response.status_code == 400
         assert "搜索关键词不能超过50个字符" in long_response.json()["message"]
+        assert "q" in long_response.json()["errors"]
 
     def test_public_listing_page_size_is_capped_at_50(self):
         for index in range(55):
